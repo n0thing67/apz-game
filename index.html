@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Завод АПЗ</title>
+    <link rel="stylesheet" href="styles.css">
+    <!-- Подключаем скрипт Телеграма -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+
+    <!-- Экран 1: Приветствие -->
+    <div id="screen-welcome" class="screen active">
+        <h1>🏭 АПЗ КВЕСТ</h1>
+        <p>Пройди 3 испытания и собери призы!</p>
+        <button class="btn" onclick="startGame(1)">Начать 1 уровень</button>
+    </div>
+
+    <!-- Экран 2: Пазл (Уровень 1) -->
+    <div id="screen-level1" class="screen">
+        <h2>🧩 Уровень 1: Логотип</h2>
+        <p>Собери картинку (кликни на две клетки, чтобы поменять их местами)</p>
+        <div id="puzzle-board"></div>
+        <p id="puzzle-status"></p>
+        <button id="btn-next-2" class="btn hidden" onclick="startGame(2)">Далее →</button>
+    </div>
+
+    <!-    <!-- Экран 3: Джампер (Уровень 2) -->
+    <div id="screen-level2" class="screen">
+            <!-- Внутри <div id="screen-level2" ...> -->
+
+        <div id="doodle-ui">
+            <!-- Таймер слева -->
+            <div id="doodle-timer">⏱ 00:00</div>
+            <!-- Заголовок по центру (можно убрать, если не влезает на мелких экранах) -->
+            <h2 style="font-size: 14px; margin: 0 10px;">Собери детали</h2>
+            <!-- Счет справа -->
+            <div><span id="doodle-score">0</span> / 12</div>
+        </div>
+
+                <!-- Игровая зона -->
+        <div id="doodle-container">
+            <canvas id="doodle-canvas"></canvas>
+
+            <!-- Стартовый экран -->
+            <div id="doodle-start-msg" onclick="startDoodleLoop()">
+                <p>Нажми, чтобы начать!</p>
+                <div class="tap-icon">👆</div>
+                <p style="font-size: 14px; color: #7f8c8d; margin-top: 20px;">
+                    Тапай влево или вправо
+                </p>
+            </div>
+
+            <!-- Экран ПОРАЖЕНИЯ (скрыт) -->
+            <div id="game-over-overlay" class="game-overlay">
+                <h3>Ой, упал! 😢</h3>
+                <button class="btn-restart" onclick="startDoodleLoop()">🔄 Попробовать снова</button>
+            </div>
+
+            <!-- Экран ПОБЕДЫ (скрыт) -->
+            <div id="victory-overlay" class="game-overlay">
+                <h1>🏆 ПОБЕДА!</h1>
+            </div>
+        </div>
+
+        <div id="factory-gate-container">
+            <h3>✨ ЗАВОД ЗАПУЩЕН! ✨</h3>
+            <img id="factory-gate-img" src="assets/gate.jpg" alt="Проходная">
+        </div>
+
+        <button id="btn-next-3" class="btn hidden" onclick="startGame(3)">Далее →</button>
+    </div>
+
+    <!-- Экран 4: Игра 2048 (Уровень 3) -->
+    <div id="screen-level3" class="screen">
+        <h2>🏭 Сборочный цех</h2>
+        <p>Соединяй детали, чтобы собрать <b>Прибор (256)</b>!</p>
+
+        <div class="game-2048-header">
+            <div class="score-box">Счет: <span id="score-2048">0</span></div>
+            <button onclick="init2048()" style="font-size: 20px; background:none; border:none; cursor:pointer;">🔄</button>
+        </div>
+
+        <!-- Контейнер игры (relative) -->
+        <div style="position: relative; width: 300px; margin: 0 auto;">
+            <div id="grid-container">
+                <!-- Ячейки сетки -->
+            </div>
+
+            <!-- ОВЕРЛЕЙ ПОРАЖЕНИЯ -->
+            <div id="overlay-2048-gameover" class="game-overlay" style="border-radius: 10px;">
+                <h3>Цех переполнен! 😔</h3>
+                <p style="color: white; font-size: 14px;">Места для деталей не осталось.</p>
+                <button class="btn-restart" onclick="init2048()">🔄 Очистить линию</button>
+            </div>
+
+            <!-- ОВЕРЛЕЙ ПОБЕДЫ -->
+            <div id="overlay-2048-victory" class="game-overlay" style="border-radius: 10px;">
+                <h1>🏆 ГОТОВО!</h1>
+                <p style="color: #f1c40f;">Прибор собран успешно!</p>
+            </div>
+        </div>
+
+        <p class="instruction">Свайпай (листай) пальцем,<br>чтобы двигать детали</p>
+
+        <button id="btn-next-4" class="btn hidden" onclick="startGame(4)">Квиз →</button>
+    </div>
+
+    <!-- Экран 5: Квиз (Уровень 4) -->
+    <div id="screen-level4" class="screen">
+        <h2>🧠 Уровень 4: Знания</h2>
+        <div id="quiz-progress">Вопрос 1</div>
+        <div id="quiz-container">
+            <div id="question-text">...</div>
+            <div id="answers-block"></div>
+        </div>
+    </div>
+        <!-- Экран 5: Финал (Общий итог) -->
+    <div id="screen-final" class="screen">
+        <h1>🎉 ФИНИШ!</h1>
+        <p>Твоя смена на заводе окончена.</p>
+
+        <div class="final-score-box">
+            <div class="score-row">
+                <span>🧩 Пазл:</span> <span id="res-l1">0</span>
+            </div>
+            <div class="score-row">
+                <span>🏃 Джампер:</span> <span id="res-l2">0</span>
+            </div>
+            <div class="score-row">
+                <span>🏭 Сборка 2048:</span> <span id="res-l3">0</span>
+            </div>
+            <div class="score-row">
+                <span>🧠 Квиз:</span> <span id="res-l4">0</span>
+            </div>
+            <hr>
+            <div class="score-row total">
+                <span>ИТОГО:</span> <span id="final-score-val">0</span>
+            </div>
+        </div>
+
+        <button class="btn" onclick="closeApp()">💾 СОХРАНИТЬ РЕЗУЛЬТАТ</button>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>
