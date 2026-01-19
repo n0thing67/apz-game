@@ -15,27 +15,57 @@ function fmtUser(u) {
 }
 
 async function init() {
-  try {
-    tg?.ready();
-    tg?.expand();
-  } catch (_) {}
-
-  const initData = tg?.initData || "";
-
   const $who = byId("who");
   const $top = byId("top");
   const $users = byId("users");
   const $levels = byId("levels");
 
+  // Telegram WebApp init
+  try {
+    if (!tg) throw new Error("Telegram WebApp не найден. Открой админку через кнопку /admin в Telegram.");
+    tg.ready();
+    tg.expand();
+  } catch (e) {
+    $who.textContent = "Ошибка: " + e.message;
+    return;
+  }
+
+  // Всегда берём актуальный initData (иногда появляется чуть позже после ready())
+  function getInitData() {
+    const initData = tg?.initData || "";
+    return initData;
+  }
+
   async function api(path, opts = {}) {
+    const initData = getInitData();
+    if (!initData) {
+      // Это главная причина 401 при открытии не как WebApp или при проблеме с запуском
+      throw new Error("Bad initData: открой админку внутри Telegram через /admin → кнопку, затем попробуй ещё раз.");
+    }
+
     const headers = Object.assign(
-      { "Content-Type": "application/json", "X-Telegram-InitData": initData },
+      { "X-Telegram-InitData": initData },
       opts.headers || {}
     );
+
+    const method = (opts.method || "GET").toUpperCase();
+
+    // JSON по умолчанию для POST/PUT/PATCH
+    if (method !== "GET" && !headers["Content-Type"]) {
+      headers["Content-Type"] = "application/json";
+    }
+
     const res = await fetch(path, { ...opts, headers });
+
     if (!res.ok) {
       const t = await res.text().catch(() => "");
       throw new Error(`${res.status} ${t || res.statusText}`);
+    }
+
+    // Если ответ пустой — вернём null
+    const ct = res.headers.get("content-type") || "";
+    if (!ct.includes("application/json")) {
+      return await res.text().catch(() => "");
     }
     return res.json();
   }
@@ -46,6 +76,7 @@ async function init() {
     $users.textContent = "…";
     $levels.innerHTML = "";
 
+    // 1) Админ-стата (тут у тебя и был 401)
     const data = await api("/api/admin/stats");
     $who.textContent = "Доступ подтвержден";
 
@@ -65,13 +96,14 @@ async function init() {
     const users = (data.users || []).slice(0, 200);
     $users.textContent = users.length ? users.map(fmtUser).join("\n") : "Пока нет";
 
-    // LEVELS
-    const levelsResp = await fetch("/api/levels").then((r) => r.json());
+    // 2) Уровни — тоже через api(), чтобы initData всегда передавалось (на всякий случай)
+    const levelsResp = await api("/api/levels");
     const levels = levelsResp.levels || {};
     const keys = Object.keys(levels).sort();
 
     keys.forEach((key) => {
       const active = !!levels[key];
+
       const row = document.createElement("div");
       row.className = "level-card";
       row.style.margin = "0";
@@ -82,6 +114,7 @@ async function init() {
           ${active ? "Отключить" : "Включить"}
         </button>
       `;
+
       row.querySelector("button").addEventListener("click", async (e) => {
         const btn = e.currentTarget;
         btn.disabled = true;
@@ -97,6 +130,7 @@ async function init() {
           btn.disabled = false;
         }
       });
+
       $levels.appendChild(row);
     });
   }
@@ -114,8 +148,12 @@ async function init() {
   byId("btn-reset-scores").addEventListener("click", async () => {
     const ok = confirm("Точно сбросить всю статистику?");
     if (!ok) return;
-    await api("/api/admin/reset_scores", { method: "POST", body: "{}" });
-    await refresh();
+    try {
+      await api("/api/admin/reset_scores", { method: "POST", body: "{}" });
+      await refresh();
+    } catch (e) {
+      alert("Ошибка: " + e.message);
+    }
   });
 
   byId("btn-delete-user").addEventListener("click", async () => {
@@ -123,9 +161,16 @@ async function init() {
     if (!val) return;
     const ok = confirm(`Удалить пользователя ${val}?`);
     if (!ok) return;
-    await api("/api/admin/delete_user", { method: "POST", body: JSON.stringify({ telegram_id: Number(val) }) });
-    byId("delete-id").value = "";
-    await refresh();
+    try {
+      await api("/api/admin/delete_user", {
+        method: "POST",
+        body: JSON.stringify({ telegram_id: Number(val) }),
+      });
+      byId("delete-id").value = "";
+      await refresh();
+    } catch (e) {
+      alert("Ошибка: " + e.message);
+    }
   });
 
   // Старт
