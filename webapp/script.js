@@ -1708,12 +1708,18 @@ let currentQuestionIndex = 0;
 let questionStartTime = 0;
 
 function initQuiz() {
+    // Сбрасываем блокировки и скрытие контейнера (иначе pointer-events: none останется)
+    isAnswering = false;
+    const qc = document.getElementById('quiz-container');
+    if (qc) qc.classList.remove('quiz-hidden');
+
     // Each run: randomize question order + answer order
     quizQuestions = prepareQuizQuestions(questions);
     currentQuestionIndex = 0;
     levelScores[4] = 0;
     renderQuestion();
 }
+
 
 function renderQuestion() {
     const qData = quizQuestions[currentQuestionIndex];
@@ -1782,13 +1788,14 @@ function handleAnswerClick(btn, index, correctIndex) {
 }
 
 function finishQuizLevel() {
-    // По требованиям: после завершения квиза — такое же поведение, как у остальных уровней:
-    // остаёмся на экране уровня и показываем нижнюю кнопку "К уровням".
+    const qc = document.getElementById('quiz-container');
+    if (qc) qc.classList.remove('quiz-hidden');
+    isAnswering = false;
+
     const timeMs = Date.now() - levelStartTime;
     const score = levelScores[4] || 0;
     finishLevel({ score, timeMs });
 
-    // UI: показываем сообщение о завершении и убираем варианты ответов
     const qText = document.getElementById('question-text');
     const answers = document.getElementById('answers-block');
     const progress = document.getElementById('quiz-progress');
@@ -1796,6 +1803,7 @@ function finishQuizLevel() {
     if (qText) qText.textContent = 'Ты прошёл квиз! Теперь можно вернуться к уровням.';
     if (answers) answers.innerHTML = '';
 }
+
 
 // === ФИНАЛ: ОТПРАВКА ДАННЫХ ===
 function closeApp() {
