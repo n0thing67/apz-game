@@ -5,7 +5,13 @@ from aiogram import Router, F, types
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, WebAppInfo
+from aiogram.types import (
+    ReplyKeyboardMarkup,
+    KeyboardButton,
+    WebAppInfo,
+    InlineKeyboardMarkup,
+    InlineKeyboardButton,
+)
 
 from database.db import (
     register_user,
@@ -32,16 +38,11 @@ class RegState(StatesGroup):
 
 
 # --- URL'ы ---
-# Игра (GitHub Pages)
 GAME_URL = os.getenv("GAME_URL", "https://n0thing67.github.io/APZ-games/").rstrip("/")
-
-# Админка + API (Render домен)
-# В Render поставь: ADMIN_URL = https://apz-game.onrender.com
 ADMIN_URL = os.getenv("ADMIN_URL", os.getenv("WEBAPP_URL", "")).rstrip("/")
 
 
-def build_game_keyboard() -> ReplyKeyboardMarkup:
-    # Игра должна открываться как WebApp (не обычной ссылкой)
+def game_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
             [
@@ -55,24 +56,21 @@ def build_game_keyboard() -> ReplyKeyboardMarkup:
     )
 
 
-def build_admin_keyboard() -> ReplyKeyboardMarkup:
-    # Админка должна открываться с Render-домена (где API и валидация initData)
-    return ReplyKeyboardMarkup(
-        keyboard=[
+def admin_inline_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
             [
-                KeyboardButton(
+                InlineKeyboardButton(
                     text="🛠 Админ-панель",
                     web_app=WebAppInfo(url=f"{ADMIN_URL}/admin.html"),
                 )
             ]
-        ],
-        resize_keyboard=True,
+        ]
     )
 
 
 @router.message(Command("start"))
 async def cmd_start(message: types.Message, state: FSMContext):
-    # Сбрасываем возможное состояние регистрации
     await state.clear()
 
     user = await get_user(message.from_user.id)
@@ -80,7 +78,7 @@ async def cmd_start(message: types.Message, state: FSMContext):
         _, first_name, last_name, age, score = user
         await message.answer(
             f"С возвращением, {first_name}! Нажми кнопку ниже, чтобы начать испытание.",
-            reply_markup=build_game_keyboard(),
+            reply_markup=game_keyboard(),
         )
         return
 
@@ -107,7 +105,7 @@ async def process_fullname(message: types.Message, state: FSMContext):
         return
 
     first_name = parts[0]
-    last_name = " ".join(parts[1:])  # фамилия может быть составной
+    last_name = " ".join(parts[1:])
 
     await state.update_data(first_name=first_name, last_name=last_name)
     await message.answer("Сколько вам лет?")
@@ -131,14 +129,12 @@ async def process_age(message: types.Message, state: FSMContext):
 
     await message.answer(
         f"Регистрация пройдена, {name}! Нажми кнопку ниже, чтобы начать испытание.",
-        reply_markup=build_game_keyboard(),
+        reply_markup=game_keyboard(),
     )
 
 
 @router.message(F.web_app_data)
 async def handle_web_app_data(message: types.Message):
-    # Важно: если web_app_data не JSON, это упадёт.
-    # Оставляю как есть, но с защитой:
     try:
         data = json.loads(message.web_app_data.data)
     except Exception:
@@ -164,18 +160,17 @@ async def cmd_admin(message: types.Message):
     if not ADMIN_URL:
         await message.answer(
             "⚠️ Админка не настроена.\n"
-            "В Render нужно добавить переменную окружения ADMIN_URL (домен Render)."
+            "В Render добавь переменную окружения ADMIN_URL (домен Render)."
         )
         return
 
     await message.answer(
         "🛠 Открываю админ-панель.\n"
         "Там можно смотреть статистику, удалять пользователей и включать/выключать уровни.",
-        reply_markup=build_admin_keyboard(),
+        reply_markup=admin_inline_keyboard(),
     )
 
 
-# --- Команда статистики ---
 @router.message(Command("stats"))
 async def cmd_stats(message: types.Message):
     users = await get_top_users()
@@ -186,14 +181,7 @@ async def cmd_stats(message: types.Message):
 
     text_lines = ["🏆 **ТОП ЛУЧШИХ РАБОТНИКОВ АПЗ:**\n"]
     for i, (fname, lname, score) in enumerate(users, 1):
-        if i == 1:
-            medal = "🥇"
-        elif i == 2:
-            medal = "🥈"
-        elif i == 3:
-            medal = "🥉"
-        else:
-            medal = f"{i}."
+        medal = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else f"{i}."
         text_lines.append(f"{medal} {fname} {lname} — {score} баллов")
 
     await message.answer("\n".join(text_lines), parse_mode="Markdown")
