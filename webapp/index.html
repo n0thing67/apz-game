@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Завод АПЗ</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="preconnect" href="https://telegram.org" crossorigin>
+    <!-- Подключаем скрипт Телеграма -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+
+    <!-- Глобальная верхняя кнопка назад (видна во время прохождения уровней) -->
+    <div id="global-topbar" class="topbar hidden">
+        <button class="topbar-btn" type="button" data-action="show-levels">← К уровням</button>
+    </div>
+
+    <!-- Глобальная нижняя кнопка назад (появляется только во время прохождения уровней) -->
+    <div id="global-bottombar" class="bottombar hidden">
+        <button class="btn btn-secondary" type="button" data-action="show-levels">← К уровням</button>
+    </div>
+
+    <!-- Переключатель звука (показывается только в меню) -->
+    <button id="btn-sound-toggle" class="sound-toggle" type="button" aria-label="Звук: вкл/выкл">🔊 Звук</button>
+
+
+    <!-- Экран 1: Приветствие -->
+    <div id="screen-welcome" class="screen active">
+        <h1>🏭 АПЗ КВЕСТ</h1>
+        <p>Пройди испытания и собери призы!</p>
+        <!-- В Telegram WebView inline onclick может блокироваться CSP, поэтому обработчик клика вешаем в script.js -->
+        <button id="btn-choose-level" class="btn">Выбрать уровень</button>
+    </div>
+    <!-- Экран: Выбор уровня -->
+    <div id="screen-levels" class="screen">
+        <h2>🎛️ Выбор уровня</h2>
+        <p class="muted">Выбирай любой уровень — статистика хранится отдельно.</p>
+
+        <div class="level-list">
+            <div class="level-card">
+                <div class="level-title">🧩 Цех сборки логотипа 2×2 (4 клетки)</div>
+                <div class="level-stats">Лучшее время: <span id="stat-puzzle-2x2">—</span></div>
+                <button class="btn" data-level="puzzle-2x2">Играть</button>
+            </div>
+
+            <div class="level-card">
+                <div class="level-title">🧩 Цех сборки логотипа 3×3 (9 клеток)</div>
+                <div class="level-stats">Лучшее время: <span id="stat-puzzle-3x3">—</span></div>
+                <button class="btn" data-level="puzzle-3x3">Играть</button>
+            </div>
+
+            <div class="level-card">
+                <div class="level-title">🧩 Цех сборки логотипа 4×4 (16 клеток)</div>
+                <div class="level-stats">Лучшее время: <span id="stat-puzzle-4x4">—</span></div>
+                <button class="btn" data-level="puzzle-4x4">Играть</button>
+            </div>
+
+            <div class="level-card">
+                <div class="level-title">🏃 Цех проверки ловкости</div>
+                <div class="level-stats">Лучший счет: <span id="stat-jumper">—</span></div>
+                <button class="btn" data-level="jumper">Играть</button>
+            </div>
+
+            <div class="level-card">
+                <div class="level-title">🏭 Цех сборки деталей (2048)</div>
+                <div class="level-stats">Лучший счет: <span id="stat-2048">—</span></div>
+                <button class="btn" data-level="factory-2048">Играть</button>
+            </div>
+
+            <div class="level-card">
+                <div class="level-title">🧠 Цех умных решений</div>
+                <div class="level-stats">Лучший результат: <span id="stat-quiz">—</span></div>
+                <button class="btn" data-level="quiz">Играть</button>
+            </div>
+        </div>
+
+        <div style="display:flex; gap:10px; justify-content:center; flex-wrap:wrap; margin-top:12px;">
+            <button class="btn btn-secondary" data-action="reset-stats">Сбросить статистику</button>
+            <button class="btn" data-action="save-stats">Сохранить статистику</button>
+        </div>
+    </div>
+
+
+    <!-- Экран 2: Пазл (Уровень 1) -->
+    <div id="screen-level1" class="screen">
+        <h2>🧩 Цех сборки логотипа</h2>
+        <p>Собери картинку (кликни на две клетки, чтобы поменять их местами)</p>
+        <div id="puzzle-board"></div>
+        <p id="puzzle-status"></p>
+    </div>
+
+    <!-- Экран 3: Джампер (Уровень 2) -->
+    <div id="screen-level2" class="screen">
+            <!-- Внутри <div id="screen-level2" ...> -->
+
+        <div id="doodle-ui">
+            <!-- Таймер слева -->
+            <div id="doodle-timer">⏱ 00:00</div>
+            <!-- Заголовок по центру (можно убрать, если не влезает на мелких экранах) -->
+            <h2 style="font-size: 14px; margin: 0 10px;">Собери детали</h2>
+            <!-- Счет справа -->
+            <div><span id="doodle-score">0</span>/10</div>
+
+    </div>
+
+                <!-- Игровая зона -->
+        <div id="doodle-container">
+            <canvas id="doodle-canvas"></canvas>
+
+            <!-- Интуитивные кнопки управления (для телефонов) -->
+            <div id="doodle-controls" aria-label="Управление">
+                <button id="doodle-btn-left" class="doodle-control" aria-label="Прыгать влево" type="button">
+                    <span class="arrow">←</span>
+                </button>
+                <button id="doodle-btn-right" class="doodle-control" aria-label="Прыгать вправо" type="button">
+                    <span class="arrow">→</span>
+                </button>
+            </div>
+
+            <!-- Стартовый экран -->
+            <div id="doodle-start-msg" data-action="start-doodle">
+                <p>Нажми, чтобы начать!</p>
+                <div class="tap-icon">👆</div>
+                <p style="font-size: 14px; color: #7f8c8d; margin-top: 20px;">
+                    Тапай влево или вправо
+                </p>
+            </div>
+
+            <!-- Экран ПОРАЖЕНИЯ (скрыт) -->
+            <div id="game-over-overlay" class="game-overlay">
+                <h3>Ой, упал! 😢</h3>
+                <button class="btn-restart" data-action="start-doodle">🔄 Попробовать снова</button>
+            </div>
+
+            <!-- Экран ПОБЕДЫ (скрыт) -->
+            <div id="victory-overlay" class="game-overlay">
+                <h1>🏆 ПОБЕДА!</h1>
+            </div>
+        </div>
+
+        <div id="factory-gate-container">
+            <h3>✨ ЗАВОД ЗАПУЩЕН! ✨</h3>
+            <picture>
+                <source srcset="assets/gate.webp" type="image/webp">
+                <img id="factory-gate-img" src="assets/gate.webp" alt="Проходная">
+            </picture>
+            </div>
+
+        <!-- После прохождения уровня — только возврат к уровням (кнопка вверху + эта снизу) -->
+    </div>
+
+    <!-- Экран 4: Игра 2048 (Уровень 3) -->
+    <div id="screen-level3" class="screen">
+        <h2>🏭 Цех сборки деталей</h2>
+        <p>Соединяй детали, чтобы собрать <b>Прибор (256)</b>!</p>
+
+        <div class="game-2048-header">
+            <div class="score-box">Счет: <span id="score-2048">0</span></div>
+            <button data-action="init-2048" style="font-size: 20px; background:none; border:none; cursor:pointer;">🔄</button>
+
+    </div>
+
+        <!-- Контейнер игры (relative) -->
+        <div style="position: relative; width: 300px; margin: 0 auto;">
+            <div id="grid-container">
+                <!-- Ячейки сетки -->
+            </div>
+
+            <!-- ОВЕРЛЕЙ ПОРАЖЕНИЯ -->
+            <div id="overlay-2048-gameover" class="game-overlay" style="border-radius: 10px;">
+                <h3>Цех переполнен! 😔</h3>
+                <p style="color: white; font-size: 14px;">Места для деталей не осталось.</p>
+                <button class="btn-restart" data-action="init-2048">🔄 Очистить линию</button>
+            </div>
+
+            <!-- ОВЕРЛЕЙ ПОБЕДЫ -->
+            <div id="overlay-2048-victory" class="game-overlay" style="border-radius: 10px;">
+                <h1>🏆 ГОТОВО!</h1>
+                <p style="color: #f1c40f;">Прибор собран успешно!</p>
+            </div>
+        </div>
+
+        <p class="instruction">Свайпай (листай) пальцем,<br>чтобы двигать детали</p>
+
+        <!-- После прохождения уровня — только возврат к уровням (кнопка вверху) -->
+    </div>
+
+    <!-- Экран 5: Квиз (Уровень 4) -->
+    <div id="screen-level4" class="screen">
+        <h2>🧠 Цех умных решений</h2>
+        <div id="quiz-progress">Вопрос 1</div>
+        <div id="quiz-container">
+            <div id="question-text">...</div>
+            <div id="answers-block"></div>
+        </div>
+    </div>
+
+<!-- Экран 5: Финал (Общий итог) -->
+    <div id="screen-final" class="screen">
+        <h1>🎉 ФИНИШ!</h1>
+        <p>Твоя смена на заводе окончена.</p>
+
+        <!-- Динамический список: показываем только сыгранные уровни -->
+        <div class="final-score-box">
+            <div id="final-stats-list"></div>
+            <hr>
+            <div class="score-row total">
+                <span>ИТОГО (очки):</span> <span id="final-score-val">0</span>
+            </div>
+        </div>
+
+        <div id="final-actions" style="display:flex; gap:10px; justify-content:center; flex-wrap:wrap; margin-top:12px;">
+            <button class="btn btn-secondary" data-action="show-levels">← К уровням</button>
+            <button class="btn" data-action="final-send-stats">К статистике</button>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>
+

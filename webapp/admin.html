@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>АПЗ — админ-панель</title>
+  <link rel="stylesheet" href="styles.css" />
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+  <div class="screen active" style="min-height:100vh; padding-top:18px;">
+    <h1>🛠 Админ-панель АПЗ</h1>
+    <p class="muted" id="who">Проверка доступа…</p>
+
+    <div style="display:flex; gap:10px; justify-content:center; flex-wrap:wrap; margin:12px 0;">
+      <button class="btn" id="btn-refresh">Обновить</button>
+      <button class="btn btn-secondary" id="btn-reset-scores">Сбросить ВСЮ статистику</button>
+      <button class="btn btn-secondary" id="btn-back">← Выйти</button>
+    </div>
+
+    <div class="level-list" style="max-width:900px; margin:0 auto;">
+      <div class="level-card">
+        <div class="level-title">📊 Статистика (ТОП-10)</div>
+        <div class="level-stats">
+          <pre id="top" style="white-space:pre-wrap; margin:0;">—</pre>
+        </div>
+      </div>
+
+      <div class="level-card">
+        <div class="level-title">👥 Пользователи</div>
+        <div class="level-stats muted">Удаление по Telegram ID</div>
+        <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+          <input id="delete-id" type="number" placeholder="Telegram ID" style="flex:1; min-width:220px; padding:10px; border-radius:12px; border:1px solid rgba(255,255,255,0.15); background:rgba(0,0,0,0.15); color:#fff;" />
+          <button class="btn" id="btn-delete-user">Удалить пользователя</button>
+        </div>
+        <div class="level-stats" style="margin-top:10px;">
+          <div class="muted">Первые 200:</div>
+          <pre id="users" style="white-space:pre-wrap; margin:0;">—</pre>
+        </div>
+      </div>
+
+      <div class="level-card">
+        <div class="level-title">🎛 Уровни (вкл/выкл)</div>
+        <div class="level-stats muted">Отключенные уровни не видны/недоступны игрокам.</div>
+        <div id="levels" style="display:grid; gap:10px; margin-top:10px;"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="admin.js"></script>
+</body>
+</html>
