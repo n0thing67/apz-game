@@ -1,0 +1,179 @@
+import json
+import os
+
+from aiogram import Router, F, types
+from aiogram.filters import Command
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, WebAppInfo
+
+from database.db import (
+    register_user,
+    update_score,
+    get_top_users,
+    get_user,
+)
+
+router = Router()
+
+# --- Админы ---
+raw_admins = os.getenv("ADMIN_IDS", "")
+ADMIN_IDS = {int(x.strip()) for x in raw_admins.split(",") if x.strip().isdigit()}
+
+
+def is_admin(user_id: int) -> bool:
+    return user_id in ADMIN_IDS
+
+
+# --- FSM регистрация ---
+class RegState(StatesGroup):
+    waiting_for_fullname = State()
+    waiting_for_age = State()
+
+
+# URL мини-веб-приложения. Если не задан, остаётся старый вариант.
+WEBAPP_URL = os.getenv("WEBAPP_URL", "https://n0thing67.github.io/APZ-games/").rstrip("/")
+
+KB_FACTORY = ReplyKeyboardMarkup(
+    keyboard=[
+        [
+            KeyboardButton(
+                text="🏭 Зайти на завод (Играть)",
+                web_app=WebAppInfo(url=f"{WEBAPP_URL}/"),
+            )
+        ]
+    ],
+    resize_keyboard=True,
+)
+
+
+def admin_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [
+                KeyboardButton(
+                    text="🛠 Админ-панель",
+                    web_app=WebAppInfo(url=f"{WEBAPP_URL}/admin.html"),
+                )
+            ]
+        ],
+        resize_keyboard=True,
+    )
+
+
+@router.message(Command("start"))
+async def cmd_start(message: types.Message, state: FSMContext):
+    # Сбрасываем возможное состояние регистрации
+    await state.clear()
+
+    user = await get_user(message.from_user.id)
+    if user:
+        _, first_name, last_name, age, score = user
+        await message.answer(
+            f"С возвращением, {first_name}! Нажми кнопку ниже, чтобы начать испытание.",
+            reply_markup=KB_FACTORY,
+        )
+        return
+
+    await message.answer(
+        "Добро пожаловать на АПЗ! Для начала работы, пожалуйста, представьтесь.\n"
+        "✍️ Введите *Имя и Фамилию* одним сообщением (через пробел).\n"
+        "Пример: Иван Иванов",
+        parse_mode="Markdown",
+    )
+    await state.set_state(RegState.waiting_for_fullname)
+
+
+@router.message(RegState.waiting_for_fullname)
+async def process_fullname(message: types.Message, state: FSMContext):
+    text = (message.text or "").strip()
+
+    # Разбиваем по пробелам, убираем пустые куски
+    parts = [p for p in text.split() if p]
+
+    # Нужно минимум 2 слова: имя + фамилия
+    if len(parts) < 2:
+        await message.answer(
+            "❌ Нужно ввести *Имя и Фамилию* через пробел.\n"
+            "Пример: Иван Иванов",
+            parse_mode="Markdown",
+        )
+        return
+
+    first_name = parts[0]
+    last_name = " ".join(parts[1:])  # фамилия может быть составной
+
+    await state.update_data(first_name=first_name, last_name=last_name)
+    await message.answer("Сколько вам лет?")
+    await state.set_state(RegState.waiting_for_age)
+
+
+@router.message(RegState.waiting_for_age)
+async def process_age(message: types.Message, state: FSMContext):
+    if not (message.text or "").isdigit():
+        await message.answer("Возраст должен быть числом. Попробуйте еще раз.")
+        return
+
+    data = await state.get_data()
+    user_id = message.from_user.id
+    name = data["first_name"]
+    surname = data["last_name"]
+    age = int(message.text)
+
+    await register_user(user_id, name, surname, age)
+    await state.clear()
+
+    await message.answer(
+        f"Регистрация пройдена, {name}! Нажми кнопку ниже, чтобы начать испытание.",
+        reply_markup=KB_FACTORY,
+    )
+
+
+@router.message(F.web_app_data)
+async def handle_web_app_data(message: types.Message):
+    data = json.loads(message.web_app_data.data)
+    score = data.get("score", 0)
+
+    await update_score(message.from_user.id, score)
+    await message.answer(
+        f"🚀 Результат получен! Твой счет: {score}.\n"
+        f"Используй /stats, чтобы посмотреть таблицу лидеров."
+    )
+
+
+# --- Админ-панель ---
+@router.message(Command("admin"))
+async def cmd_admin(message: types.Message):
+    if not is_admin(message.from_user.id):
+        await message.answer("⛔️ Нет доступа.")
+        return
+
+    await message.answer(
+        "🛠 Открываю админ-панель.\n"
+        "Там можно смотреть статистику, удалять пользователей и включать/выключать уровни.",
+        reply_markup=admin_keyboard(),
+    )
+
+
+# Команда статистики
+@router.message(Command("stats"))
+async def cmd_stats(message: types.Message):
+    users = await get_top_users()
+
+    if not users:
+        await message.answer("Таблица лидеров пока пуста.")
+        return
+
+    text_lines = ["🏆 **ТОП ЛУЧШИХ РАБОТНИКОВ АПЗ:**\n"]
+    for i, (fname, lname, score) in enumerate(users, 1):
+        if i == 1:
+            medal = "🥇"
+        elif i == 2:
+            medal = "🥈"
+        elif i == 3:
+            medal = "🥉"
+        else:
+            medal = f"{i}."
+        text_lines.append(f"{medal} {fname} {lname} — {score} баллов")
+
+    await message.answer("\n".join(text_lines), parse_mode="Markdown")
