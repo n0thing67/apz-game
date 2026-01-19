@@ -41,7 +41,7 @@ def _verify_telegram_webapp_init_data(init_data: str, bot_token: str) -> dict | 
     # data_check_string: key=value\n... отсортировано по ключу
     data_check_string = "\n".join(f"{k}={params[k]}" for k in sorted(params.keys()))
 
-    secret_key = hashlib.sha256(bot_token.encode("utf-8")).digest()
+    secret_key = hmac.new(b"WebAppData", bot_token.encode("utf-8"), hashlib.sha256).digest()
     calc_hash = hmac.new(secret_key, data_check_string.encode("utf-8"), hashlib.sha256).hexdigest()
 
     if not hmac.compare_digest(calc_hash, their_hash):
