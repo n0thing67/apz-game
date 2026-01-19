@@ -31,29 +31,38 @@ class RegState(StatesGroup):
     waiting_for_age = State()
 
 
-# URL мини-веб-приложения. Если не задан, остаётся старый вариант.
-WEBAPP_URL = os.getenv("WEBAPP_URL", "https://n0thing67.github.io/APZ-games/").rstrip("/")
+# --- URL'ы ---
+# Игра (GitHub Pages)
+GAME_URL = os.getenv("GAME_URL", "https://n0thing67.github.io/APZ-games/").rstrip("/")
 
-KB_FACTORY = ReplyKeyboardMarkup(
-    keyboard=[
-        [
-            KeyboardButton(
-                text="🏭 Зайти на завод (Играть)",
-                web_app=WebAppInfo(url=f"{WEBAPP_URL}/"),
-            )
-        ]
-    ],
-    resize_keyboard=True,
-)
+# Админка + API (Render домен)
+# В Render поставь: ADMIN_URL = https://apz-game.onrender.com
+ADMIN_URL = os.getenv("ADMIN_URL", os.getenv("WEBAPP_URL", "")).rstrip("/")
 
 
-def admin_keyboard() -> ReplyKeyboardMarkup:
+def build_game_keyboard() -> ReplyKeyboardMarkup:
+    # Игра должна открываться как WebApp (не обычной ссылкой)
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [
+                KeyboardButton(
+                    text="🏭 Зайти на завод (Играть)",
+                    web_app=WebAppInfo(url=f"{GAME_URL}/"),
+                )
+            ]
+        ],
+        resize_keyboard=True,
+    )
+
+
+def build_admin_keyboard() -> ReplyKeyboardMarkup:
+    # Админка должна открываться с Render-домена (где API и валидация initData)
     return ReplyKeyboardMarkup(
         keyboard=[
             [
                 KeyboardButton(
                     text="🛠 Админ-панель",
-                    web_app=WebAppInfo(url=f"{WEBAPP_URL}/admin.html"),
+                    web_app=WebAppInfo(url=f"{ADMIN_URL}/admin.html"),
                 )
             ]
         ],
@@ -71,7 +80,7 @@ async def cmd_start(message: types.Message, state: FSMContext):
         _, first_name, last_name, age, score = user
         await message.answer(
             f"С возвращением, {first_name}! Нажми кнопку ниже, чтобы начать испытание.",
-            reply_markup=KB_FACTORY,
+            reply_markup=build_game_keyboard(),
         )
         return
 
@@ -87,11 +96,8 @@ async def cmd_start(message: types.Message, state: FSMContext):
 @router.message(RegState.waiting_for_fullname)
 async def process_fullname(message: types.Message, state: FSMContext):
     text = (message.text or "").strip()
-
-    # Разбиваем по пробелам, убираем пустые куски
     parts = [p for p in text.split() if p]
 
-    # Нужно минимум 2 слова: имя + фамилия
     if len(parts) < 2:
         await message.answer(
             "❌ Нужно ввести *Имя и Фамилию* через пробел.\n"
@@ -125,16 +131,23 @@ async def process_age(message: types.Message, state: FSMContext):
 
     await message.answer(
         f"Регистрация пройдена, {name}! Нажми кнопку ниже, чтобы начать испытание.",
-        reply_markup=KB_FACTORY,
+        reply_markup=build_game_keyboard(),
     )
 
 
 @router.message(F.web_app_data)
 async def handle_web_app_data(message: types.Message):
-    data = json.loads(message.web_app_data.data)
-    score = data.get("score", 0)
+    # Важно: если web_app_data не JSON, это упадёт.
+    # Оставляю как есть, но с защитой:
+    try:
+        data = json.loads(message.web_app_data.data)
+    except Exception:
+        await message.answer("⚠️ Не удалось прочитать данные из WebApp.")
+        return
 
+    score = int(data.get("score", 0) or 0)
     await update_score(message.from_user.id, score)
+
     await message.answer(
         f"🚀 Результат получен! Твой счет: {score}.\n"
         f"Используй /stats, чтобы посмотреть таблицу лидеров."
@@ -148,14 +161,21 @@ async def cmd_admin(message: types.Message):
         await message.answer("⛔️ Нет доступа.")
         return
 
+    if not ADMIN_URL:
+        await message.answer(
+            "⚠️ Админка не настроена.\n"
+            "В Render нужно добавить переменную окружения ADMIN_URL (домен Render)."
+        )
+        return
+
     await message.answer(
         "🛠 Открываю админ-панель.\n"
         "Там можно смотреть статистику, удалять пользователей и включать/выключать уровни.",
-        reply_markup=admin_keyboard(),
+        reply_markup=build_admin_keyboard(),
     )
 
 
-# Команда статистики
+# --- Команда статистики ---
 @router.message(Command("stats"))
 async def cmd_stats(message: types.Message):
     users = await get_top_users()
