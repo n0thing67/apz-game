@@ -14,6 +14,10 @@ function fmtUser(u) {
   return `${u.telegram_id} — ${u.first_name} ${u.last_name} (${u.age}) | ${u.score}`;
 }
 
+document.addEventListener("DOMContentLoaded", () => {
+  init().catch((e) => alert(e.message));
+});
+
 async function init() {
   const $who = byId("who");
   const $top = byId("top");
@@ -30,113 +34,131 @@ async function init() {
     return;
   }
 
-  // Всегда берём актуальный initData (иногда появляется чуть позже после ready())
+  // Иногда initData появляется не сразу — берём актуальное значение перед каждым запросом.
   function getInitData() {
-    const initData = tg?.initData || "";
-    return initData;
+    return tg?.initData || "";
   }
 
   async function api(path, opts = {}) {
     const initData = getInitData();
-    if (!initData) {
-      // Это главная причина 401 при открытии не как WebApp или при проблеме с запуском
-      throw new Error("Bad initData: открой админку внутри Telegram через /admin → кнопку, затем попробуй ещё раз.");
-    }
+    if (!initData) throw new Error("Bad initData: открой админку внутри Telegram через /admin → кнопку.");
 
-    const headers = Object.assign(
-      { "X-Telegram-InitData": initData },
-      opts.headers || {}
-    );
-
+    const headers = Object.assign({ "X-Telegram-InitData": initData }, opts.headers || {});
     const method = (opts.method || "GET").toUpperCase();
-
-    // JSON по умолчанию для POST/PUT/PATCH
-    if (method !== "GET" && !headers["Content-Type"]) {
-      headers["Content-Type"] = "application/json";
-    }
+    if (method !== "GET" && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
 
     const res = await fetch(path, { ...opts, headers });
-
     if (!res.ok) {
       const t = await res.text().catch(() => "");
       throw new Error(`${res.status} ${t || res.statusText}`);
     }
-
-    // Если ответ пустой — вернём null
     const ct = res.headers.get("content-type") || "";
-    if (!ct.includes("application/json")) {
-      return await res.text().catch(() => "");
-    }
+    if (!ct.includes("application/json")) return await res.text().catch(() => "");
     return res.json();
   }
 
-  async function refresh() {
+  // --- Tabs ---
+  const tabs = [
+    { key: "stats", tab: byId("tab-stats"), panel: byId("panel-stats"), loader: renderStats },
+    { key: "users", tab: byId("tab-users"), panel: byId("panel-users"), loader: renderUsers },
+    { key: "levels", tab: byId("tab-levels"), panel: byId("panel-levels"), loader: renderLevels },
+  ];
+
+  let activeKey = "stats";
+
+  function setActiveTab(key) {
+    activeKey = key;
+    tabs.forEach((t) => {
+      const isActive = t.key === key;
+      t.tab.classList.toggle("active", isActive);
+      t.panel.setAttribute("aria-hidden", isActive ? "false" : "true");
+    });
+  }
+
+  async function refreshActive() {
     $who.textContent = "Загрузка…";
-    $top.textContent = "…";
-    $users.textContent = "…";
-    $levels.innerHTML = "";
-
-    // 1) Админ-стата (тут у тебя и был 401)
-    const data = await api("/api/admin/stats");
-    $who.textContent = "Доступ подтвержден";
-
-    // TOP
-    if (!data.top || data.top.length === 0) {
-      $top.textContent = "Пока пусто";
-    } else {
-      $top.textContent = data.top
-        .map((u, i) => {
-          const medal = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `${i + 1}.`;
-          return `${medal} ${u.first_name} ${u.last_name} — ${u.score}`;
-        })
-        .join("\n");
+    try {
+      // Проверим доступ (любая админ-точка вернёт 401/403 если не админ)
+      await api("/api/admin/stats", { method: "GET" });
+      $who.textContent = "Доступ подтвержден";
+    } catch (e) {
+      $who.textContent = "Нет доступа: " + e.message;
+      // Покажем пусто, но не падаем
+      $top.textContent = "—";
+      $users.textContent = "—";
+      $levels.innerHTML = "";
+      return;
     }
 
-    // USERS
+    const tab = tabs.find((t) => t.key === activeKey);
+    if (tab && tab.loader) await tab.loader();
+  }
+
+  // --- Renderers ---
+  async function renderStats() {
+    $top.textContent = "…";
+    const data = await api("/api/admin/stats");
+    if (!data.top || data.top.length === 0) {
+      $top.textContent = "Пока пусто";
+      return;
+    }
+    $top.textContent = data.top
+      .map((u, i) => {
+        const medal = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `${i + 1}.`;
+        return `${medal} ${u.first_name} ${u.last_name} — ${u.score}`;
+      })
+      .join("\n");
+  }
+
+  async function renderUsers() {
+    $users.textContent = "…";
+    const data = await api("/api/admin/stats");
     const users = (data.users || []).slice(0, 200);
     $users.textContent = users.length ? users.map(fmtUser).join("\n") : "Пока нет";
+  }
 
-    // 2) Уровни — тоже через api(), чтобы initData всегда передавалось (на всякий случай)
+  async function renderLevels() {
+    $levels.innerHTML = "";
     const levelsResp = await api("/api/levels");
     const levels = levelsResp.levels || {};
     const keys = Object.keys(levels).sort();
+    if (!keys.length) {
+      $levels.innerHTML = '<div class="muted">Нет данных по играм.</div>';
+      return;
+    }
 
     keys.forEach((key) => {
       const active = !!levels[key];
-
       const row = document.createElement("div");
       row.className = "level-card";
       row.style.margin = "0";
       row.innerHTML = `
         <div class="level-title">${esc(key)}</div>
         <div class="level-stats">Статус: <b>${active ? "ВКЛ" : "ВЫКЛ"}</b></div>
-        <button class="btn ${active ? "btn-secondary" : ""}" data-level-key="${esc(key)}" data-next="${active ? "0" : "1"}">
+        <button class="btn ${active ? "btn-secondary" : ""}" data-next="${active ? "0" : "1"}">
           ${active ? "Отключить" : "Включить"}
         </button>
       `;
-
-      row.querySelector("button").addEventListener("click", async (e) => {
-        const btn = e.currentTarget;
+      const btn = row.querySelector("button");
+      btn.addEventListener("click", async () => {
         btn.disabled = true;
         try {
           await api("/api/admin/set_level", {
             method: "POST",
             body: JSON.stringify({ level_key: key, is_active: btn.dataset.next === "1" }),
           });
-          await refresh();
-        } catch (err) {
-          alert("Ошибка: " + err.message);
+          await renderLevels();
+        } catch (e) {
+          alert("Ошибка: " + e.message);
         } finally {
           btn.disabled = false;
         }
       });
-
       $levels.appendChild(row);
     });
   }
 
-  byId("btn-refresh").addEventListener("click", () => refresh().catch((e) => alert(e.message)));
-
+  // --- Buttons ---
   byId("btn-back").addEventListener("click", () => {
     try {
       tg?.close();
@@ -145,19 +167,21 @@ async function init() {
     }
   });
 
+  byId("btn-refresh").addEventListener("click", () => refreshActive().catch((e) => alert(e.message)));
+
   byId("btn-reset-scores").addEventListener("click", async () => {
     const ok = confirm("Точно сбросить всю статистику?");
     if (!ok) return;
     try {
       await api("/api/admin/reset_scores", { method: "POST", body: "{}" });
-      await refresh();
+      await refreshActive();
     } catch (e) {
       alert("Ошибка: " + e.message);
     }
   });
 
   byId("btn-delete-user").addEventListener("click", async () => {
-    const val = byId("delete-id").value.trim();
+    const val = (byId("delete-id").value || "").trim();
     if (!val) return;
     const ok = confirm(`Удалить пользователя ${val}?`);
     if (!ok) return;
@@ -167,22 +191,24 @@ async function init() {
         body: JSON.stringify({ telegram_id: Number(val) }),
       });
       byId("delete-id").value = "";
-      await refresh();
+      // Если мы на вкладке users — обновим её
+      await refreshActive();
     } catch (e) {
       alert("Ошибка: " + e.message);
     }
   });
 
-  // Старт
-  try {
-    await refresh();
-  } catch (e) {
-    $who.textContent = "Нет доступа: " + e.message;
-    $top.textContent = "—";
-    $users.textContent = "—";
-  }
-}
+  // Tab clicks
+  tabs.forEach((t) => {
+    t.tab.addEventListener("click", async () => {
+      setActiveTab(t.key);
+      await refreshActive();
+      // поднимем к началу панели после переключения
+      try { window.scrollTo({ top: 0, behavior: "smooth" }); } catch (_) { window.scrollTo(0, 0); }
+    });
+  });
 
-document.addEventListener("DOMContentLoaded", () => {
-  init().catch((e) => alert(e.message));
-});
+  // Start
+  setActiveTab("stats");
+  await refreshActive();
+}
