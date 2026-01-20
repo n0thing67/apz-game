@@ -144,9 +144,32 @@ const LEVEL_DEFS = {
 // ==========================================
 let LEVEL_AVAIL = null; // { level_key: true/false }
 
+// Если игра открыта с GitHub Pages, API находится на Render.
+// Бот передает адрес API параметром: ?api=https://<render-app>.onrender.com
+// Также сохраняем его в localStorage, чтобы работало и при перезапуске.
+let API_BASE = '';
+try {
+    const url = new URL(window.location.href);
+    const qp = (url.searchParams.get('api') || '').trim();
+    if (qp) {
+        API_BASE = qp.replace(/\/$/, '');
+        localStorage.setItem('apzApiBaseV1', API_BASE);
+    } else {
+        API_BASE = (localStorage.getItem('apzApiBaseV1') || '').replace(/\/$/, '');
+    }
+} catch (e) {
+    API_BASE = '';
+}
+
+function apiUrl(path) {
+    if (!API_BASE) return path;
+    if (path.startsWith('http')) return path;
+    return API_BASE + path;
+}
+
 async function loadLevelAvailability() {
     try {
-        const res = await fetch('/api/levels', { cache: 'no-store' });
+        const res = await fetch(apiUrl('/api/levels'), { cache: 'no-store' });
         const data = await res.json();
         LEVEL_AVAIL = data && data.levels ? data.levels : null;
     } catch (e) {
@@ -1708,18 +1731,12 @@ let currentQuestionIndex = 0;
 let questionStartTime = 0;
 
 function initQuiz() {
-    // Сбрасываем блокировки и скрытие контейнера (иначе pointer-events: none останется)
-    isAnswering = false;
-    const qc = document.getElementById('quiz-container');
-    if (qc) qc.classList.remove('quiz-hidden');
-
     // Each run: randomize question order + answer order
     quizQuestions = prepareQuizQuestions(questions);
     currentQuestionIndex = 0;
     levelScores[4] = 0;
     renderQuestion();
 }
-
 
 function renderQuestion() {
     const qData = quizQuestions[currentQuestionIndex];
@@ -1788,14 +1805,13 @@ function handleAnswerClick(btn, index, correctIndex) {
 }
 
 function finishQuizLevel() {
-    const qc = document.getElementById('quiz-container');
-    if (qc) qc.classList.remove('quiz-hidden');
-    isAnswering = false;
-
+    // По требованиям: после завершения квиза — такое же поведение, как у остальных уровней:
+    // остаёмся на экране уровня и показываем нижнюю кнопку "К уровням".
     const timeMs = Date.now() - levelStartTime;
     const score = levelScores[4] || 0;
     finishLevel({ score, timeMs });
 
+    // UI: показываем сообщение о завершении и убираем варианты ответов
     const qText = document.getElementById('question-text');
     const answers = document.getElementById('answers-block');
     const progress = document.getElementById('quiz-progress');
@@ -1803,7 +1819,6 @@ function finishQuizLevel() {
     if (qText) qText.textContent = 'Ты прошёл квиз! Теперь можно вернуться к уровням.';
     if (answers) answers.innerHTML = '';
 }
-
 
 // === ФИНАЛ: ОТПРАВКА ДАННЫХ ===
 function closeApp() {
