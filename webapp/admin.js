@@ -20,7 +20,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
 async function init() {
   const $who = byId("who");
-  const $top = byId("top");
+  const $statsAll = byId("stats-all");
   const $users = byId("users");
   const $levels = byId("levels");
 
@@ -101,15 +101,28 @@ async function init() {
   }
 
   async function loadStats() {
-    $top.textContent = "…";
+    $statsAll.textContent = "…";
     const data = await api("/api/admin/stats");
-    if (!data.top || data.top.length === 0) {
-      $top.textContent = "Пока пусто";
+
+    const users = (data.users || []).slice();
+    if (!users.length) {
+      $statsAll.textContent = "Пока пусто";
       return;
     }
-    $top.textContent = data.top
+
+    // Сортируем по очкам (по убыванию), дальше по имени для стабильности
+    users.sort((a, b) => {
+      const ds = (b.score || 0) - (a.score || 0);
+      if (ds !== 0) return ds;
+      const an = `${a.first_name || ""} ${a.last_name || ""}`.trim();
+      const bn = `${b.first_name || ""} ${b.last_name || ""}`.trim();
+      return an.localeCompare(bn, "ru");
+    });
+
+    $statsAll.textContent = users
       .map((u, i) => {
-        const medal = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `${i + 1}.`;
+        const n = i + 1;
+        const medal = n === 1 ? "🥇" : n === 2 ? "🥈" : n === 3 ? "🥉" : `${n}.`;
         return `${medal} ${u.first_name} ${u.last_name} — ${u.score}`;
       })
       .join("\n");
@@ -133,13 +146,22 @@ async function init() {
       return;
     }
 
+    function levelEmoji(levelKey) {
+      const k = String(levelKey || "").toLowerCase();
+      if (k.includes("puzzle") || k.includes("logo") || k.includes(" пазл") || k.includes("пазл")) return "🧩";
+      if (k.includes("2048")) return "🔢";
+      if (k.includes("quiz") || k.includes("квиз") || k.includes("test") || k.includes("тест")) return "❓";
+      if (k.includes("jumper") || k.includes("doodle") || k.includes("джампер") || k.includes("прыж")) return "🦘";
+      return "🎮";
+    }
+
     keys.forEach((key) => {
       const active = !!levels[key];
       const row = document.createElement("div");
       row.className = "level-card";
       row.style.margin = "0";
       row.innerHTML = `
-        <div class="level-title">${esc(key)}</div>
+        <div class="level-title">${levelEmoji(key)} ${esc(key)}</div>
         <div class="level-stats">Статус: <b>${active ? "ВКЛ" : "ВЫКЛ"}</b></div>
         <button class="btn ${active ? "btn-secondary" : ""}" data-next="${active ? "0" : "1"}">
           ${active ? "Отключить" : "Включить"}
@@ -198,25 +220,10 @@ async function init() {
   });
 
   // --- HOME actions ---
-  byId("btn-refresh-home").addEventListener("click", () => checkAccess().catch((e) => alert(e.message)));
-
-  byId("btn-reset-scores-home").addEventListener("click", async () => {
-    const ok = confirm("Точно сбросить всю статистику?");
-    if (!ok) return;
-    try {
-      await api("/api/admin/reset_scores", { method: "POST", body: "{}" });
-      await checkAccess();
-      alert("Статистика сброшена.");
-    } catch (e) {
-      alert("Ошибка: " + e.message);
-    }
-  });
-
   byId("btn-exit").addEventListener("click", exit);
 
   // --- STATS page actions ---
   byId("back-from-stats").addEventListener("click", () => showScreen("home"));
-  byId("exit-from-stats").addEventListener("click", exit);
   byId("btn-refresh-stats").addEventListener("click", () => loadStats().catch((e) => alert(e.message)));
   byId("btn-reset-scores-stats").addEventListener("click", async () => {
     const ok = confirm("Точно сбросить всю статистику?");
@@ -231,7 +238,6 @@ async function init() {
 
   // --- USERS page actions ---
   byId("back-from-users").addEventListener("click", () => showScreen("home"));
-  byId("exit-from-users").addEventListener("click", exit);
   byId("btn-refresh-users").addEventListener("click", () => loadUsers().catch((e) => alert(e.message)));
 
   byId("btn-delete-user").addEventListener("click", async () => {
@@ -250,9 +256,9 @@ async function init() {
       alert("Ошибка: " + e.message);
     }
   });
+
   // --- LEVELS page actions ---
   byId("back-from-levels").addEventListener("click", () => showScreen("home"));
-  byId("exit-from-levels").addEventListener("click", exit);
   byId("btn-refresh-levels").addEventListener("click", () => loadLevels().catch((e) => alert(e.message)));
 
   // Start: stay on home, verify access once
