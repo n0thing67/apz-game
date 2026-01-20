@@ -100,6 +100,8 @@ body.admin-body {
     max-height: none;
     overflow: visible;
     text-align: center;
+    /* разрешаем свайп-скролл (у .screen по умолчанию touch-action: none) */
+    touch-action: pan-y;
 }
 
 .admin-wrap {
@@ -197,6 +199,16 @@ body.admin-body {
     display: grid;
     gap: 10px;
     margin-top: 10px;
+}
+
+/* На странице "Игры" список может быть длинным — делаем прокрутку удобной */
+#screen-admin-levels .admin-levels {
+    max-height: 60vh;
+    max-height: 60dvh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
+    padding-right: 4px;
 }
 
 @media (max-width: 720px) {
