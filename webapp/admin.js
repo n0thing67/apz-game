@@ -250,7 +250,6 @@ async function init() {
       alert("Ошибка: " + e.message);
     }
   });
-
   // --- LEVELS page actions ---
   byId("back-from-levels").addEventListener("click", () => showScreen("home"));
   byId("exit-from-levels").addEventListener("click", exit);
