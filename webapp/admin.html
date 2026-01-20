@@ -22,12 +22,8 @@
       </div>
 
       <div class="admin-actions">
-        <button class="btn" id="btn-refresh-home">Обновить</button>
-        <button class="btn btn-secondary" id="btn-reset-scores-home">Сбросить всю статистику</button>
         <button class="btn btn-secondary" id="btn-exit">← Выйти</button>
       </div>
-
-      <p class="muted" style="margin-top:10px;">Совет: все действия делаются внутри Telegram WebApp.</p>
     </div>
   </div>
 
@@ -35,9 +31,7 @@
   <div id="screen-admin-stats" class="screen admin-screen" aria-hidden="true">
     <div class="admin-wrap">
       <div class="admin-page-head">
-        <button class="btn btn-secondary" id="back-from-stats">← Назад</button>
         <div class="admin-page-title">📊 Статистика</div>
-        <button class="btn btn-secondary" id="exit-from-stats">Выйти</button>
       </div>
 
       <div class="admin-actions">
@@ -46,10 +40,14 @@
       </div>
 
       <div class="level-card" style="margin:0;">
-        <div class="level-title">🏆 ТОП-10</div>
+        <div class="level-title">🏆 Все участники</div>
         <div class="level-stats">
-          <pre id="top" style="white-space:pre-wrap; margin:0;">—</pre>
+          <pre id="stats-all" style="white-space:pre-wrap; margin:0;">—</pre>
         </div>
+      </div>
+
+      <div class="admin-actions" style="margin-top:14px;">
+        <button class="btn btn-secondary" id="back-from-stats">← Назад</button>
       </div>
     </div>
   </div>
@@ -58,9 +56,7 @@
   <div id="screen-admin-users" class="screen admin-screen" aria-hidden="true">
     <div class="admin-wrap">
       <div class="admin-page-head">
-        <button class="btn btn-secondary" id="back-from-users">← Назад</button>
         <div class="admin-page-title">👥 Пользователи</div>
-        <button class="btn btn-secondary" id="exit-from-users">Выйти</button>
       </div>
 
       <div class="level-card" style="margin:0;">
@@ -79,6 +75,10 @@
       <div class="admin-actions" style="margin-top:12px;">
         <button class="btn" id="btn-refresh-users">Обновить</button>
       </div>
+
+      <div class="admin-actions" style="margin-top:14px;">
+        <button class="btn btn-secondary" id="back-from-users">← Назад</button>
+      </div>
     </div>
   </div>
 
@@ -86,9 +86,7 @@
   <div id="screen-admin-levels" class="screen admin-screen" aria-hidden="true">
     <div class="admin-wrap">
       <div class="admin-page-head">
-        <button class="btn btn-secondary" id="back-from-levels">← Назад</button>
         <div class="admin-page-title">🎛 Игры (вкл/выкл)</div>
-        <button class="btn btn-secondary" id="exit-from-levels">Выйти</button>
       </div>
 
       <div class="admin-actions">
@@ -102,6 +100,10 @@
         <div class="level-stats muted" style="margin-top:10px;">
           Если игра открыта с GitHub Pages, бот передает ссылку на API параметром <b>?api=...</b>.
         </div>
+      </div>
+
+      <div class="admin-actions" style="margin-top:14px;">
+        <button class="btn btn-secondary" id="back-from-levels">← Назад</button>
       </div>
     </div>
   </div>
