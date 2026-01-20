@@ -8,42 +8,61 @@
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body class="admin-body">
-  <div id="screen-admin" class="screen active" style="min-height:100vh; padding-top:18px;">
+  <div id="screen-admin" class="screen active admin-screen">
+    <div class="admin-wrap">
+      <h1>🛠 Админ-панель АПЗ</h1>
+      <p class="muted" id="who">Проверка доступа…</p>
 
-    <h1>🛠 Админ-панель АПЗ</h1>
-    <p class="muted" id="who">Проверка доступа…</p>
-
-    <div style="display:flex; gap:10px; justify-content:center; flex-wrap:wrap; margin:12px 0;">
-      <button class="btn" id="btn-refresh">Обновить</button>
-      <button class="btn btn-secondary" id="btn-reset-scores">Сбросить ВСЮ статистику</button>
-      <button class="btn btn-secondary" id="btn-back">← Выйти</button>
-    </div>
-
-    <div class="level-list" style="max-width:900px; margin:0 auto;">
-      <div class="level-card">
-        <div class="level-title">📊 Статистика (ТОП-10)</div>
-        <div class="level-stats">
-          <pre id="top" style="white-space:pre-wrap; margin:0;">—</pre>
-        </div>
+      <div class="admin-actions">
+        <button class="btn" id="btn-refresh">Обновить</button>
+        <button class="btn btn-secondary" id="btn-reset-scores">Сбросить всю статистику</button>
+        <button class="btn btn-secondary" id="btn-back">← Выйти</button>
       </div>
 
-      <div class="level-card">
-        <div class="level-title">👥 Пользователи</div>
-        <div class="level-stats muted">Удаление по Telegram ID</div>
-        <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
-          <input id="delete-id" type="number" placeholder="Telegram ID" style="flex:1; min-width:220px; padding:10px; border-radius:12px; border:1px solid rgba(255,255,255,0.15); background:rgba(0,0,0,0.15); color:#fff;" />
-          <button class="btn" id="btn-delete-user">Удалить пользователя</button>
-        </div>
-        <div class="level-stats" style="margin-top:10px;">
-          <div class="muted">Первые 200:</div>
-          <pre id="users" style="white-space:pre-wrap; margin:0;">—</pre>
-        </div>
+      <div class="admin-nav">
+        <button class="btn admin-tab" id="tab-stats" data-tab="stats">📊 Статистика</button>
+        <button class="btn admin-tab" id="tab-users" data-tab="users">👥 Пользователи</button>
+        <button class="btn admin-tab" id="tab-levels" data-tab="levels">🎛 Игры</button>
       </div>
 
-      <div class="level-card">
-        <div class="level-title">🎛 Уровни (вкл/выкл)</div>
-        <div class="level-stats muted">Отключенные уровни не видны/недоступны игрокам.</div>
-        <div id="levels" style="display:grid; gap:10px; margin-top:10px;"></div>
+      <div class="admin-panels">
+        <!-- STATS -->
+        <section class="admin-panel" id="panel-stats" data-panel="stats" aria-hidden="false">
+          <div class="level-card" style="margin:0;">
+            <div class="level-title">🏆 ТОП-10</div>
+            <div class="level-stats">
+              <pre id="top" style="white-space:pre-wrap; margin:0;">—</pre>
+            </div>
+          </div>
+        </section>
+
+        <!-- USERS -->
+        <section class="admin-panel" id="panel-users" data-panel="users" aria-hidden="true">
+          <div class="level-card" style="margin:0;">
+            <div class="level-title">👥 Пользователи</div>
+            <div class="level-stats muted">Удаление по Telegram ID</div>
+            <div class="admin-row">
+              <input id="delete-id" type="number" placeholder="Telegram ID" class="admin-input" />
+              <button class="btn" id="btn-delete-user">Удалить</button>
+            </div>
+            <div class="level-stats" style="margin-top:10px;">
+              <div class="muted">Список (первые 200):</div>
+              <pre id="users" style="white-space:pre-wrap; margin:0;">—</pre>
+            </div>
+          </div>
+        </section>
+
+        <!-- LEVELS -->
+        <section class="admin-panel" id="panel-levels" data-panel="levels" aria-hidden="true">
+          <div class="level-card" style="margin:0;">
+            <div class="level-title">🎛 Игры (вкл/выкл)</div>
+            <div class="level-stats muted">Отключенные игры становятся недоступны в меню уровней у игроков.</div>
+            <div id="levels" class="admin-levels"></div>
+            <div class="level-stats muted" style="margin-top:10px;">
+              Если игра открыта с GitHub Pages, бот передает ссылку на API параметром <b>?api=...</b>.
+            </div>
+          </div>
+        </section>
       </div>
     </div>
   </div>
