@@ -43,12 +43,20 @@ ADMIN_URL = os.getenv("ADMIN_URL", os.getenv("WEBAPP_URL", "")).rstrip("/")
 
 
 def game_keyboard() -> ReplyKeyboardMarkup:
+    # Если игра лежит на GitHub Pages, а API (уровни/админка) на Render,
+    # передаем базовый URL API параметром ?api=... чтобы механика вкл/выкл игр работала.
+    try:
+        from urllib.parse import quote
+        api_part = f"?api={quote(ADMIN_URL, safe='')}" if ADMIN_URL else ""
+    except Exception:
+        api_part = f"?api={ADMIN_URL}" if ADMIN_URL else ""
+
     return ReplyKeyboardMarkup(
         keyboard=[
             [
                 KeyboardButton(
                     text="🏭 Зайти на завод (Играть)",
-                    web_app=WebAppInfo(url=f"{GAME_URL}/"),
+                    web_app=WebAppInfo(url=f"{GAME_URL}/" + api_part),
                 )
             ]
         ],
