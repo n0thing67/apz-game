@@ -108,6 +108,32 @@ body.admin-body {
     margin: 0 auto;
 }
 
+.admin-home {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+    justify-content: center;
+    margin: 16px auto 10px;
+}
+
+.admin-home-btn {
+    width: 100%;
+}
+
+.admin-page-head {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 10px;
+    align-items: center;
+    justify-items: center;
+    margin: 12px 0 10px;
+}
+
+.admin-page-title {
+    font-weight: 800;
+    text-align: center;
+}
+
 .admin-actions {
     display: flex;
     gap: 10px;
@@ -123,6 +149,8 @@ body.admin-body {
     flex-wrap: wrap;
     margin: 14px 0 10px;
 }
+
+/* Табы больше не нужны, но оставляем стили, чтобы не ломать другие части */
 
 .admin-tab {
     min-width: 160px;
@@ -169,6 +197,18 @@ body.admin-body {
     display: grid;
     gap: 10px;
     margin-top: 10px;
+}
+
+@media (max-width: 720px) {
+    .admin-home {
+        grid-template-columns: 1fr;
+    }
+    .admin-page-head {
+        grid-template-columns: 1fr;
+    }
+    .admin-page-head .btn {
+        width: 100%;
+    }
 }
 
 .screen.active {
