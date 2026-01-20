@@ -24,9 +24,39 @@ async function init() {
   const $users = byId("users");
   const $levels = byId("levels");
 
-  // Telegram WebApp init
+  const screens = {
+    home: byId("screen-admin-home"),
+    stats: byId("screen-admin-stats"),
+    users: byId("screen-admin-users"),
+    levels: byId("screen-admin-levels"),
+  };
+
+  function showScreen(key) {
+    Object.entries(screens).forEach(([k, el]) => {
+      const active = k === key;
+      if (!el) return;
+      el.classList.toggle("active", active);
+      el.setAttribute("aria-hidden", active ? "false" : "true");
+    });
+    // прокрутим к верху
+    try {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch (_) {
+      window.scrollTo(0, 0);
+    }
+  }
+
+  function exit() {
+    try {
+      tg?.close();
+    } catch (_) {
+      history.back();
+    }
+  }
+
+  // Telegram init
   try {
-    if (!tg) throw new Error("Telegram WebApp не найден. Открой админку через кнопку /admin в Telegram.");
+    if (!tg) throw new Error("Telegram WebApp не найден. Открой админку через /admin → кнопку в Telegram.");
     tg.ready();
     tg.expand();
   } catch (e) {
@@ -34,7 +64,6 @@ async function init() {
     return;
   }
 
-  // Иногда initData появляется не сразу — берём актуальное значение перед каждым запросом.
   function getInitData() {
     return tg?.initData || "";
   }
@@ -52,50 +81,26 @@ async function init() {
       const t = await res.text().catch(() => "");
       throw new Error(`${res.status} ${t || res.statusText}`);
     }
+
     const ct = res.headers.get("content-type") || "";
     if (!ct.includes("application/json")) return await res.text().catch(() => "");
     return res.json();
   }
 
-  // --- Tabs ---
-  const tabs = [
-    { key: "stats", tab: byId("tab-stats"), panel: byId("panel-stats"), loader: renderStats },
-    { key: "users", tab: byId("tab-users"), panel: byId("panel-users"), loader: renderUsers },
-    { key: "levels", tab: byId("tab-levels"), panel: byId("panel-levels"), loader: renderLevels },
-  ];
-
-  let activeKey = "stats";
-
-  function setActiveTab(key) {
-    activeKey = key;
-    tabs.forEach((t) => {
-      const isActive = t.key === key;
-      t.tab.classList.toggle("active", isActive);
-      t.panel.setAttribute("aria-hidden", isActive ? "false" : "true");
-    });
-  }
-
-  async function refreshActive() {
-    $who.textContent = "Загрузка…";
+  // --- Data loaders ---
+  async function checkAccess() {
+    $who.textContent = "Проверка доступа…";
     try {
-      // Проверим доступ (любая админ-точка вернёт 401/403 если не админ)
       await api("/api/admin/stats", { method: "GET" });
       $who.textContent = "Доступ подтвержден";
+      return true;
     } catch (e) {
       $who.textContent = "Нет доступа: " + e.message;
-      // Покажем пусто, но не падаем
-      $top.textContent = "—";
-      $users.textContent = "—";
-      $levels.innerHTML = "";
-      return;
+      return false;
     }
-
-    const tab = tabs.find((t) => t.key === activeKey);
-    if (tab && tab.loader) await tab.loader();
   }
 
-  // --- Renderers ---
-  async function renderStats() {
+  async function loadStats() {
     $top.textContent = "…";
     const data = await api("/api/admin/stats");
     if (!data.top || data.top.length === 0) {
@@ -110,18 +115,19 @@ async function init() {
       .join("\n");
   }
 
-  async function renderUsers() {
+  async function loadUsers() {
     $users.textContent = "…";
     const data = await api("/api/admin/stats");
     const users = (data.users || []).slice(0, 200);
     $users.textContent = users.length ? users.map(fmtUser).join("\n") : "Пока нет";
   }
 
-  async function renderLevels() {
+  async function loadLevels() {
     $levels.innerHTML = "";
     const levelsResp = await api("/api/levels");
     const levels = levelsResp.levels || {};
     const keys = Object.keys(levels).sort();
+
     if (!keys.length) {
       $levels.innerHTML = '<div class="muted">Нет данных по играм.</div>';
       return;
@@ -139,6 +145,7 @@ async function init() {
           ${active ? "Отключить" : "Включить"}
         </button>
       `;
+
       const btn = row.querySelector("button");
       btn.addEventListener("click", async () => {
         btn.disabled = true;
@@ -147,38 +154,85 @@ async function init() {
             method: "POST",
             body: JSON.stringify({ level_key: key, is_active: btn.dataset.next === "1" }),
           });
-          await renderLevels();
+          await loadLevels();
         } catch (e) {
           alert("Ошибка: " + e.message);
         } finally {
           btn.disabled = false;
         }
       });
+
       $levels.appendChild(row);
     });
   }
 
-  // --- Buttons ---
-  byId("btn-back").addEventListener("click", () => {
+  // --- Navigation buttons (HOME) ---
+  byId("go-stats").addEventListener("click", async () => {
     try {
-      tg?.close();
-    } catch (_) {
-      history.back();
+      if (!(await checkAccess())) return;
+      showScreen("stats");
+      await loadStats();
+    } catch (e) {
+      alert(e.message);
     }
   });
 
-  byId("btn-refresh").addEventListener("click", () => refreshActive().catch((e) => alert(e.message)));
+  byId("go-users").addEventListener("click", async () => {
+    try {
+      if (!(await checkAccess())) return;
+      showScreen("users");
+      await loadUsers();
+    } catch (e) {
+      alert(e.message);
+    }
+  });
 
-  byId("btn-reset-scores").addEventListener("click", async () => {
+  byId("go-levels").addEventListener("click", async () => {
+    try {
+      if (!(await checkAccess())) return;
+      showScreen("levels");
+      await loadLevels();
+    } catch (e) {
+      alert(e.message);
+    }
+  });
+
+  // --- HOME actions ---
+  byId("btn-refresh-home").addEventListener("click", () => checkAccess().catch((e) => alert(e.message)));
+
+  byId("btn-reset-scores-home").addEventListener("click", async () => {
     const ok = confirm("Точно сбросить всю статистику?");
     if (!ok) return;
     try {
       await api("/api/admin/reset_scores", { method: "POST", body: "{}" });
-      await refreshActive();
+      await checkAccess();
+      alert("Статистика сброшена.");
     } catch (e) {
       alert("Ошибка: " + e.message);
     }
   });
+
+  byId("btn-exit").addEventListener("click", exit);
+
+  // --- STATS page actions ---
+  byId("back-from-stats").addEventListener("click", () => showScreen("home"));
+  byId("exit-from-stats").addEventListener("click", exit);
+  byId("btn-refresh-stats").addEventListener("click", () => loadStats().catch((e) => alert(e.message)));
+  byId("btn-reset-scores-stats").addEventListener("click", async () => {
+    const ok = confirm("Точно сбросить всю статистику?");
+    if (!ok) return;
+    try {
+      await api("/api/admin/reset_scores", { method: "POST", body: "{}" });
+      await loadStats();
+    } catch (e) {
+      alert("Ошибка: " + e.message);
+    }
+  });
+
+  // --- USERS page actions ---
+  byId("back-from-users").addEventListener("click", () => showScreen("home"));
+  byId("exit-from-users").addEventListener("click", exit);
+  byId("btn-refresh-users").addEventListener("click", () => loadUsers().catch((e) => alert(e.message)));
 
   byId("btn-delete-user").addEventListener("click", async () => {
     const val = (byId("delete-id").value || "").trim();
@@ -191,24 +245,18 @@ async function init() {
         body: JSON.stringify({ telegram_id: Number(val) }),
       });
       byId("delete-id").value = "";
-      // Если мы на вкладке users — обновим её
-      await refreshActive();
+      await loadUsers();
     } catch (e) {
       alert("Ошибка: " + e.message);
     }
   });
 
-  // Tab clicks
-  tabs.forEach((t) => {
-    t.tab.addEventListener("click", async () => {
-      setActiveTab(t.key);
-      await refreshActive();
-      // поднимем к началу панели после переключения
-      try { window.scrollTo({ top: 0, behavior: "smooth" }); } catch (_) { window.scrollTo(0, 0); }
-    });
-  });
+  // --- LEVELS page actions ---
+  byId("back-from-levels").addEventListener("click", () => showScreen("home"));
+  byId("exit-from-levels").addEventListener("click", exit);
+  byId("btn-refresh-levels").addEventListener("click", () => loadLevels().catch((e) => alert(e.message)));
 
-  // Start
-  setActiveTab("stats");
-  await refreshActive();
+  // Start: stay on home, verify access once
+  showScreen("home");
+  await checkAccess();
 }
