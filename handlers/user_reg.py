@@ -1,5 +1,6 @@
 import json
 import os
+
 from aiogram import Router, F, types
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
@@ -15,7 +16,9 @@ from aiogram.types import (
 from database.db import (
     register_user,
     update_score,
+    update_aptitude_top,
     get_top_users,
+    get_top_users_stats,
     get_user,
 )
 
@@ -148,13 +151,55 @@ async def handle_web_app_data(message: types.Message):
         await message.answer("⚠️ Не удалось прочитать данные из WebApp.")
         return
 
-    score = int(data.get("score", 0) or 0)
-    await update_score(message.from_user.id, score)
+    user_id = message.from_user.id
 
-    await message.answer(
-        f"🚀 Результат получен! Твой счет: {score}.\n"
-        f"Используй /stats, чтобы посмотреть таблицу лидеров."
-    )
+    # 1) Очки за игру (старый формат)
+    score_raw = data.get("score", None)
+    score = 0
+    if score_raw is not None:
+        try:
+            score = int(score_raw or 0)
+        except Exception:
+            score = 0
+
+    # 2) Ведущее направление профориентационного теста
+    aptitude_top = data.get("aptitude_top") or data.get("aptitudeTop") or None
+    if isinstance(aptitude_top, str):
+        aptitude_top = aptitude_top.strip() or None
+
+    if aptitude_top is not None:
+        await update_aptitude_top(user_id, aptitude_top)
+
+    if score_raw is not None:
+        await update_score(user_id, score)
+
+    # Ответ пользователю — без изменения общей механики
+    APT_LABEL = {
+        "TECH": "🔧 Техническое мышление",
+        "LOGIC": "🧩 Логическое мышление",
+        "CREATIVE": "🎨 Творческое мышление",
+        "HUMAN": "📖 Гуманитарное мышление",
+        "SOCIAL": "🤝 Командное мышление",
+    }
+
+    if score_raw is not None and aptitude_top is not None:
+        await message.answer(
+            f"🚀 Результат получен! Твой счёт: {score}.\n"
+            f"🧠 Профиль сохранён: {APT_LABEL.get(aptitude_top, aptitude_top)}.\n"
+            f"Используй /stats, чтобы посмотреть таблицу лидеров."
+        )
+    elif score_raw is not None:
+        await message.answer(
+            f"🚀 Результат получен! Твой счёт: {score}.\n"
+            f"Используй /stats, чтобы посмотреть таблицу лидеров."
+        )
+    elif aptitude_top is not None:
+        await message.answer(
+            f"🧠 Результат теста сохранён: {APT_LABEL.get(aptitude_top, aptitude_top)}.\n"
+            f"Используй /stats, чтобы посмотреть таблицу лидеров."
+        )
+    else:
+        await message.answer("✅ Данные получены.")
 
 
 # --- Админ-панель ---
@@ -180,15 +225,26 @@ async def cmd_admin(message: types.Message):
 
 @router.message(Command("stats"))
 async def cmd_stats(message: types.Message):
-    users = await get_top_users()
+    users = await get_top_users_stats(limit=10)
 
     if not users:
         await message.answer("Таблица лидеров пока пуста.")
         return
 
+    APT_LABEL = {
+        "TECH": "🔧 Техническое мышление",
+        "LOGIC": "🧩 Логическое мышление",
+        "CREATIVE": "🎨 Творческое мышление",
+        "HUMAN": "📖 Гуманитарное мышление",
+        "SOCIAL": "🤝 Командное мышление",
+    }
+
     text_lines = ["🏆 **ТОП ЛУЧШИХ РАБОТНИКОВ АПЗ:**\n"]
-    for i, (fname, lname, score) in enumerate(users, 1):
+    for i, (_tid, fname, lname, score, aptitude_top) in enumerate(users, 1):
         medal = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else f"{i}."
-        text_lines.append(f"{medal} {fname} {lname} — {score} баллов")
+        suffix = ""
+        if aptitude_top:
+            suffix = f" • {APT_LABEL.get(aptitude_top, aptitude_top)}"
+        text_lines.append(f"{medal} {fname} {lname} — {score} баллов{suffix}")
 
     await message.answer("\n".join(text_lines), parse_mode="Markdown")
