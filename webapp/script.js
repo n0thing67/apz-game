@@ -445,6 +445,7 @@ function newAptitudeScores() {
 
 let aptitudeIndex = 0;
 let aptitudeScores = newAptitudeScores();
+let aptitudeQuestionOrder = null;
 
 function shuffleArrayInPlace(arr) {
     for (let i = arr.length - 1; i > 0; i--) {
@@ -457,6 +458,17 @@ function shuffleArrayInPlace(arr) {
 function startAptitudeTest() {
     aptitudeIndex = 0;
     aptitudeScores = newAptitudeScores();
+
+    // Каждый запуск теста — новый порядок вопросов
+    try {
+        aptitudeQuestionOrder = shuffleArrayInPlace(APTITUDE_QUESTIONS.slice());
+    } catch (e) {
+        aptitudeQuestionOrder = APTITUDE_QUESTIONS;
+    }
+
+    // На время перепрохождения убираем старые рекомендации (⭐) из меню
+    try { clearAptitudeMenuRecommendations(); } catch (e) {}
+
     showScreen('screen-aptitude');
     renderAptitudeQuestion();
     lockClicks(300);
@@ -483,7 +495,8 @@ function renderAptitudeQuestion() {
     const pEl = document.getElementById('aptitude-progress');
     if (!qEl || !aEl || !pEl) return;
 
-    const item = APTITUDE_QUESTIONS[aptitudeIndex];
+    const qList = aptitudeQuestionOrder || APTITUDE_QUESTIONS;
+    const item = qList[aptitudeIndex];
     pEl.textContent = `Вопрос ${aptitudeIndex + 1} из ${total}`;
     qEl.textContent = item.q;
 
@@ -583,6 +596,12 @@ function renderAptitudeResult(result) {
             gamesEl.appendChild(chip);
         }
     }
+}
+
+function clearAptitudeMenuRecommendations() {
+    // Убираем отметки ⭐ и подсветку с карточек уровней в меню
+    document.querySelectorAll('.level-card.recommended').forEach(c => c.classList.remove('recommended'));
+    document.querySelectorAll('.recommend-badge').forEach(b => b.remove());
 }
 
 function applyAptitudeRecommendationsToMenu(result) {
@@ -748,6 +767,9 @@ function resetAllStats() {
     // которые могут быть не определены и ломают обработчик.
     stats = {};
     try { localStorage.removeItem(STATS_KEY); } catch (e) {}
+    // Сброс статистики профтеста "что тебе подходит?"
+    try { localStorage.removeItem(APTITUDE_STORAGE_KEY); } catch (e) {}
+    try { clearAptitudeMenuRecommendations(); } catch (e) {}
 
     // Сбросим совместимую со старым финалом статистику (очки по уровням)
     levelScores = { 1: 0, 2: 0, 3: 0, 4: 0 };
@@ -2522,8 +2544,9 @@ window.addEventListener('DOMContentLoaded', () => {
                 renderAptitudeQuestion();
             }
         } else if (action === 'restart-aptitude-test') {
-            // Сбрасываем сохранённый результат только при явном перезапуске
+            // Перепрохождение: сбрасываем результат и убираем старые ⭐ в меню
             try { localStorage.removeItem(APTITUDE_STORAGE_KEY); } catch (e) {}
+            try { clearAptitudeMenuRecommendations(); } catch (e) {}
             startAptitudeTest();
         } else if (action === 'go-levels-from-test') {
             exitToLevels();
