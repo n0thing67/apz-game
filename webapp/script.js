@@ -148,27 +148,27 @@ const APTITUDE_STORAGE_KEY = 'apzAptitudeResultV1';
 const APTITUDE_AXES = {
     TECH:   {
         name: '🔧 Техническое мышление',
-        short: 'Техническое мышление',
+        short: 'Техническое',
         hint: 'Тебе нравится разбираться, как всё устроено: собирать, чинить, улучшать и проверять на практике.'
     },
     LOGIC:  {
         name: '🧩 Логическое мышление',
-        short: 'Логическое мышление',
+        short: 'Логическое',
         hint: 'Тебе нравится думать, искать закономерности и находить самый понятный и правильный способ решения.'
     },
     CREATIVE:{
         name: '🎨 Творческое мышление',
-        short: 'Творческое мышление',
+        short: 'Творческое',
         hint: 'Тебе нравится придумывать новое, экспериментировать и делать по‑своему — креатив твоё сильное качество.'
     },
     HUMAN:  {
         name: '📖 Гуманитарное мышление',
-        short: 'Гуманитарное мышление',
+        short: 'Гуманитарное',
         hint: 'Тебе ближе слова, истории и смыслы: объяснять, рассказывать, читать/писать и понимать людей.'
     },
     SOCIAL: {
         name: '🤝 Командное мышление',
-        short: 'Командное мышление',
+        short: 'Командное',
         hint: 'Тебе нравится общаться, договариваться и работать вместе: помогать, организовывать и объединять людей.'
     }
 };
@@ -540,7 +540,6 @@ try {
 function renderAptitudeResult(result) {
     const mainEl = document.getElementById('aptitude-main');
     const secondEl = document.getElementById('aptitude-second');
-    const explainEl = document.getElementById('aptitude-explain');
     const barsEl = document.getElementById('aptitude-bars');
     const careersEl = document.getElementById('aptitude-careers');
     const gamesEl = document.getElementById('aptitude-games');
@@ -549,7 +548,6 @@ function renderAptitudeResult(result) {
     if (secondEl) secondEl.textContent = APTITUDE_AXES[result.second]?.name || result.second;
 
     const prof = APTITUDE_PROFILES[result.main] || {};
-    if (explainEl) explainEl.textContent = prof.explain || '—';
 
     if (barsEl) {
         barsEl.innerHTML = '';
@@ -558,14 +556,9 @@ function renderAptitudeResult(result) {
             const row = document.createElement('div');
             row.className = 'result-bar';
             row.innerHTML = `
-              <div>
-                <button type="button" class="apt-label" data-action="aptitude-hint" data-hint="${escapeAttr(axis.hint || '')}" aria-label="Подсказка: ${escapeAttr(axis.short || it.k)}">
-                  <span class="apt-text">${axis.short || it.k}</span>
-                  <span class="apt-i" aria-hidden="true">ⓘ</span>
-                </button>
-              </div>
+              <button type="button" class="apt-label" data-action="aptitude-hint" data-hint="${escapeAttr(axis.hint || '')}">${axis.name || axis.short || it.k}</button>
               <div class="bar"><div class="fill" style="width:${it.p}%"></div></div>
-              <div style="text-align:right; opacity:0.9;">${it.p}%</div>
+              <div class="pct">${it.p}%</div>
             `;
             barsEl.appendChild(row);
         }
