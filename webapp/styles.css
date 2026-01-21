@@ -1301,62 +1301,51 @@ hr {
 
 /* ==========================================================
    FIX: Aptitude test ("Узнать, что мне подходит")
-   1) Центрируем контент на телефонах (убираем сдвиг вправо)
-   2) Закрепляем панель теста/результата, чтобы она не двигалась при скролле
-   Логику НЕ трогаем — только стили.
+   Задачи:
+   1) На телефонах контент должен быть по центру и не выезжать вправо
+   2) Кнопка "Пройти ещё раз" должна быть видна (ничего не обрезаем overflow:hidden)
+   3) Текст/надписи НЕ должны быть "прикреплены" фикс-позиционированием — пусть идут обычным потоком
+   (Логику НЕ трогаем — только стили.)
    ========================================================== */
 
-/* На всякий случай запрещаем горизонтальный выезд именно на экранах теста */
+/* Экраны теста: центрируем и разрешаем вертикальный скролл внутри экрана */
 #screen-aptitude,
 #screen-aptitude-result{
-    width: 100% !important;
-    max-width: 520px !important;
-    margin-left: auto !important;
-    margin-right: auto !important;
-    box-sizing: border-box !important;
+    width: 100%;
+    max-width: 520px;
+    margin: 0 auto;
+    padding-left: 16px;
+    padding-right: 16px;
+    box-sizing: border-box;
 
-    /* пользователь просит "закрепить панель" — убираем прокрутку экрана */
-    overflow: hidden !important;
-    overscroll-behavior: none !important;
-    touch-action: manipulation !important;
+    /* если текста много на маленьком экране — прокручиваем ВНУТРИ экрана */
+    overflow-x: hidden;
+    overflow-y: auto;
 
-    padding-left: 16px !important;
-    padding-right: 16px !important;
+    /* чтобы экран не вылезал за видимую область */
+    max-height: calc(100dvh - 40px);
 }
 
-/* Центровка и фиксация самой карточки с вопросом */
-#screen-aptitude .test-card{
-    position: fixed !important;
-    left: 50% !important;
-    top: 50% !important;
-    transform: translate(-50%, -50%) !important;
-
-    width: min(520px, 92vw) !important;
-    max-width: 520px !important;
-
-    /* чтобы карточка не вылезала по высоте на маленьких экранах */
-    max-height: calc(100dvh - 180px) !important;
-    overflow: hidden !important;
-}
-
-/* Центровка и фиксация итогового экрана */
+/* Карточки внутри экранов — обычное позиционирование (ничего не фиксируем) */
+#screen-aptitude .test-card,
 #screen-aptitude-result .result-card{
-    position: fixed !important;
-    left: 50% !important;
-    top: 50% !important;
-    transform: translate(-50%, -50%) !important;
+    position: relative;
+    left: auto;
+    top: auto;
+    transform: none;
 
-    width: min(620px, 92vw) !important;
-    max-width: 620px !important;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
 
-    max-height: calc(100dvh - 180px) !important;
-    overflow: hidden !important;
+    /* НИЧЕГО не обрезаем — чтобы кнопки внизу не пропадали */
+    overflow: visible;
+    max-height: none;
 }
 
-/* Доп. страховка: любые внутренние элементы не должны расширять ширину */
+/* Доп. страховка: внутренние элементы не расширяют ширину */
 #screen-aptitude *,
 #screen-aptitude-result *{
-    max-width: 100% !important;
-    box-sizing: border-box !important;
+    max-width: 100%;
+    box-sizing: border-box;
 }
-
