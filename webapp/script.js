@@ -188,22 +188,15 @@ function applyLevelAvailabilityToMenu() {
         document.querySelectorAll('[data-level]').forEach((btn) => {
             const key = btn.dataset.level;
             const active = isLevelActive(key);
-
-            // Скрываем/показываем карточку уровня целиком
-            const card = btn.closest('.level-card');
-            const target = card || btn;
-
+            btn.disabled = !active;
+            btn.style.opacity = active ? '' : '0.55';
+            // Подпись на кнопке
             if (!active) {
-                target.style.display = 'none';
-                return;
-            } else {
-                target.style.display = '';
+                btn.dataset._origText = btn.dataset._origText || btn.textContent;
+                btn.textContent = 'Недоступно';
+            } else if (btn.dataset._origText) {
+                btn.textContent = btn.dataset._origText;
             }
-
-            // На всякий случай: если где-то остались старые стили блокировки
-            btn.disabled = false;
-            btn.style.opacity = '';
-            if (btn.dataset._origText) btn.textContent = btn.dataset._origText;
         });
     } catch (e) {}
 }
@@ -654,8 +647,21 @@ function initPuzzle(size = 3) {
         puzzleSolved = false;
         selectedPieceNum = null;
 
-        // Любая перестановка подходит (мы меняем местами любые 2 клетки)
-        puzzleState.sort(() => Math.random() - 0.5);
+        // Перемешиваем так, чтобы пазл НЕ стартовал уже собранным
+        // (в 2×2 шанс «сразу собран» заметный, поэтому добавляем проверку).
+        const isSolved = (arr) => arr.every((val, idx) => val === idx + 1);
+        const fisherYates = (arr) => {
+            for (let i = arr.length - 1; i > 0; i--) {
+                const j = (Math.random() * (i + 1)) | 0;
+                [arr[i], arr[j]] = [arr[j], arr[i]];
+            }
+        };
+        // На всякий случай ограничим попытки, но обычно хватает 1–2.
+        let tries = 0;
+        do {
+            fisherYates(puzzleState);
+            tries++;
+        } while (isSolved(puzzleState) && tries < 20);
 
         createPuzzleElements();
         updatePuzzlePositions();
