@@ -522,14 +522,10 @@ function finishAptitudeTest() {
 
     try { localStorage.setItem(APTITUDE_STORAGE_KEY, JSON.stringify(result)); } catch(e) {}
 
-// Отправим боту ведущее направление (для статистики в /stats).
-// Очки не трогаем — это отдельная механика уровней.
-try {
-    const tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
-    if (tg && tg.sendData) {
-        tg.sendData(JSON.stringify({ aptitude_top: result.main }));
-    }
-} catch (e) {}
+    // ВАЖНО: Telegram.WebApp.sendData() автоматически закрывает WebApp.
+    // Поэтому во время прохождения теста мы НЕ отправляем данные боту напрямую,
+    // иначе результат не успеет показаться и игра "закроется".
+    // Ведущее направление добавляется в общий payload статистики при финальной отправке.
 
     renderAptitudeResult(result);
     showScreen('screen-aptitude-result');
@@ -540,6 +536,7 @@ try {
 function renderAptitudeResult(result) {
     const mainEl = document.getElementById('aptitude-main');
     const secondEl = document.getElementById('aptitude-second');
+    const explainEl = document.getElementById('aptitude-explain');
     const barsEl = document.getElementById('aptitude-bars');
     const careersEl = document.getElementById('aptitude-careers');
     const gamesEl = document.getElementById('aptitude-games');
@@ -548,6 +545,7 @@ function renderAptitudeResult(result) {
     if (secondEl) secondEl.textContent = APTITUDE_AXES[result.second]?.name || result.second;
 
     const prof = APTITUDE_PROFILES[result.main] || {};
+    if (explainEl) explainEl.textContent = prof.explain || '—';
 
     if (barsEl) {
         barsEl.innerHTML = '';
@@ -556,9 +554,11 @@ function renderAptitudeResult(result) {
             const row = document.createElement('div');
             row.className = 'result-bar';
             row.innerHTML = `
-              <button type="button" class="apt-label" data-action="aptitude-hint" data-hint="${escapeAttr(axis.hint || '')}">${axis.name || axis.short || it.k}</button>
+              <div>
+                <button type="button" class="apt-label" data-action="aptitude-hint" data-hint="${escapeAttr(axis.hint || '')}">${axis.short || it.k}</button>
+              </div>
               <div class="bar"><div class="fill" style="width:${it.p}%"></div></div>
-              <div class="pct">${it.p}%</div>
+              <div style="text-align:right; opacity:0.9;">${it.p}%</div>
             `;
             barsEl.appendChild(row);
         }
@@ -791,6 +791,7 @@ function computeTotalScore() {
 }
 
 function buildStatsPayload() {
+    const savedApt = loadSavedAptitudeResult();
     return {
         type: 'apz_stats',
         version: 1,
@@ -798,6 +799,8 @@ function buildStatsPayload() {
         message: 'Игра завершена. Открываю статистику.',
         // Главное поле для бота (таблица лидеров)
         score: computeTotalScore(),
+        // Ведущее направление по профтесту (если проходили)
+        aptitude_top: (savedApt && savedApt.main) ? savedApt.main : null,
         // Подробная статистика остаётся в payload на будущее
         stats
     };
