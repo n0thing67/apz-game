@@ -1297,3 +1297,66 @@ hr {
 #screen-aptitude * , #screen-aptitude-result *{
     max-width: 100%;
 }
+
+
+/* ==========================================================
+   FIX: Aptitude test ("Узнать, что мне подходит")
+   1) Центрируем контент на телефонах (убираем сдвиг вправо)
+   2) Закрепляем панель теста/результата, чтобы она не двигалась при скролле
+   Логику НЕ трогаем — только стили.
+   ========================================================== */
+
+/* На всякий случай запрещаем горизонтальный выезд именно на экранах теста */
+#screen-aptitude,
+#screen-aptitude-result{
+    width: 100% !important;
+    max-width: 520px !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
+    box-sizing: border-box !important;
+
+    /* пользователь просит "закрепить панель" — убираем прокрутку экрана */
+    overflow: hidden !important;
+    overscroll-behavior: none !important;
+    touch-action: manipulation !important;
+
+    padding-left: 16px !important;
+    padding-right: 16px !important;
+}
+
+/* Центровка и фиксация самой карточки с вопросом */
+#screen-aptitude .test-card{
+    position: fixed !important;
+    left: 50% !important;
+    top: 50% !important;
+    transform: translate(-50%, -50%) !important;
+
+    width: min(520px, 92vw) !important;
+    max-width: 520px !important;
+
+    /* чтобы карточка не вылезала по высоте на маленьких экранах */
+    max-height: calc(100dvh - 180px) !important;
+    overflow: hidden !important;
+}
+
+/* Центровка и фиксация итогового экрана */
+#screen-aptitude-result .result-card{
+    position: fixed !important;
+    left: 50% !important;
+    top: 50% !important;
+    transform: translate(-50%, -50%) !important;
+
+    width: min(620px, 92vw) !important;
+    max-width: 620px !important;
+
+    max-height: calc(100dvh - 180px) !important;
+    overflow: hidden !important;
+}
+
+/* Доп. страховка: любые внутренние элементы не должны расширять ширину */
+#screen-aptitude *,
+#screen-aptitude-result *{
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+}
+
