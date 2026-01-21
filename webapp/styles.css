@@ -282,7 +282,8 @@ body.admin-body {
 /* === Верхняя кнопка "К уровням" во время прохождения === */
 .topbar {
     position: fixed;
-    top: 10px;
+    /* Чуть выше, чтобы панель не перекрывала заголовки теста в Telegram WebView */
+    top: calc(env(safe-area-inset-top, 0px) + 6px);
     left: 10px;
     z-index: 1001; /* поверх игровых оверлеев */
     width: auto;
@@ -308,7 +309,8 @@ body.admin-body {
 /* === Кнопка "Звук" (только меню) === */
 .sound-toggle {
     position: fixed;
-    top: 10px;
+    /* Чуть выше, чтобы панель не перекрывала заголовки теста в Telegram WebView */
+    top: calc(env(safe-area-inset-top, 0px) + 6px);
     right: 10px;
     z-index: 1001;
     background: rgba(0,0,0,0.25);
@@ -325,17 +327,6 @@ body.admin-body {
 
 .sound-toggle:active {
     transform: scale(0.98);
-}
-
-/* На телефоне в Telegram сверху есть шапка WebApp — опускаем плавающие кнопки ниже,
-   чтобы они не перекрывали заголовки экранов (в т.ч. профтест). */
-@media (max-width: 600px) {
-    .topbar {
-        top: calc(10px + env(safe-area-inset-top, 0px) + 44px);
-    }
-    .sound-toggle {
-        top: calc(10px + env(safe-area-inset-top, 0px) + 44px);
-    }
 }
 
 /* === УРОВЕНЬ 1: ПАЗЛ (Анимация) === */
@@ -1034,21 +1025,23 @@ hr {
 /* Разрешаем прокрутку/клики на экранах теста (в WebView иначе кнопки могут не нажиматься и контент обрезается) */
 #screen-aptitude,
 #screen-aptitude-result{
-    width: 94%;
+    /* На телефонах важно не вылезать за правый край: делаем чуть уже и ровно центрируем */
+    width: 92%;
     max-width: 720px;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
     overscroll-behavior: contain;
     touch-action: pan-y;
-    padding-top: 92px; /* место под верхнюю панель (звук + к уровням) */
+    /*
+      Заголовок "🧠 Тест: что тебе подходит?" должен быть ниже верхних кнопок.
+      Кнопки поднимаем выше (см. .topbar/.sound-toggle), а сам экран опускаем ниже.
+    */
+    padding-top: calc(env(safe-area-inset-top, 0px) + 92px);
     padding-bottom: 90px; /* место под нижнюю кнопку на результатах */
-}
-
-/* Для профтеста делаем экран чуть шире стандартных 400px, чтобы элементы не "выпирали" */
-#screen-aptitude.screen,
-#screen-aptitude-result.screen{
-    width: 92%;
-    max-width: 520px;
+    padding-left: 12px;
+    padding-right: 12px;
+    margin-left: auto;
+    margin-right: auto;
 }
 
 /* Центрируем карточку и ответы */
@@ -1068,8 +1061,7 @@ hr {
 }
 
 .test-card{
-    width: 100%;
-    max-width: 520px;
+    width: min(520px, 92vw);
     margin: 14px auto 0;
     background: rgba(0,0,0,0.25);
     border: 1px solid rgba(255,255,255,0.14);
@@ -1104,14 +1096,15 @@ hr {
 }
 
 .result-card{
-    width: 100%;
-    max-width: 520px;
+    width: min(620px, 92vw);
     margin: 14px auto 0;
     background: rgba(0,0,0,0.25);
     border: 1px solid rgba(255,255,255,0.14);
     border-radius: 16px;
     padding: 14px;
     box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+    text-align: center;
+    overflow: hidden; /* чтобы ничего не вылезало за границы на мобильном */
 }
 .result-title{
     font-size: 13px;
@@ -1121,44 +1114,36 @@ hr {
     font-size: 22px;
     font-weight: 800;
     margin-top: 4px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 .result-value.secondary{
     font-size: 18px;
     font-weight: 700;
     opacity: 0.95;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
-.result-explain{
-    margin-top: 12px;
-    padding: 10px 12px;
-    background: rgba(255,255,255,0.08);
-    border: 1px solid rgba(255,255,255,0.10);
-    border-radius: 12px;
-    line-height: 1.35;
-}
+
+/* Плашку с текстом "Тебе интересно..." убрали по требованиям */
+.result-explain{ display:none !important; }
 
 .result-bars{
     margin-top: 14px;
     display: grid;
     gap: 8px;
+    width: min(520px, 92vw);
+    margin-left: auto;
+    margin-right: auto;
 }
 .result-bar{
     display: grid;
-    grid-template-columns: 120px 1fr 48px;
+    grid-template-columns: minmax(140px, 180px) 1fr 44px;
     gap: 10px;
     align-items: center;
     font-size: 13px;
-}
-
-/* На очень узких экранах даём подписи больше места и защищаем от вылета вправо */
-@media (max-width: 420px){
-    .result-bar{ grid-template-columns: 1fr; gap: 6px; }
-    .result-bar > div:last-child{ text-align: left !important; }
-}
-
-/* Сдвигаем верхнюю панель ниже, чтобы она не перекрывала заголовки на мобильных */
-@media (max-width: 600px){
-    .topbar{ top: 54px; }
-    .sound-toggle{ top: 54px; }
 }
 
 /* Кликабельные подписи шкал (для подсказок по тапу) */
@@ -1174,7 +1159,31 @@ hr {
     display: inline-flex;
     align-items: center;
     gap: 6px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
+.result-bar .pct{
+    text-align: right;
+    opacity: 0.9;
+}
+
+/* На очень узких экранах делаем строки шкал двухрядными: (название + %), затем полоса на всю ширину */
+@media (max-width: 420px) {
+    .result-bar{
+        grid-template-columns: 1fr 44px;
+        grid-template-areas:
+          "label pct"
+          "bar bar";
+        row-gap: 6px;
+        column-gap: 10px;
+    }
+    .result-bar .apt-label{ grid-area: label; }
+    .result-bar .bar{ grid-area: bar; }
+    .result-bar .pct{ grid-area: pct; }
+}
+
+.result-block{ text-align: center; }
 .apt-label::after{
     content: "ⓘ";
     font-size: 12px;
@@ -1227,7 +1236,9 @@ hr {
     background: rgba(255,255,255,0.10);
     border: 1px solid rgba(255,255,255,0.14);
     font-size: 13px;
-    white-space: nowrap;
+    white-space: normal;
+    text-align: center;
+    max-width: min(520px, 92vw);
 }
 .result-actions{
     display:flex;
