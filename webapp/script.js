@@ -188,15 +188,22 @@ function applyLevelAvailabilityToMenu() {
         document.querySelectorAll('[data-level]').forEach((btn) => {
             const key = btn.dataset.level;
             const active = isLevelActive(key);
-            btn.disabled = !active;
-            btn.style.opacity = active ? '' : '0.55';
-            // Подпись на кнопке
+
+            // Скрываем/показываем карточку уровня целиком
+            const card = btn.closest('.level-card');
+            const target = card || btn;
+
             if (!active) {
-                btn.dataset._origText = btn.dataset._origText || btn.textContent;
-                btn.textContent = 'Недоступно';
-            } else if (btn.dataset._origText) {
-                btn.textContent = btn.dataset._origText;
+                target.style.display = 'none';
+                return;
+            } else {
+                target.style.display = '';
             }
+
+            // На всякий случай: если где-то остались старые стили блокировки
+            btn.disabled = false;
+            btn.style.opacity = '';
+            if (btn.dataset._origText) btn.textContent = btn.dataset._origText;
         });
     } catch (e) {}
 }
