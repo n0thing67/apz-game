@@ -203,9 +203,14 @@ body.admin-body {
 
 /* На странице "Игры" список может быть длинным — делаем прокрутку удобной */
 #screen-admin-levels .admin-levels {
-    max-height: none;
-    overflow: visible;
+    max-height: 60vh;
+    max-height: 60dvh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
+    padding-right: 4px;
 }
+
 @media (max-width: 720px) {
     .admin-home {
         grid-template-columns: 1fr;
@@ -471,12 +476,12 @@ body.admin-body {
 
 #doodle-container {
     position: relative;
-    /* АДАПТАЦИЯ: ширина 100%, но не больше 400px */
+    /* АДАПТАЦИЯ: делаем игровой экран заметно больше */
     width: 100%;
-    max-width: 400px;
-    /* Высота зависит от экрана телефона (60% высоты экрана) */
-    height: 60vh;
-    min-height: 400px;
+    max-width: 520px;
+    /* Высота зависит от экрана телефона (раньше было 60vh) */
+    height: 74vh;
+    min-height: 480px;
 
     margin: 0 auto;
     /* Яркое небо вместо темного фона */
