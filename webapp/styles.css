@@ -283,7 +283,7 @@ body.admin-body {
 .topbar {
     position: fixed;
     /* Чуть выше, чтобы панель не перекрывала заголовки теста в Telegram WebView */
-    top: calc(env(safe-area-inset-top, 0px) + 6px);
+    top: calc(env(safe-area-inset-top, 0px) + 2px);
     left: 10px;
     z-index: 1001; /* поверх игровых оверлеев */
     width: auto;
@@ -310,7 +310,7 @@ body.admin-body {
 .sound-toggle {
     position: fixed;
     /* Чуть выше, чтобы панель не перекрывала заголовки теста в Telegram WebView */
-    top: calc(env(safe-area-inset-top, 0px) + 6px);
+    top: calc(env(safe-area-inset-top, 0px) + 2px);
     right: 10px;
     z-index: 1001;
     background: rgba(0,0,0,0.25);
@@ -1025,23 +1025,36 @@ hr {
 /* Разрешаем прокрутку/клики на экранах теста (в WebView иначе кнопки могут не нажиматься и контент обрезается) */
 #screen-aptitude,
 #screen-aptitude-result{
-    /* На телефонах важно не вылезать за правый край: делаем чуть уже и ровно центрируем */
-    width: 92%;
-    max-width: 720px;
+    /* Мобильный-first: строго по центру и без вылезаний за правый край */
+    width: 94%;
+    max-width: 520px;
+    box-sizing: border-box;
+    margin-left: auto;
+    margin-right: auto;
+
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
     overscroll-behavior: contain;
     touch-action: pan-y;
+
     /*
-      Заголовок "🧠 Тест: что тебе подходит?" должен быть ниже верхних кнопок.
-      Кнопки поднимаем выше (см. .topbar/.sound-toggle), а сам экран опускаем ниже.
+      Заголовок теста не должен перекрываться верхними кнопками Telegram WebView.
+      Кнопки держим максимально высоко, а контент экрана опускаем ниже.
     */
-    padding-top: calc(env(safe-area-inset-top, 0px) + 92px);
-    padding-bottom: 90px; /* место под нижнюю кнопку на результатах */
-    padding-left: 12px;
-    padding-right: 12px;
-    margin-left: auto;
-    margin-right: auto;
+    padding-top: calc(env(safe-area-inset-top, 0px) + 128px);
+    padding-bottom: 96px; /* место под нижние элементы на результатах */
+    padding-left: 10px;
+    padding-right: 10px;
+}
+
+@media (max-width: 420px){
+    #screen-aptitude,
+    #screen-aptitude-result{
+        width: 96%;
+        max-width: 500px;
+        padding-left: 8px;
+        padding-right: 8px;
+    }
 }
 
 /* Центрируем карточку и ответы */
@@ -1258,4 +1271,29 @@ hr {
     margin-left: 8px;
     font-size: 14px;
     filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+}
+
+
+/* Проф-тест: фиксируем "панель" (заголовок + подзаголовок) внутри экрана */
+#screen-aptitude > h2,
+#screen-aptitude > .muted{
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: rgba(44,62,80,0.92);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    margin-left: auto;
+    margin-right: auto;
+    text-align: center;
+}
+
+/* Чуть разнесём заголовок и текст, чтобы не слипались при sticky */
+#screen-aptitude > h2{ padding: 8px 6px 4px; margin-top: 0; }
+#screen-aptitude > .muted{ padding: 0 6px 10px; margin-top: 0; }
+
+/* Доп. защита от горизонтального переполнения на мобильных */
+#screen-aptitude, #screen-aptitude-result,
+#screen-aptitude * , #screen-aptitude-result *{
+    max-width: 100%;
 }
