@@ -19,8 +19,6 @@ body {
     overflow: hidden;
     user-select: none; /* Чтобы текст не выделялся при кликах */
     -webkit-tap-highlight-color: transparent;
-    -webkit-font-smoothing: antialiased;
-    text-rendering: optimizeLegibility;
 }
 
 /* На мобильных WebView (Telegram Android/iOS) вертикальное центрирование body часто
@@ -1094,6 +1092,8 @@ hr {
     border-radius: 16px;
     padding: 14px;
     box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+    text-align: center;
+    overflow: hidden; /* чтобы ничего не вылезало за границы на мобильном */
 }
 .result-title{
     font-size: 13px;
@@ -1103,52 +1103,42 @@ hr {
     font-size: 22px;
     font-weight: 800;
     margin-top: 4px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 .result-value.secondary{
     font-size: 18px;
     font-weight: 700;
     opacity: 0.95;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
-.result-explain{
-    margin-top: 12px;
-    padding: 10px 12px;
-    background: rgba(255,255,255,0.08);
-    border: 1px solid rgba(255,255,255,0.10);
-    border-radius: 12px;
-    line-height: 1.35;
-}
+
+/* Плашку с текстом "Тебе интересно..." убрали по требованиям */
+.result-explain{ display:none !important; }
 
 .result-bars{
     margin-top: 14px;
     display: grid;
     gap: 8px;
+    width: min(520px, 92vw);
+    margin-left: auto;
+    margin-right: auto;
 }
 .result-bar{
     display: grid;
-    grid-template-columns: 120px 1fr 48px;
+    grid-template-columns: minmax(140px, 180px) 1fr 44px;
     gap: 10px;
     align-items: center;
     font-size: 13px;
 }
 
-/* На телефонах делаем сетку устойчивее, чтобы прогресс-бары выглядели как на ПК */
-@media (max-width: 480px) {
-    .result-bar{
-        grid-template-columns: minmax(140px, 45%) 1fr 44px;
-        gap: 8px;
-        font-size: 13px;
-    }
-    .apt-label{ font-size: 13px; }
-    .result-bar .bar{ height: 10px; }
-}
-
 /* Кликабельные подписи шкал (для подсказок по тапу) */
 .apt-label{
-    background: transparent !important;
-    border: none !important;
-    box-shadow: none !important;
-    -webkit-appearance: none;
-    appearance: none;
+    background: transparent;
+    border: none;
     padding: 0;
     margin: 0;
     color: inherit;
@@ -1158,13 +1148,35 @@ hr {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    line-height: 1.2;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
-.apt-text{ display: inline-block; }
-.apt-i{
+.result-bar .pct{
+    text-align: right;
+    opacity: 0.9;
+}
+
+/* На очень узких экранах делаем строки шкал двухрядными: (название + %), затем полоса на всю ширину */
+@media (max-width: 420px) {
+    .result-bar{
+        grid-template-columns: 1fr 44px;
+        grid-template-areas:
+          "label pct"
+          "bar bar";
+        row-gap: 6px;
+        column-gap: 10px;
+    }
+    .result-bar .apt-label{ grid-area: label; }
+    .result-bar .bar{ grid-area: bar; }
+    .result-bar .pct{ grid-area: pct; }
+}
+
+.result-block{ text-align: center; }
+.apt-label::after{
+    content: "ⓘ";
     font-size: 12px;
     opacity: 0.75;
-    flex: 0 0 auto;
 }
 .apt-label:active{ opacity: 0.85; }
 
@@ -1213,7 +1225,9 @@ hr {
     background: rgba(255,255,255,0.10);
     border: 1px solid rgba(255,255,255,0.14);
     font-size: 13px;
-    white-space: nowrap;
+    white-space: normal;
+    text-align: center;
+    max-width: min(520px, 92vw);
 }
 .result-actions{
     display:flex;
