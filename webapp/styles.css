@@ -19,6 +19,8 @@ body {
     overflow: hidden;
     user-select: none; /* Чтобы текст не выделялся при кликах */
     -webkit-tap-highlight-color: transparent;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
 }
 
 /* На мобильных WebView (Telegram Android/iOS) вертикальное центрирование body часто
@@ -71,7 +73,7 @@ p {
     max-height: calc(100dvh - 40px);
     /* По умолчанию экраны НЕ прокручиваются. */
     overflow: hidden;
-    touch-action: none;
+    touch-action: manipulation;
 }
 
 /* Разрешаем прокрутку ТОЛЬКО на экране выбора уровней */
@@ -487,7 +489,7 @@ body.admin-body {
     box-shadow: 0 10px 20px rgba(0,0,0,0.15);
 
     overflow: hidden;
-    touch-action: none;
+    touch-action: manipulation;
 
     /* PERF: ограничиваем область перерисовки браузера только этим блоком */
     contain: layout paint;
@@ -538,7 +540,7 @@ body.admin-body {
     align-items: center;
     justify-content: center;
     user-select: none;
-    touch-action: none;
+    touch-action: manipulation;
     -webkit-tap-highlight-color: transparent;
 }
 
@@ -712,7 +714,7 @@ body.admin-body {
     position: relative;
     padding: 10px;
     box-sizing: border-box;
-    touch-action: none;
+    touch-action: manipulation;
 }
 
 .grid-cell {
@@ -1003,4 +1005,232 @@ hr {
     justify-content: center;
     gap: 12px;
     transform: translateY(100px);
+}
+
+
+/* ================================
+   Aptitude test (профориентация)
+   ================================ */
+
+/* Кнопка теста на экране выбора уровней */
+.levels-aptitude-wrap{
+    display:flex;
+    justify-content:center;
+    margin: 10px 0 14px;
+}
+.levels-aptitude-wrap .btn{
+    width: min(520px, 92vw);
+}
+
+/* Разрешаем прокрутку/клики на экранах теста (в WebView иначе кнопки могут не нажиматься и контент обрезается) */
+#screen-aptitude,
+#screen-aptitude-result{
+    width: 94%;
+    max-width: 720px;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+    padding-top: 64px; /* место под верхнюю панель */
+    padding-bottom: 90px; /* место под нижнюю кнопку на результатах */
+}
+
+/* Центрируем карточку и ответы */
+#screen-aptitude.active{
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.test-answers{
+    width: 100%;
+}
+.test-answers .btn{
+    text-align: center;
+    justify-content: center;
+}
+
+.test-card{
+    width: min(520px, 92vw);
+    margin: 14px auto 0;
+    background: rgba(0,0,0,0.25);
+    border: 1px solid rgba(255,255,255,0.14);
+    border-radius: 16px;
+    padding: 14px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+}
+.test-progress{
+    font-size: 13px;
+    opacity: 0.85;
+    margin-bottom: 10px;
+}
+.test-question{
+    font-size: 18px;
+    font-weight: 700;
+    margin: 8px 0 12px;
+    line-height: 1.25;
+}
+.test-answers{
+    display: grid;
+    gap: 10px;
+}
+.test-answers .btn{
+    width: 100%;
+    text-align: center;
+    justify-content: center;
+}
+.test-footer{
+    display:flex;
+    justify-content:center;
+    margin-top: 14px;
+}
+
+.result-card{
+    width: min(620px, 92vw);
+    margin: 14px auto 0;
+    background: rgba(0,0,0,0.25);
+    border: 1px solid rgba(255,255,255,0.14);
+    border-radius: 16px;
+    padding: 14px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+}
+.result-title{
+    font-size: 13px;
+    opacity: 0.85;
+}
+.result-value{
+    font-size: 22px;
+    font-weight: 800;
+    margin-top: 4px;
+}
+.result-value.secondary{
+    font-size: 18px;
+    font-weight: 700;
+    opacity: 0.95;
+}
+.result-explain{
+    margin-top: 12px;
+    padding: 10px 12px;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.10);
+    border-radius: 12px;
+    line-height: 1.35;
+}
+
+.result-bars{
+    margin-top: 14px;
+    display: grid;
+    gap: 8px;
+}
+.result-bar{
+    display: grid;
+    grid-template-columns: 120px 1fr 48px;
+    gap: 10px;
+    align-items: center;
+    font-size: 13px;
+}
+
+/* На телефонах делаем сетку устойчивее, чтобы прогресс-бары выглядели как на ПК */
+@media (max-width: 480px) {
+    .result-bar{
+        grid-template-columns: minmax(140px, 45%) 1fr 44px;
+        gap: 8px;
+        font-size: 13px;
+    }
+    .apt-label{ font-size: 13px; }
+    .result-bar .bar{ height: 10px; }
+}
+
+/* Кликабельные подписи шкал (для подсказок по тапу) */
+.apt-label{
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    -webkit-appearance: none;
+    appearance: none;
+    padding: 0;
+    margin: 0;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+    text-align: left;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    line-height: 1.2;
+}
+.apt-text{ display: inline-block; }
+.apt-i{
+    font-size: 12px;
+    opacity: 0.75;
+    flex: 0 0 auto;
+}
+.apt-label:active{ opacity: 0.85; }
+
+/* Всплывающая подсказка */
+.apt-tooltip{
+    position: fixed;
+    max-width: min(320px, calc(100vw - 24px));
+    padding: 10px 12px;
+    background: rgba(0, 0, 0, 0.78);
+    color: #fff;
+    border: 1px solid rgba(255,255,255,0.18);
+    border-radius: 12px;
+    font-size: 13px;
+    line-height: 1.35;
+    z-index: 1000;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+}
+.apt-tooltip.hidden{ display: none; }
+.result-bar .bar{
+    height: 10px;
+    background: rgba(255,255,255,0.10);
+    border-radius: 999px;
+    overflow: hidden;
+}
+.result-bar .fill{
+    height: 100%;
+    width: 0%;
+    background: rgba(255,255,255,0.75);
+}
+.result-block{ margin-top: 14px; }
+.result-subtitle{ font-weight: 800; margin-bottom: 8px; }
+.result-list{
+    margin: 0;
+    padding-left: 0;
+    list-style: none; /* убрать точки */
+}
+.result-chips{
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px;
+    justify-content: center; /* центрируем рекомендации */
+}
+.chip{
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.10);
+    border: 1px solid rgba(255,255,255,0.14);
+    font-size: 13px;
+    white-space: nowrap;
+}
+.result-actions{
+    display:flex;
+    gap:10px;
+    justify-content:center;
+    flex-wrap:wrap;
+    margin-top: 16px;
+}
+
+/* Рекомендации в меню уровней */
+.level-card.recommended{
+    outline: 2px solid rgba(255,255,255,0.35);
+    box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+}
+.level-card .recommend-badge{
+    display:inline-block;
+    margin-left: 8px;
+    font-size: 14px;
+    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
 }
