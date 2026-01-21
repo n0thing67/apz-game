@@ -721,6 +721,8 @@ const STATS_KEY = 'apzQuestStatsV1';
 // должна очищаться при каждом открытии WebApp.
 // Делаем это ДО loadStats(), чтобы в интерфейсе сразу были нули/прочерки.
 try { localStorage.removeItem(STATS_KEY); } catch (e) {}
+// При каждом запуске также сбрасываем профтест "что тебе подходит?" и рекомендации (⭐)
+try { localStorage.removeItem(APTITUDE_STORAGE_KEY); } catch (e) {}
 
 function loadStats() {
     try {
@@ -767,6 +769,8 @@ function resetAllStats() {
     // которые могут быть не определены и ломают обработчик.
     stats = {};
     try { localStorage.removeItem(STATS_KEY); } catch (e) {}
+// При каждом запуске также сбрасываем профтест "что тебе подходит?" и рекомендации (⭐)
+try { localStorage.removeItem(APTITUDE_STORAGE_KEY); } catch (e) {}
     // Сброс статистики профтеста "что тебе подходит?"
     try { localStorage.removeItem(APTITUDE_STORAGE_KEY); } catch (e) {}
     try { clearAptitudeMenuRecommendations(); } catch (e) {}
@@ -887,6 +891,25 @@ function showFinalScreenFromStats() {
             scoreVal.textContent = String(displayScore);
         }, 30);
     }
+
+// Показываем "Твой профиль..." ТОЛЬКО если в текущем запуске проходили профтест
+const savedApt = loadSavedAptitudeResult();
+const statLine = document.getElementById('aptitude-stat-line');
+const statMain = document.getElementById('stat-aptitude-main');
+if (statLine && statMain && savedApt && savedApt.main) {
+    const LABEL = {
+        TECH: '🔧 Техническое мышление',
+        LOGIC: '🧩 Логическое мышление',
+        CREATIVE: '🎨 Творческое мышление',
+        HUMAN: '📖 Гуманитарное мышление',
+        SOCIAL: '🤝 Командное мышление',
+    };
+    statMain.textContent = LABEL[savedApt.main] || savedApt.main;
+    statLine.style.display = '';
+} else if (statLine) {
+    if (statMain) statMain.textContent = '—';
+    statLine.style.display = 'none';
+}
 
     showScreen('screen-final');
 }
@@ -2438,6 +2461,14 @@ window.addEventListener('DOMContentLoaded', () => {
         currentLevelId = null;
         showScreen('screen-welcome');
         updateSoundToggleUI();
+        // На каждом запуске скрываем строку профиля и убираем ⭐ рекомендации
+        try {
+            const statLine = document.getElementById('aptitude-stat-line');
+            const statMain = document.getElementById('stat-aptitude-main');
+            if (statMain) statMain.textContent = '—';
+            if (statLine) statLine.style.display = 'none';
+            clearAptitudeMenuRecommendations();
+        } catch (e) {}
     } catch (e) {}
 
     // Переключатель звука (в меню)
