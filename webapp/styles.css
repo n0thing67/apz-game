@@ -1349,3 +1349,20 @@ hr {
     max-width: 100%;
     box-sizing: border-box;
 }
+
+
+/* ===== APTITUDE TEST OVERRIDES (не закрепляем текст/блоки) ===== */
+#screen-aptitude .test-card,
+#screen-aptitude .test-progress,
+#screen-aptitude .test-question,
+#screen-aptitude .test-answers,
+#screen-aptitude h2,
+#screen-aptitude p {
+    position: static !important;
+    transform: none !important;
+}
+
+#screen-aptitude {
+    overflow-y: auto; /* скролл внутри экрана, элементы двигаются вместе с контентом */
+    -webkit-overflow-scrolling: touch;
+}
