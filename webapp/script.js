@@ -139,6 +139,495 @@ const LEVEL_DEFS = {
     'quiz':        { title: 'Квиз',          type: 'quiz',   stat: 'score' }
 };
 
+
+// ==========================================
+// APTITUDE_TEST (профориентационный тест)
+// ==========================================
+const APTITUDE_STORAGE_KEY = 'apzAptitudeResultV1';
+
+const APTITUDE_AXES = {
+    TECH:   {
+        name: '🔧 Техническое мышление',
+        short: 'Техническое',
+        hint: 'Тебе нравится разбираться, как всё устроено: собирать, чинить, улучшать и проверять на практике.'
+    },
+    LOGIC:  {
+        name: '🧩 Логическое мышление',
+        short: 'Логическое',
+        hint: 'Тебе нравится думать, искать закономерности и находить самый понятный и правильный способ решения.'
+    },
+    CREATIVE:{
+        name: '🎨 Творческое мышление',
+        short: 'Творческое',
+        hint: 'Тебе нравится придумывать новое, экспериментировать и делать по‑своему — креатив твоё сильное качество.'
+    },
+    HUMAN:  {
+        name: '📖 Гуманитарное мышление',
+        short: 'Гуманитарное',
+        hint: 'Тебе ближе слова, истории и смыслы: объяснять, рассказывать, читать/писать и понимать людей.'
+    },
+    SOCIAL: {
+        name: '🤝 Командное мышление',
+        short: 'Командное',
+        hint: 'Тебе нравится общаться, договариваться и работать вместе: помогать, организовывать и объединять людей.'
+    }
+};
+
+// Экранирование для вставки строки в HTML-атрибут (data-hint)
+function escapeAttr(str) {
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+}
+
+function hideAptitudeTooltip() {
+    const tt = document.getElementById('aptitude-tooltip');
+    if (tt) tt.classList.add('hidden');
+}
+
+function showAptitudeTooltip(text, anchorEl) {
+    const tt = document.getElementById('aptitude-tooltip');
+    if (!tt) return;
+
+    const msg = (text || '').trim();
+    if (!msg) { hideAptitudeTooltip(); return; }
+
+    tt.textContent = msg;
+    tt.classList.remove('hidden');
+
+    // Позиционируем около нажатой подписи
+    const r = anchorEl?.getBoundingClientRect?.();
+    const pad = 8;
+    const vw = window.innerWidth || document.documentElement.clientWidth;
+    const vh = window.innerHeight || document.documentElement.clientHeight;
+
+    // Сначала ставим «сверху», если места мало — «снизу»
+    tt.style.left = '0px';
+    tt.style.top = '0px';
+    // Дадим браузеру посчитать размеры
+    const tw = tt.offsetWidth;
+    const th = tt.offsetHeight;
+
+    let left = (r ? (r.left + (r.width / 2) - (tw / 2)) : (vw / 2 - tw / 2));
+    left = Math.max(pad, Math.min(left, vw - tw - pad));
+
+    let top = r ? (r.top - th - 10) : (vh / 2 - th / 2);
+    if (r && top < pad) {
+        top = Math.min(vh - th - pad, r.bottom + 10);
+    }
+    top = Math.max(pad, Math.min(top, vh - th - pad));
+
+    tt.style.left = `${left}px`;
+    tt.style.top = `${top}px`;
+}
+
+function escapeHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+}
+
+// 25 вопросов. Каждый вариант даёт +1 к одной шкале.
+const APTITUDE_QUESTIONS = [
+  { q: 'Тебе дали новую игру без инструкции. Ты…',
+    a: [
+      { t: 'Разбираешься, из чего она сделана', s: 'TECH' },
+      { t: 'Ищешь закономерности и правила', s: 'LOGIC' },
+      { t: 'Играешь по‑своему и пробуешь необычное', s: 'CREATIVE' },
+      { t: 'Спрашиваешь у других, как они играют', s: 'SOCIAL' },
+    ]},
+  { q: 'Если что-то сломалось, ты скорее…',
+    a: [
+      { t: 'Попробуешь починить сам(а)', s: 'TECH' },
+      { t: 'Подумаешь, почему это сломалось', s: 'LOGIC' },
+      { t: 'Придумаешь, как использовать по‑другому', s: 'CREATIVE' },
+      { t: 'Попросишь помощи и организуешь процесс', s: 'SOCIAL' },
+    ]},
+  { q: 'В сложной задаче ты…',
+    a: [
+      { t: 'Делишь задачу на части', s: 'LOGIC' },
+      { t: 'Пробуешь разные варианты решения', s: 'TECH' },
+      { t: 'Придумываешь необычный способ', s: 'CREATIVE' },
+      { t: 'Обсуждаешь с другими и собираешь идеи', s: 'SOCIAL' },
+    ]},
+  { q: 'Если есть выбор, ты чаще…',
+    a: [
+      { t: 'Делаешь по инструкции', s: 'TECH' },
+      { t: 'Ищешь самый эффективный путь', s: 'LOGIC' },
+      { t: 'Стараешься сделать красиво', s: 'CREATIVE' },
+      { t: 'Делаешь вместе с кем‑то', s: 'SOCIAL' },
+    ]},
+  { q: 'Тебе интереснее…',
+    a: [
+      { t: 'Как устроены вещи внутри', s: 'TECH' },
+      { t: 'Почему и по каким правилам они работают', s: 'LOGIC' },
+      { t: 'Как их можно изменить и улучшить', s: 'CREATIVE' },
+      { t: 'Как люди ими пользуются и общаются', s: 'HUMAN' },
+    ]},
+  { q: 'В играх тебе нравится…',
+    a: [
+      { t: 'Улучшать механики и прокачивать', s: 'TECH' },
+      { t: 'Решать головоломки', s: 'LOGIC' },
+      { t: 'Создавать персонажей/миры', s: 'CREATIVE' },
+      { t: 'Играть в команде', s: 'SOCIAL' },
+    ]},
+  { q: 'Если игра сложная, ты…',
+    a: [
+      { t: 'Изучаешь правила и управление', s: 'TECH' },
+      { t: 'Придумываешь стратегию', s: 'LOGIC' },
+      { t: 'Экспериментируешь и пробуешь разное', s: 'CREATIVE' },
+      { t: 'Смотришь, как играют другие', s: 'SOCIAL' },
+    ]},
+  { q: 'В настольных играх тебе важнее…',
+    a: [
+      { t: 'Правила и честность', s: 'LOGIC' },
+      { t: 'Процесс и «собрать/сделать»', s: 'TECH' },
+      { t: 'Атмосфера и история', s: 'CREATIVE' },
+      { t: 'Общение', s: 'SOCIAL' },
+    ]},
+  { q: 'Какой тип задания тебе ближе?',
+    a: [
+      { t: 'Собрать/сконструировать', s: 'TECH' },
+      { t: 'Посчитать/вычислить', s: 'LOGIC' },
+      { t: 'Нарисовать/оформить', s: 'CREATIVE' },
+      { t: 'Рассказать/написать', s: 'HUMAN' },
+    ]},
+  { q: 'В командной игре ты чаще…',
+    a: [
+      { t: 'Исполнитель: делаю свою часть', s: 'TECH' },
+      { t: 'Тактик: думаю о плане', s: 'LOGIC' },
+      { t: 'Генератор идей', s: 'CREATIVE' },
+      { t: 'Лидер/организатор', s: 'SOCIAL' },
+    ]},
+  { q: 'Тебе легче…',
+    a: [
+      { t: 'Работать с техникой и устройствами', s: 'TECH' },
+      { t: 'Решать задачи и головоломки', s: 'LOGIC' },
+      { t: 'Делать проекты и придумывать', s: 'CREATIVE' },
+      { t: 'Объяснять и рассказывать', s: 'HUMAN' },
+    ]},
+  { q: 'Что тебе интереснее в школе?',
+    a: [
+      { t: 'Физика / информатика', s: 'TECH' },
+      { t: 'Математика', s: 'LOGIC' },
+      { t: 'ИЗО / музыка', s: 'CREATIVE' },
+      { t: 'История / язык', s: 'HUMAN' },
+    ]},
+  { q: 'Домашнее задание тебе проще сделать, если оно…',
+    a: [
+      { t: 'По образцу и шагам', s: 'TECH' },
+      { t: 'С вычислениями и логикой', s: 'LOGIC' },
+      { t: 'С оформлением и творчеством', s: 'CREATIVE' },
+      { t: 'С текстом и рассказом', s: 'HUMAN' },
+    ]},
+  { q: 'Если нужно выступить, ты выберешь…',
+    a: [
+      { t: 'Факты и доказательства', s: 'LOGIC' },
+      { t: 'Показать опыт/демонстрацию', s: 'TECH' },
+      { t: 'Креативный формат', s: 'CREATIVE' },
+      { t: 'Интересный рассказ', s: 'HUMAN' },
+    ]},
+  { q: 'Ты быстрее учишься, когда…',
+    a: [
+      { t: 'Видишь, как это работает', s: 'TECH' },
+      { t: 'Понимаешь логику', s: 'LOGIC' },
+      { t: 'Пробуешь сам(а)', s: 'CREATIVE' },
+      { t: 'Слушаешь объяснение', s: 'HUMAN' },
+    ]},
+  { q: 'В группе ты чаще…',
+    a: [
+      { t: 'Делаю задачу руками', s: 'TECH' },
+      { t: 'Думаю над решением', s: 'LOGIC' },
+      { t: 'Предлагаю идеи', s: 'CREATIVE' },
+      { t: 'Организую работу', s: 'SOCIAL' },
+    ]},
+  { q: 'Если спор, ты…',
+    a: [
+      { t: 'Смотришь на факты', s: 'LOGIC' },
+      { t: 'Проверяешь на практике', s: 'TECH' },
+      { t: 'Ищешь компромисс', s: 'SOCIAL' },
+      { t: 'Предлагаешь нестандартный вариант', s: 'CREATIVE' },
+    ]},
+  { q: 'Тебе ближе…',
+    a: [
+      { t: 'Точность', s: 'LOGIC' },
+      { t: 'Надёжность', s: 'TECH' },
+      { t: 'Красота', s: 'CREATIVE' },
+      { t: 'Общение', s: 'SOCIAL' },
+    ]},
+  { q: 'Ты чаще любишь задачи…',
+    a: [
+      { t: 'Сделать самому(ой) и продумать', s: 'LOGIC' },
+      { t: 'С инструментами и деталями', s: 'TECH' },
+      { t: 'С идеями и фантазией', s: 'CREATIVE' },
+      { t: 'С людьми и командой', s: 'SOCIAL' },
+    ]},
+  { q: 'Если что-то не получается, ты…',
+    a: [
+      { t: 'Пробую ещё раз', s: 'TECH' },
+      { t: 'Анализирую ошибку', s: 'LOGIC' },
+      { t: 'Меняю подход', s: 'CREATIVE' },
+      { t: 'Прошу совет', s: 'SOCIAL' },
+    ]},
+  { q: 'Ты хотел(а) бы…',
+    a: [
+      { t: 'Создавать устройства', s: 'TECH' },
+      { t: 'Решать сложные задачи', s: 'LOGIC' },
+      { t: 'Делать красивые вещи', s: 'CREATIVE' },
+      { t: 'Работать с людьми', s: 'SOCIAL' },
+    ]},
+  { q: 'В проекте тебе важнее, чтобы…',
+    a: [
+      { t: 'Работало и было полезно', s: 'TECH' },
+      { t: 'Было правильно и логично', s: 'LOGIC' },
+      { t: 'Было интересно и необычно', s: 'CREATIVE' },
+      { t: 'Всем было комфортно', s: 'SOCIAL' },
+    ]},
+  { q: 'Ты гордишься, когда…',
+    a: [
+      { t: 'Починил(а) или собрал(а)', s: 'TECH' },
+      { t: 'Доказал(а) и понял(а)', s: 'LOGIC' },
+      { t: 'Придумал(а) что-то новое', s: 'CREATIVE' },
+      { t: 'Помог(ла) людям', s: 'SOCIAL' },
+    ]},
+  { q: 'Что тебе ближе?',
+    a: [
+      { t: 'Инструкция', s: 'TECH' },
+      { t: 'Формула', s: 'LOGIC' },
+      { t: 'Идея', s: 'CREATIVE' },
+      { t: 'Диалог', s: 'HUMAN' },
+    ]},
+  { q: 'Тебе важно…',
+    a: [
+      { t: 'Понимать устройство вещей', s: 'TECH' },
+      { t: 'Видеть смысл и закономерности', s: 'LOGIC' },
+      { t: 'Самовыражаться', s: 'CREATIVE' },
+      { t: 'Быть полезным в команде', s: 'SOCIAL' },
+    ]},
+];
+
+const APTITUDE_PROFILES = {
+  TECH: {
+    explain: 'Тебе интересно, как всё устроено. Ты любишь собирать, чинить и улучшать.',
+    careers: ['программирование', 'робототехника', 'инженерия', 'электроника', 'автоматизация'],
+    games: ['puzzle-2x2','puzzle-3x3','puzzle-4x4','factory-2048']
+  },
+  LOGIC: {
+    explain: 'Тебе нравится думать, искать закономерности и находить лучший способ решить задачу.',
+    careers: ['математика', 'аналитика', 'алгоритмы', 'стратегии', 'исследования'],
+    games: ['factory-2048','quiz','puzzle-4x4']
+  },
+  CREATIVE: {
+    explain: 'Тебе важно придумывать новое и делать по‑своему. Креатив — твоя сильная сторона.',
+    careers: ['дизайн', 'анимация', 'креативные проекты', 'архитектура', 'контент‑создание'],
+    games: ['puzzle-3x3','quiz','jumper']
+  },
+  HUMAN: {
+    explain: 'Тебе нравится читать, писать, рассказывать и понимать людей через слова и истории.',
+    careers: ['языки', 'журналистика', 'педагогика', 'история', 'перевод'],
+    games: ['quiz']
+  },
+  SOCIAL: {
+    explain: 'Тебе нравится общаться, помогать и организовывать. Команда — твоя суперсила.',
+    careers: ['управление', 'организация мероприятий', 'командная работа', 'проект‑менеджмент', 'сервис'],
+    games: ['jumper','quiz']
+  }
+};
+
+function newAptitudeScores() {
+    return { TECH:0, LOGIC:0, CREATIVE:0, HUMAN:0, SOCIAL:0 };
+}
+
+let aptitudeIndex = 0;
+let aptitudeScores = newAptitudeScores();
+
+function shuffleArrayInPlace(arr) {
+    for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+}
+
+function startAptitudeTest() {
+    aptitudeIndex = 0;
+    aptitudeScores = newAptitudeScores();
+    showScreen('screen-aptitude');
+    renderAptitudeQuestion();
+    lockClicks(300);
+}
+
+// Вход в режим профтеста:
+// если результат уже есть — показываем его; сбрасываем только по кнопке "Пройти ещё раз".
+function openAptitudeMode() {
+    const saved = loadSavedAptitudeResult();
+    if (saved) {
+        renderAptitudeResult(saved);
+        showScreen('screen-aptitude-result');
+        try { applyAptitudeRecommendationsToMenu(saved); } catch (e) {}
+        lockClicks(200);
+        return;
+    }
+    startAptitudeTest();
+}
+
+function renderAptitudeQuestion() {
+    const total = APTITUDE_QUESTIONS.length;
+    const qEl = document.getElementById('aptitude-question');
+    const aEl = document.getElementById('aptitude-answers');
+    const pEl = document.getElementById('aptitude-progress');
+    if (!qEl || !aEl || !pEl) return;
+
+    const item = APTITUDE_QUESTIONS[aptitudeIndex];
+    pEl.textContent = `Вопрос ${aptitudeIndex + 1} из ${total}`;
+    qEl.textContent = item.q;
+
+    aEl.innerHTML = '';
+    // Чуть разнообразим: ответы перемешиваем, чтобы не было «угадывания».
+    const answers = shuffleArrayInPlace(item.a.slice());
+    for (const ans of answers) {
+        const btn = document.createElement('button');
+        btn.className = 'btn btn-secondary';
+        btn.type = 'button';
+        btn.textContent = ans.t;
+        btn.dataset.action = 'aptitude-answer';
+        btn.dataset.score = ans.s;
+        aEl.appendChild(btn);
+    }
+}
+
+function finishAptitudeTest() {
+    // Ранжируем
+    const entries = Object.entries(aptitudeScores);
+    entries.sort((a,b)=>b[1]-a[1]);
+
+    const [mainK, mainV] = entries[0];
+    const [secondK, secondV] = entries[1] || [mainK, 0];
+
+    const total = APTITUDE_QUESTIONS.length;
+    const percent = (v) => Math.round((v / total) * 100);
+
+    const result = {
+        scores: { ...aptitudeScores },
+        order: entries.map(([k,v]) => ({ k, v, p: percent(v) })),
+        main: mainK,
+        second: secondK,
+        ts: Date.now()
+    };
+
+    try { localStorage.setItem(APTITUDE_STORAGE_KEY, JSON.stringify(result)); } catch(e) {}
+
+// Отправим боту ведущее направление (для статистики в /stats).
+// Очки не трогаем — это отдельная механика уровней.
+try {
+    const tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
+    if (tg && tg.sendData) {
+        tg.sendData(JSON.stringify({ aptitude_top: result.main }));
+    }
+} catch (e) {}
+
+    renderAptitudeResult(result);
+    showScreen('screen-aptitude-result');
+    // Помечаем рекомендации в меню уровней (звёздочкой)
+    try { applyAptitudeRecommendationsToMenu(result); } catch (e) {}
+}
+
+function renderAptitudeResult(result) {
+    const mainEl = document.getElementById('aptitude-main');
+    const secondEl = document.getElementById('aptitude-second');
+    const explainEl = document.getElementById('aptitude-explain');
+    const barsEl = document.getElementById('aptitude-bars');
+    const careersEl = document.getElementById('aptitude-careers');
+    const gamesEl = document.getElementById('aptitude-games');
+
+    if (mainEl) mainEl.textContent = APTITUDE_AXES[result.main]?.name || result.main;
+    if (secondEl) secondEl.textContent = APTITUDE_AXES[result.second]?.name || result.second;
+
+    const prof = APTITUDE_PROFILES[result.main] || {};
+    if (explainEl) explainEl.textContent = prof.explain || '—';
+
+    if (barsEl) {
+        barsEl.innerHTML = '';
+        for (const it of result.order) {
+            const axis = APTITUDE_AXES[it.k] || {};
+            const row = document.createElement('div');
+            row.className = 'result-bar';
+            row.innerHTML = `
+              <div>
+                <button type="button" class="apt-label" data-action="aptitude-hint" data-hint="${escapeAttr(axis.hint || '')}">${axis.short || it.k}</button>
+              </div>
+              <div class="bar"><div class="fill" style="width:${it.p}%"></div></div>
+              <div style="text-align:right; opacity:0.9;">${it.p}%</div>
+            `;
+            barsEl.appendChild(row);
+        }
+    }
+
+    if (careersEl) {
+        careersEl.innerHTML = '';
+        for (const c of (prof.careers || [])) {
+            const li = document.createElement('li');
+            li.textContent = c;
+            careersEl.appendChild(li);
+        }
+    }
+
+    if (gamesEl) {
+        gamesEl.innerHTML = '';
+        const games = prof.games || [];
+        for (const g of games) {
+            const chip = document.createElement('span');
+            chip.className = 'chip';
+            chip.textContent = LEVEL_DEFS[g]?.title ? `⭐ ${LEVEL_DEFS[g].title}` : `⭐ ${g}`;
+            gamesEl.appendChild(chip);
+        }
+    }
+}
+
+function applyAptitudeRecommendationsToMenu(result) {
+    // Снимаем старые отметки
+    document.querySelectorAll('.level-card.recommended').forEach(c => c.classList.remove('recommended'));
+    document.querySelectorAll('.recommend-badge').forEach(b => b.remove());
+
+    const prof = APTITUDE_PROFILES[result.main] || {};
+    const rec = new Set(prof.games || []);
+
+    // Отмечаем карточки уровней
+    document.querySelectorAll('.level-card').forEach(card => {
+        const btn = card.querySelector('button[data-level]');
+        if (!btn) return;
+        const key = btn.dataset.level;
+        if (!rec.has(key)) return;
+
+        card.classList.add('recommended');
+        const title = card.querySelector('.level-title');
+        if (title && !title.querySelector('.recommend-badge')) {
+            const badge = document.createElement('span');
+            badge.className = 'recommend-badge';
+            badge.textContent = '⭐';
+            title.appendChild(badge);
+        }
+    });
+}
+
+function loadSavedAptitudeResult() {
+    try {
+        const raw = localStorage.getItem(APTITUDE_STORAGE_KEY);
+        if (!raw) return null;
+        const data = JSON.parse(raw);
+        if (!data || !data.scores || !data.main) return null;
+        return data;
+    } catch (e) {
+        return null;
+    }
+}
+
+
 // ==========================================
 // Доступность уровней (админ может временно выключать)
 // ==========================================
@@ -461,39 +950,64 @@ function showScreen(screenId) {
     if (s) s.classList.add('active');
 
     const isLevelScreen = (screenId === 'screen-level1' || screenId === 'screen-level2' || screenId === 'screen-level3' || screenId === 'screen-level4');
+    const isAptitudeTest = (screenId === 'screen-aptitude');
+    const isAptitudeResult = (screenId === 'screen-aptitude-result');
 
     // Верхняя кнопка "К уровням":
     // - во время прохождения уровня: видна сверху
+    // - в тесте: видна сверху
     // - уровень пройден: сверху пропадает
     // - на приветствии и в меню уровней: скрыта
     const topbar = document.getElementById('global-topbar');
     if (topbar) {
-        // Показываем верхнюю кнопку только во время прохождения уровней.
-        // На финале/приветствии/в меню уровней — скрыта.
-        const showTop = (isLevelScreen && !levelCompleted);
+        const showTop = ((isLevelScreen && !levelCompleted) || isAptitudeTest);
         topbar.classList.toggle('hidden', !showTop);
     }
 
-    // Нижняя кнопка "К уровням": появляется только когда уровень пройден (на экранах уровней)
+    // Нижняя кнопка "К уровням":
+    // - на уровнях появляется только когда уровень пройден
+    // - на экране результатов теста всегда видна снизу
     const bottombar = document.getElementById('global-bottombar');
     if (bottombar) {
-        const showBottom = (isLevelScreen && levelCompleted);
+        const showBottom = ((isLevelScreen && levelCompleted) || isAptitudeResult);
         bottombar.classList.toggle('hidden', !showBottom);
     }
 
-    // Кнопка звука показывается только на экранах меню (приветствие + выбор уровней)
+    // Кнопка звука показывается только на экранах меню (приветствие + выбор уровней + тест)
     const soundBtn = document.getElementById('btn-sound-toggle');
     if (soundBtn) {
-        const showSound = (screenId === 'screen-welcome' || screenId === 'screen-levels');
+        const showSound = (screenId === 'screen-welcome' || screenId === 'screen-levels' || isAptitudeTest || isAptitudeResult);
         soundBtn.classList.toggle('hidden', !showSound);
     }
 }
+
 
 
 function showLevels() {
     showScreen('screen-levels');
     renderLevelMenuStats();
     loadLevelAvailability().then(() => applyLevelAvailabilityToMenu());
+    // Подсветка рекомендаций по тесту (если уже проходили)
+    const savedApt = loadSavedAptitudeResult();
+// Показываем в статистике только ведущее направление (если есть)
+const statLine = document.getElementById('aptitude-stat-line');
+const statMain = document.getElementById('stat-aptitude-main');
+if (statLine && statMain && savedApt && savedApt.main) {
+    const LABEL = {
+        TECH: '🔧 Техническое мышление',
+        LOGIC: '🧩 Логическое мышление',
+        CREATIVE: '🎨 Творческое мышление',
+        HUMAN: '📖 Гуманитарное мышление',
+        SOCIAL: '🤝 Командное мышление',
+    };
+    statMain.textContent = LABEL[savedApt.main] || savedApt.main;
+    statLine.style.display = '';
+} else if (statLine) {
+    statLine.style.display = 'none';
+}
+    if (savedApt) {
+        try { applyAptitudeRecommendationsToMenu(savedApt); } catch (e) {}
+    }
     // Защита от "тапа-сквозь": сразу после перехода в меню уровней.
     // На некоторых Android/WebView "стартовый" тап прилетает с задержкой,
     // поэтому держим блокировку чуть дольше.
@@ -1919,6 +2433,20 @@ window.addEventListener('DOMContentLoaded', () => {
     }
 
     const btnChoose = document.getElementById('btn-choose-level');
+    const btnApt = document.getElementById('btn-aptitude-test');
+    if (btnApt) {
+        btnApt.addEventListener('click', (e) => {
+            if (Date.now() < ignoreClickUntil) {
+                e?.preventDefault?.();
+                e?.stopPropagation?.();
+                return;
+            }
+            unlockSfxOnce();
+            openAptitudeMode();
+        });
+    }
+
+
     if (btnChoose) {
         const go = (e) => {
             // защита от первого "призрачного" клика
@@ -1936,6 +2464,15 @@ window.addEventListener('DOMContentLoaded', () => {
 
     // Универсальные обработчики вместо inline onclick (Telegram/WebView может их блокировать)
     const handleAction = (e) => {
+        // Закрываем подсказку по клику в любом месте (кроме самой подсказки и подписи шкалы)
+        if (e.type === 'click') {
+            const tt = document.getElementById('aptitude-tooltip');
+            if (tt && !tt.classList.contains('hidden')) {
+                const keep = e.target.closest('.apt-tooltip') || e.target.closest('.apt-label');
+                if (!keep) hideAptitudeTooltip();
+            }
+        }
+
         const el = e.target.closest('[data-action], [data-level]');
         if (!el) return;
 
@@ -1970,7 +2507,28 @@ window.addEventListener('DOMContentLoaded', () => {
         const action = el.dataset.action;
         if (!action) return;
 
-        if (action === 'show-levels') {
+        if (action === 'show-aptitude-test') {
+            openAptitudeMode();
+        } else if (action === 'aptitude-hint') {
+            // подсказка по шкале (по тапу)
+            showAptitudeTooltip(el.dataset.hint || '', el);
+        } else if (action === 'aptitude-answer') {
+            // ответ в профтесте
+            const s = (el.dataset.score || '').trim();
+            if (s) aptitudeScores[s] = (aptitudeScores[s] || 0) + 1;
+            aptitudeIndex++;
+            if (aptitudeIndex >= APTITUDE_QUESTIONS.length) {
+                finishAptitudeTest();
+            } else {
+                renderAptitudeQuestion();
+            }
+        } else if (action === 'restart-aptitude-test') {
+            // Сбрасываем сохранённый результат только при явном перезапуске
+            try { localStorage.removeItem(APTITUDE_STORAGE_KEY); } catch (e) {}
+            startAptitudeTest();
+        } else if (action === 'go-levels-from-test') {
+            exitToLevels();
+        } else if (action === 'show-levels') {
             exitToLevels();
         } else if (action === 'reset-stats') {
             resetAllStats();
