@@ -1190,6 +1190,13 @@ function showAfterLevel(levelId) {
         }
     } catch (e) {}
 
+    // Важно: контейнер #after-level-container изначально находится в разметке экрана Jumper.
+    // Чтобы он был видим после прохождения ЛЮБОГО уровня, переносим его в текущий активный экран.
+    const activeScreen = document.querySelector('.screen.active');
+    if (activeScreen && !activeScreen.contains(c)) {
+        activeScreen.appendChild(c);
+    }
+
     c.style.display = 'block';
 
     // Плавно проявляем блок (CSS transition)
