@@ -1028,6 +1028,8 @@ function showScreen(screenId) {
 
 
 function showLevels() {
+    hideAfterLevel();
+
     showScreen('screen-levels');
     renderLevelMenuStats();
     loadLevelAvailability().then(() => applyLevelAvailabilityToMenu());
@@ -1072,7 +1074,7 @@ function stopJumperNow() {
         const container = document.getElementById('doodle-container');
         const ui = document.getElementById('doodle-ui');
         const startMsg = document.getElementById('doodle-start-msg');
-        const gate = document.getElementById('factory-gate-container');
+        const gate = document.getElementById('after-level-container');
         const over = document.getElementById('game-over-overlay');
         const victory = document.getElementById('victory-overlay');
 
@@ -1092,6 +1094,113 @@ function stopJumperNow() {
     } catch (e) {}
 }
 
+
+// ==========================================
+// ЭКРАН ПОСЛЕ ПРОХОЖДЕНИЯ УРОВНЯ (картинка + текст)
+// ==========================================
+const AFTER_LEVEL_DATA = {
+    // Пазлы (все размеры)
+    'puzzle-2x2': { title: '🧩 Мастерская деталей открыта!', text: 'Ты собрал все части вместе. Настоящий мастер своего дела 🔧', img: 'assets/after_puzzle.webp' },
+    'puzzle-3x3': { title: '🧩 Мастерская деталей открыта!', text: 'Ты собрал все части вместе. Настоящий мастер своего дела 🔧', img: 'assets/after_puzzle.webp' },
+    'puzzle-4x4': { title: '🧩 Мастерская деталей открыта!', text: 'Ты собрал все части вместе. Настоящий мастер своего дела 🔧', img: 'assets/after_puzzle.webp' },
+
+    // Jumper
+    'jumper': { title: '🏁 Испытания пройдены!', text: 'Ты ловкий и быстрый! Завод может на тебя положиться 💪', img: 'assets/after_jumper.webp' },
+
+    // 2048
+    'factory-2048': { title: '🔓 Сборочный цех пройден!', text: 'Ты правильно собрал детали! Линия сборки работает без сбоев 🚀', img: 'assets/after_2048.webp' },
+
+    // Quiz
+    'quiz': { title: '🎓 Экзамен сдан!', text: 'Ты доказал, что знаешь, как работает завод 🧠⚙️', img: 'assets/after_quiz.webp' }
+};
+
+function hideAfterLevel() {
+    const c = document.getElementById('after-level-container');
+    if (c) {
+        c.style.display = 'none';
+        c.classList.remove('gate-visible', 'lights-on');
+    }
+
+    // Вернём скрытые элементы интерфейса (если прятали для экрана "после уровня")
+    try {
+        const board = document.getElementById('puzzle-board');
+        const status = document.getElementById('puzzle-status');
+        if (board) board.style.display = '';
+        if (status) status.style.display = '';
+
+        const grid = document.getElementById('grid-container');
+        if (grid) grid.style.display = '';
+
+        const qc = document.getElementById('quiz-container');
+        if (qc) qc.style.display = '';
+
+        const dc = document.getElementById('doodle-container');
+        const du = document.getElementById('doodle-ui');
+        const sm = document.getElementById('doodle-start-msg');
+        if (dc) dc.style.display = '';
+        if (du) du.style.display = '';
+        if (sm) sm.style.display = '';
+    } catch (e) {}
+}
+
+function showAfterLevel(levelId) {
+    const data = AFTER_LEVEL_DATA[levelId];
+    const c = document.getElementById('after-level-container');
+    if (!c) return;
+
+    // На всякий случай очистим предыдущие классы/состояние
+    c.classList.remove('gate-visible', 'lights-on');
+
+    // Подставим контент
+    const titleEl = document.getElementById('after-level-title');
+    const textEl = document.getElementById('after-level-text');
+    const imgEl = document.getElementById('after-level-img');
+    const srcEl = document.getElementById('after-level-source');
+
+    if (data) {
+        if (titleEl) titleEl.textContent = data.title;
+        if (textEl) textEl.textContent = data.text;
+        if (imgEl) {
+            imgEl.src = data.img;
+            imgEl.alt = data.title || 'Экран после уровня';
+        }
+        if (srcEl) srcEl.srcset = data.img;
+    }
+
+    // Спрячем игровые элементы текущего уровня, чтобы не перекрывались
+    try {
+        if (levelId.startsWith('puzzle')) {
+            const board = document.getElementById('puzzle-board');
+            const status = document.getElementById('puzzle-status');
+            if (board) board.style.display = 'none';
+            if (status) status.style.display = 'none';
+        } else if (levelId === 'factory-2048') {
+            const grid = document.getElementById('grid-container');
+            if (grid) grid.style.display = 'none';
+        } else if (levelId === 'quiz') {
+            const qc = document.getElementById('quiz-container');
+            if (qc) qc.style.display = 'none';
+        } else if (levelId === 'jumper') {
+            const dc = document.getElementById('doodle-container');
+            const du = document.getElementById('doodle-ui');
+            const sm = document.getElementById('doodle-start-msg');
+            if (dc) dc.style.display = 'none';
+            if (du) du.style.display = 'none';
+            if (sm) sm.style.display = 'none';
+        }
+    } catch (e) {}
+
+    c.style.display = 'block';
+
+    // Плавно проявляем блок (CSS transition)
+    requestAnimationFrame(() => c.classList.add('gate-visible'));
+
+    // Затем включаем "свет" на картинке
+    setTimeout(() => {
+        c.classList.add('lights-on');
+    }, 150);
+}
+
 function exitToLevels() {
     // Останавливаем активные циклы
     stopJumperNow();
@@ -1105,6 +1214,8 @@ let levelStartTime = 0; // Для засекания времени
 let levelCompleted = false; // Для переключения кнопок "К уровням" (верх/низ)
 
 function startLevel(levelId) {
+    hideAfterLevel();
+
     // защита от старых вызовов
     if (typeof levelId === 'number') return startGame(levelId);
 
@@ -1338,6 +1449,7 @@ function checkPuzzleWin() {
     finishLevel({ score, timeMs });
 
     // "Далее" убрано — пользователь сам выбирает следующий уровень в меню.
+    showAfterLevel(currentLevelId);
 }
 
 
@@ -1476,7 +1588,7 @@ function initJumper() {
     document.getElementById('doodle-container').style.display = 'block';
     const ui = document.getElementById('doodle-ui');
     ui.style.display = 'flex';
-    document.getElementById('factory-gate-container').style.display = 'none';
+    document.getElementById('after-level-container').style.display = 'none';
     ui.querySelector('h2').textContent = `Собери детали`;
     document.getElementById('doodle-score').textContent = "0";
     document.getElementById('doodle-timer').textContent = "⏱ 00:00";
@@ -1931,19 +2043,8 @@ function showVictoryLevel2() {
 }
 
 function finishLevel2() {
-    document.getElementById('doodle-container').style.display = 'none';
-    document.getElementById('doodle-ui').style.display = 'none';
-    const gateContainer = document.getElementById('factory-gate-container');
-    gateContainer.style.display = 'block';
-
-    // Плавно проявляем блок (CSS transition)
-    requestAnimationFrame(() => gateContainer.classList.add('gate-visible'));
-
-    // Затем включаем "свет" на картинке
-    setTimeout(() => {
-        gateContainer.classList.add('lights-on');
-        // Кнопка "Далее" убрана — после победы игрок возвращается в меню уровней вручную.
-    }, 150);
+    // Экран после Jumper
+    showAfterLevel('jumper');
 }
 
 // ==========================================
@@ -2213,6 +2314,8 @@ function showVictory2048() {
     overlay2048Victory.classList.add('visible');
     setTimeout(() => {
         overlay2048Victory.classList.remove('visible');
+        // Показать экран после уровня
+        showAfterLevel('factory-2048');
         // Кнопка "Далее" убрана — после победы игрок может вернуться в меню уровней.
     }, 2000);
 }
@@ -2396,6 +2499,9 @@ function finishQuizLevel() {
     if (progress) progress.textContent = '✅ Квиз завершён';
     if (qText) qText.textContent = 'Ты прошёл квиз! Теперь можно вернуться к уровням.';
     if (answers) answers.innerHTML = '';
+
+    // Показать экран после уровня
+    showAfterLevel('quiz');
 }
 
 // === ФИНАЛ: ОТПРАВКА ДАННЫХ ===
