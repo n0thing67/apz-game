@@ -598,7 +598,7 @@ body.admin-body {
 }
 
 /* === ФИНАЛ УРОВНЯ 2 === */
-#factory-gate-container {
+#after-level-container {
     display: none;
     margin-top: 20px;
     opacity: 0;
@@ -608,12 +608,12 @@ body.admin-body {
 }
 
 /* Плавное появление блока "ЗАВОД ЗАПУЩЕН" */
-#factory-gate-container.gate-visible {
+#after-level-container.gate-visible {
     opacity: 1;
     transform: translateY(0);
 }
 
-#factory-gate-img {
+#after-level-img {
     width: 100%;
     border-radius: 15px;
     border: 4px solid white;
@@ -621,7 +621,7 @@ body.admin-body {
     transition: filter 2s, box-shadow 2s;
 }
 
-.lights-on #factory-gate-img {
+.lights-on #after-level-img {
     filter: brightness(1.2) contrast(1.1);
     box-shadow: 0 0 30px 10px rgba(255, 215, 0, 0.6);
 }
