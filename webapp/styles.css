@@ -1395,6 +1395,34 @@ hr {
 }
 .app-preloader-title{
     font-weight: 700;
+    margin-bottom: 12px;
+}
+.app-preloader-spinner{
+    width: 34px;
+    height: 34px;
+    margin: 0 auto;
+    border-radius: 999px;
+    border: 3px solid rgba(255,255,255,0.25);
+    border-top-color: rgba(255,255,255,0.9);
+    animation: appSpin 0.85s linear infinite;
+}
+@keyframes appSpin{
+    to{ transform: rotate(360deg); }
+}
+
+
+.app-preloader-card{
+    width: min(420px, 100%);
+    background: rgba(24,24,24,0.92);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 16px;
+    padding: 16px 16px 14px;
+    box-shadow: 0 12px 30px rgba(0,0,0,0.35);
+    text-align: center;
+    backdrop-filter: blur(6px);
+}
+.app-preloader-title{
+    font-weight: 700;
     margin-bottom: 10px;
 }
 .app-preloader-bar{
