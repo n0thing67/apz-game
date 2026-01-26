@@ -35,6 +35,14 @@ function updateAppPreloaderProgress(pct) {
     if (bar) bar.setAttribute('aria-valuenow', String(v));
 }
 
+
+// Даем браузеру шанс перерисовать прогрессбар между шагами загрузки
+function _appPreloadYield() {
+    return new Promise((resolve) => {
+        requestAnimationFrame(() => setTimeout(resolve, 0));
+    });
+}
+
 function hideAppPreloader() {
     const wrap = document.getElementById('app-preloader');
     if (!wrap) return;
@@ -73,6 +81,7 @@ async function appPreloadAllAssets() {
     let done = 0;
 
     updateAppPreloaderProgress(0);
+    await _appPreloadYield();
 
     // Важно: грузим последовательно/не слишком параллельно, чтобы не "убить" слабый интернет.
     // Картинки
@@ -80,12 +89,14 @@ async function appPreloadAllAssets() {
         await _preloadOneImage(url);
         done++;
         updateAppPreloaderProgress((done / total) * 100);
+        await _appPreloadYield();
     }
     // Звуки
     for (const url of APP_PRELOAD_SOUNDS) {
         await _preloadOneSound(url);
         done++;
         updateAppPreloaderProgress((done / total) * 100);
+        await _appPreloadYield();
     }
 
     APP_PRELOAD_DONE = true;
@@ -97,6 +108,16 @@ async function appPreloadAllAssets() {
 
     hideAppPreloader();
 }
+
+// Запускаем глобальный прелоадер сразу при входе в веб-приложение.
+// Если ассеты уже были загружены (например, при возврате в меню), функция просто завершится.
+document.addEventListener('DOMContentLoaded', () => {
+    appPreloadAllAssets().catch(() => {
+        // Даже если что-то не загрузилось, не блокируем приложение
+        hideAppPreloader();
+    });
+});
+
 
 // ==========================================
 // SFX (звуки)
