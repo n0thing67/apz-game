@@ -18,6 +18,18 @@
         </div>
     </div>
 
+    <!-- Safety fallback: если внешний JS не загрузился/сломался в Telegram WebView,
+         не блокируем приложение бесконечным оверлеем. -->
+    <script>
+      (function(){
+        var HIDE_AFTER_MS = 6000;
+        setTimeout(function(){
+          var el = document.getElementById('app-preloader');
+          if (el) el.classList.add('hidden');
+        }, HIDE_AFTER_MS);
+      })();
+    </script>
+
     <!-- Всплывающая подсказка для шкал теста (появляется по тапу) -->
     <div id="aptitude-tooltip" class="apt-tooltip hidden" role="status" aria-live="polite"></div>
 
