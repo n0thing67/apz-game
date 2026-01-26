@@ -4,31 +4,30 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Завод АПЗ</title>
-    <link rel="stylesheet" href="styles.css?v=20260126_2">
+    <link rel="stylesheet" href="styles.css">
     <link rel="preconnect" href="https://telegram.org" crossorigin>
     <!-- Подключаем скрипт Телеграма -->
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
+
     <!-- Глобальный прелоадер при входе в приложение -->
     <div id="app-preloader" class="app-preloader" aria-live="polite" aria-label="Загрузка">
         <div class="app-preloader-card">
-            <div class="app-preloader-title">Загрузка ресурсов…</div>
+            <div class="app-preloader-title">Загрузка…</div>
             <div class="app-preloader-spinner" aria-hidden="true"></div>
+            <div class="app-preloader-sub">Подготавливаем изображения</div>
         </div>
     </div>
-
-    <!-- Safety fallback: если внешний JS не загрузился/сломался в Telegram WebView,
-         не блокируем приложение бесконечным оверлеем. -->
     <script>
-      (function(){
-        var HIDE_AFTER_MS = 6000;
-        setTimeout(function(){
-          var el = document.getElementById('app-preloader');
-          if (el) el.classList.add('hidden');
-        }, HIDE_AFTER_MS);
-      })();
+      // Фолбэк на случай, если WebView закэшировал/не выполнил основной script.js.
+      // Прелоадер не должен перекрывать интерфейс бесконечно.
+      setTimeout(function () {
+        var el = document.getElementById('app-preloader');
+        if (el) el.classList.add('hidden');
+      }, 6000);
     </script>
+
 
     <!-- Всплывающая подсказка для шкал теста (появляется по тапу) -->
     <div id="aptitude-tooltip" class="apt-tooltip hidden" role="status" aria-live="polite"></div>
@@ -290,6 +289,6 @@
             <button class="btn" data-action="final-send-stats">К статистике</button>
         </div>
     </div>
-    <script src="script.js?v=20260126_2"></script>
+    <script src="script.js"></script>
 </body>
 </html>
