@@ -21,8 +21,10 @@ function assetPath(name, fallbackExt) {
 let APP_PRELOAD_DONE = false;
 window.__APZ_PRELOAD_DONE = false;
 
+// Предзагружаем ТОЛЬКО изображения.
+// Звуки НЕ предзагружаем, потому что в Telegram WebView fetch/аудио часто ведут себя нестабильно
+// и могут стопорить/ломать загрузчик.
 const APP_PRELOAD_IMAGES = ["assets/after_2048.webp", "assets/after_jumper.webp", "assets/after_puzzle.webp", "assets/after_quiz.webp", "assets/board.webp", "assets/bolt.webp", "assets/case.webp", "assets/chip.webp", "assets/device.webp", "assets/gate.webp", "assets/gear.webp", "assets/hero.webp", "assets/jetpack.webp", "assets/logo.webp", "assets/nut.webp", "assets/part.webp", "assets/platform.webp", "assets/propeller.webp", "assets/sensor.webp", "assets/spring.webp"];
-const APP_PRELOAD_SOUNDS = ["sound/2048-plastic.mp3", "sound/2048-pop.mp3", "sound/2048-slide.mp3", "sound/answer-correct.mp3", "sound/answer-uncorrect.mp3", "sound/jumper-bounce.mp3", "sound/jumper-jetpack.mp3", "sound/jumper-jump.mp3", "sound/jumper-loss.mp3", "sound/jumper-propeller.mp3", "sound/jumper-win.mp3", "sound/menu-click.mp3", "sound/puzzle-click.mp3", "sound/puzzle-slide.mp3"];
 
 function updateAppPreloaderProgress(pct) {
     // Прогресс-бар убран: оставляем прелоадер лёгким и неблокирующим.
@@ -86,52 +88,17 @@ function _preloadOneImage(url) {
 }
 
 
-async function _preloadOneSound(url) {
-    // На мобилках автопроигрывание блокируется, но скачивание (fetch) можно сделать заранее.
-    // Добавляем AbortController + таймаут, чтобы один зависший запрос не "замораживал" прогресс.
-    const timeoutMs = 6000;
-    let controller = null;
-    try {
-        controller = ('AbortController' in window) ? new AbortController() : null;
-        const timer = setTimeout(() => {
-            try { controller?.abort(); } catch (e) {}
-        }, timeoutMs);
-
-        const r = await fetch(url, {
-            cache: 'force-cache',
-            signal: controller ? controller.signal : undefined,
-        });
-        // Читаем тело, чтобы реально произошла загрузка и оно попало в кеш
-        await r.arrayBuffer();
-
-        clearTimeout(timer);
-    } catch (e) {
-        // игнорируем — прелоадер не должен блокировать запуск приложения
-        try { controller?.abort(); } catch (e2) {}
-    }
-}
-
-
 async function appPreloadAllAssets() {
     if (APP_PRELOAD_DONE) return;
-    const items = [...APP_PRELOAD_IMAGES, ...APP_PRELOAD_SOUNDS];
-    const total = items.length || 1;
+    const total = APP_PRELOAD_IMAGES.length || 1;
     let done = 0;
 
     updateAppPreloaderProgress(0);
     await _appPreloadYield();
 
-    // Важно: грузим последовательно/не слишком параллельно, чтобы не "убить" слабый интернет.
-    // Картинки
+    // Важно: грузим изображения последовательно (бережём слабый интернет и WebView).
     for (const url of APP_PRELOAD_IMAGES) {
         await _preloadOneImage(url);
-        done++;
-        updateAppPreloaderProgress((done / total) * 100);
-        await _appPreloadYield();
-    }
-    // Звуки
-    for (const url of APP_PRELOAD_SOUNDS) {
-        await _preloadOneSound(url);
         done++;
         updateAppPreloaderProgress((done / total) * 100);
         await _appPreloadYield();
@@ -150,12 +117,13 @@ async function appPreloadAllAssets() {
 // Запускаем глобальный прелоадер сразу при входе в веб-приложение.
 // Если ассеты уже были загружены (например, при возврате в меню), функция просто завершится.
 function _startAppPreloadOnEnter() {
-    // Запускаем загрузку ассетов в фоне.
-    // В Telegram WebView события загрузки могут вести себя нестабильно, поэтому прелоадер НЕ блокирует приложение.
-    const hardHideMs = 1800;
+    // Спиннер крутится пока грузим ИЗОБРАЖЕНИЯ.
+    // Чтобы пользователь не застрял на бесконечной загрузке (на всякий случай), ставим "аварийный" таймаут.
+    // Если с сетью беда — приложение всё равно откроется.
+    const MAX_SPINNER_MS = 8000;
     const hardTimer = setTimeout(() => {
         hideAppPreloader();
-    }, hardHideMs);
+    }, MAX_SPINNER_MS);
 
     appPreloadAllAssets().catch(() => {
         // Даже если что-то не загрузилось, не блокируем приложение
