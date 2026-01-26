@@ -4,7 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Завод АПЗ</title>
-    <link rel="stylesheet" href="styles.css">
+    <!-- cache-bust: Telegram WebView может агрессивно кешировать статику -->
+    <link rel="stylesheet" href="styles.css?v=20260126">
     <link rel="preconnect" href="https://telegram.org" crossorigin>
     <!-- Подключаем скрипт Телеграма -->
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
@@ -283,6 +284,6 @@
             <button class="btn" data-action="final-send-stats">К статистике</button>
         </div>
     </div>
-    <script src="script.js"></script>
+    <script src="script.js?v=20260126"></script>
 </body>
 </html>
