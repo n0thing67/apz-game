@@ -1366,3 +1366,54 @@ hr {
     overflow-y: auto; /* скролл внутри экрана, элементы двигаются вместе с контентом */
     -webkit-overflow-scrolling: touch;
 }
+
+
+/* =========================
+   APP PRELOADER (startup)
+   ========================= */
+.app-preloader{
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0,0,0,0.75);
+    z-index: 99999;
+    padding: 18px;
+}
+.app-preloader.hidden{ display:none; }
+
+.app-preloader-card{
+    width: min(420px, 100%);
+    background: rgba(24,24,24,0.92);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 16px;
+    padding: 16px 16px 14px;
+    box-shadow: 0 12px 30px rgba(0,0,0,0.35);
+    text-align: center;
+    backdrop-filter: blur(6px);
+}
+.app-preloader-title{
+    font-weight: 700;
+    margin-bottom: 10px;
+}
+.app-preloader-bar{
+    width: 100%;
+    height: 12px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.12);
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.10);
+}
+.app-preloader-bar-fill{
+    height: 100%;
+    width: 0%;
+    background: rgba(255,255,255,0.85);
+    border-radius: 999px;
+    transition: width 120ms linear;
+}
+.app-preloader-percent{
+    margin-top: 10px;
+    opacity: 0.9;
+    font-variant-numeric: tabular-nums;
+}
