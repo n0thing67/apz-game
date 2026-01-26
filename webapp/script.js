@@ -25,10 +25,11 @@ const APP_PRELOAD_IMAGES = ["assets/after_2048.webp", "assets/after_jumper.webp"
 const APP_PRELOAD_SOUNDS = ["sound/2048-plastic.mp3", "sound/2048-pop.mp3", "sound/2048-slide.mp3", "sound/answer-correct.mp3", "sound/answer-uncorrect.mp3", "sound/jumper-bounce.mp3", "sound/jumper-jetpack.mp3", "sound/jumper-jump.mp3", "sound/jumper-loss.mp3", "sound/jumper-propeller.mp3", "sound/jumper-win.mp3", "sound/menu-click.mp3", "sound/puzzle-click.mp3", "sound/puzzle-slide.mp3"];
 
 function updateAppPreloaderProgress(pct) {
-    const wrap = document.getElementById('app-preloader');
-    const fill = document.getElementById('app-preloader-bar-fill');
-    const pctEl = document.getElementById('app-preloader-percent');
-    const bar = wrap ? wrap.querySelector('.app-preloader-bar') : null;
+    // Делаем поиск элементов максимально устойчивым к правкам верстки/кеша в WebView.
+    const wrap = document.getElementById('app-preloader') || document.querySelector('.app-preloader');
+    const fill = document.getElementById('app-preloader-bar-fill') || wrap?.querySelector?.('.app-preloader-bar-fill');
+    const pctEl = document.getElementById('app-preloader-percent') || wrap?.querySelector?.('.app-preloader-percent');
+    const bar = wrap ? (wrap.querySelector('.app-preloader-bar') || wrap.querySelector('[role="progressbar"]')) : null;
     const v = Math.max(0, Math.min(100, Math.round(pct)));
     if (fill) fill.style.width = v + '%';
     if (pctEl) pctEl.textContent = v + '%';
@@ -50,7 +51,7 @@ function _appPreloadYield() {
 
 
 function hideAppPreloader() {
-    const wrap = document.getElementById('app-preloader');
+    const wrap = document.getElementById('app-preloader') || document.querySelector('.app-preloader');
     if (!wrap) return;
     wrap.classList.add('hidden');
 }
