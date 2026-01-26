@@ -21,26 +21,23 @@ function assetPath(name, fallbackExt) {
 let APP_PRELOAD_DONE = false;
 window.__APZ_PRELOAD_DONE = false;
 
+// Списки ассетов (пути относительные к webapp/)
 const APP_PRELOAD_IMAGES = ["assets/after_2048.webp", "assets/after_jumper.webp", "assets/after_puzzle.webp", "assets/after_quiz.webp", "assets/board.webp", "assets/bolt.webp", "assets/case.webp", "assets/chip.webp", "assets/device.webp", "assets/gate.webp", "assets/gear.webp", "assets/hero.webp", "assets/jetpack.webp", "assets/logo.webp", "assets/nut.webp", "assets/part.webp", "assets/platform.webp", "assets/propeller.webp", "assets/sensor.webp", "assets/spring.webp"];
 const APP_PRELOAD_SOUNDS = ["sound/2048-plastic.mp3", "sound/2048-pop.mp3", "sound/2048-slide.mp3", "sound/answer-correct.mp3", "sound/answer-uncorrect.mp3", "sound/jumper-bounce.mp3", "sound/jumper-jetpack.mp3", "sound/jumper-jump.mp3", "sound/jumper-loss.mp3", "sound/jumper-propeller.mp3", "sound/jumper-win.mp3", "sound/menu-click.mp3", "sound/puzzle-click.mp3", "sound/puzzle-slide.mp3"];
+
+const APP_PRELOAD_CONCURRENCY = 4;        // чтобы прогресс двигался даже если один файл "висит"
+const APP_PRELOAD_TIMEOUT_MS = 12000;     // не даём одному ассету стопорить прогресс навсегда
 
 function updateAppPreloaderProgress(pct) {
     const wrap = document.getElementById('app-preloader');
     const fill = document.getElementById('app-preloader-bar-fill');
     const pctEl = document.getElementById('app-preloader-percent');
     const bar = wrap ? wrap.querySelector('.app-preloader-bar') : null;
+
     const v = Math.max(0, Math.min(100, Math.round(pct)));
     if (fill) fill.style.width = v + '%';
     if (pctEl) pctEl.textContent = v + '%';
     if (bar) bar.setAttribute('aria-valuenow', String(v));
-}
-
-
-// Даем браузеру шанс перерисовать прогрессбар между шагами загрузки
-function _appPreloadYield() {
-    return new Promise((resolve) => {
-        requestAnimationFrame(() => setTimeout(resolve, 0));
-    });
 }
 
 function hideAppPreloader() {
@@ -49,77 +46,124 @@ function hideAppPreloader() {
     wrap.classList.add('hidden');
 }
 
-function _preloadOneImage(url) {
+function _withTimeout(promise, ms) {
     return new Promise((resolve) => {
-        const img = new Image();
-        img.onload = () => {
-            // Декодируем (если поддерживается), чтобы не лагало на первом кадре
-            if (img.decode) {
-                img.decode().catch(() => {}).finally(() => resolve());
-            } else {
-                resolve();
-            }
-        };
-        img.onerror = () => resolve();
-        img.src = url;
+        let done = false;
+        const t = setTimeout(() => {
+            if (done) return;
+            done = true;
+            resolve(false);
+        }, ms);
+
+        Promise.resolve(promise)
+            .then(() => {
+                if (done) return;
+                done = true;
+                clearTimeout(t);
+                resolve(true);
+            })
+            .catch(() => {
+                if (done) return;
+                done = true;
+                clearTimeout(t);
+                resolve(false);
+            });
     });
 }
 
+function _preloadOneImage(url) {
+    return _withTimeout(new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+            // декодирование НЕ критично — если не получится, всё равно считаем загруженным
+            if (img.decode) img.decode().catch(() => {}).finally(resolve);
+            else resolve();
+        };
+        img.onerror = () => resolve();
+        img.src = url;
+    }), APP_PRELOAD_TIMEOUT_MS);
+}
+
 async function _preloadOneSound(url) {
-    // На мобилках автопроигрывание блокируется, но скачивание (fetch) можно сделать заранее.
+    // Автопроигрывание на мобилках блокируется, но загрузку/кэширование файла можно сделать заранее.
+    const controller = ('AbortController' in window) ? new AbortController() : null;
+    const t = setTimeout(() => { try { controller?.abort(); } catch(e) {} }, APP_PRELOAD_TIMEOUT_MS);
+
     try {
-        const r = await fetch(url, { cache: 'force-cache' });
-        // Читаем тело, чтобы реально произошла загрузка и оно попало в кеш
-        await r.arrayBuffer();
-    } catch (e) {}
+        const r = await fetch(url, { cache: 'force-cache', signal: controller?.signal });
+        await r.arrayBuffer(); // важно прочитать тело, чтобы файл реально скачался
+        clearTimeout(t);
+        return true;
+    } catch (e) {
+        clearTimeout(t);
+        return false;
+    }
+}
+
+// Очередь с ограничением параллелизма: прогресс обновляется по мере завершения каждого файла
+async function _runPreloadQueue(urls, worker, onItemDone) {
+    let idx = 0;
+
+    async function runner() {
+        while (true) {
+            const current = idx++;
+            if (current >= urls.length) break;
+            try { await worker(urls[current]); } catch (e) {}
+            onItemDone?.();
+            // отдаём кадр браузеру на перерисовку
+            await new Promise((r) => requestAnimationFrame(() => r()));
+        }
+    }
+
+    const runners = [];
+    const n = Math.max(1, Math.min(APP_PRELOAD_CONCURRENCY, urls.length || 1));
+    for (let i = 0; i < n; i++) runners.push(runner());
+    await Promise.all(runners);
 }
 
 async function appPreloadAllAssets() {
     if (APP_PRELOAD_DONE) return;
-    const items = [...APP_PRELOAD_IMAGES, ...APP_PRELOAD_SOUNDS];
-    const total = items.length || 1;
+
+    const total = (APP_PRELOAD_IMAGES.length + APP_PRELOAD_SOUNDS.length) || 1;
     let done = 0;
 
     updateAppPreloaderProgress(0);
-    await _appPreloadYield();
+    await new Promise((r) => requestAnimationFrame(() => r()));
 
-    // Важно: грузим последовательно/не слишком параллельно, чтобы не "убить" слабый интернет.
-    // Картинки
-    for (const url of APP_PRELOAD_IMAGES) {
-        await _preloadOneImage(url);
+    const bump = () => {
         done++;
         updateAppPreloaderProgress((done / total) * 100);
-        await _appPreloadYield();
-    }
-    // Звуки
-    for (const url of APP_PRELOAD_SOUNDS) {
-        await _preloadOneSound(url);
-        done++;
-        updateAppPreloaderProgress((done / total) * 100);
-        await _appPreloadYield();
-    }
+    };
+
+    // Грузим картинки и звуки отдельными очередями — так прогресс не "зависает" на первом файле
+    await _runPreloadQueue(APP_PRELOAD_IMAGES, _preloadOneImage, bump);
+    await _runPreloadQueue(APP_PRELOAD_SOUNDS, _preloadOneSound, bump);
 
     APP_PRELOAD_DONE = true;
     window.__APZ_PRELOAD_DONE = true;
     updateAppPreloaderProgress(100);
 
-    // Небольшая пауза на кадр, чтобы ползунок успел дорисоваться
+    // кадр на дорисовку 100%
     await new Promise((r) => requestAnimationFrame(() => r()));
 
     hideAppPreloader();
 }
 
-// Запускаем глобальный прелоадер сразу при входе в веб-приложение.
-// Если ассеты уже были загружены (например, при возврате в меню), функция просто завершится.
-document.addEventListener('DOMContentLoaded', () => {
-    appPreloadAllAssets().catch(() => {
-        // Даже если что-то не загрузилось, не блокируем приложение
-        hideAppPreloader();
-    });
-});
+// Запускаем прелоадер как можно раньше
+(function _startAppPreloader() {
+    const start = () => {
+        appPreloadAllAssets().catch(() => {
+            // Даже если что-то не загрузилось, не блокируем приложение
+            hideAppPreloader();
+        });
+    };
 
-
-// ==========================================
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', start);
+    } else {
+        start();
+    }
+})();// ==========================================
 // SFX (звуки)
 // ==========================================
 // Все звуки лежат в папке webapp/sound/
@@ -1430,12 +1474,8 @@ function initPuzzle(size = 3) {
     // Быстрый отклик, а картинку заранее декодируем (особенно важно на телефонах)
     const status = document.getElementById('puzzle-status');
     if (status) {
-        if (!window.__APZ_PRELOAD_DONE) {
-            status.textContent = '⏳ Загружаю…';
-            status.style.color = '#7f8c8d';
-        } else {
-            status.textContent = '';
-        }
+        status.textContent = '';
+        status.style.color = '#7f8c8d';
     }
 
     preloadPuzzleAssets().then(() => {
@@ -1731,8 +1771,7 @@ function initJumper() {
         startMsg.dataset.ready = '0';
     }
     if (pTag) {
-        if (!window.__APZ_PRELOAD_DONE) pTag.textContent = '⏳ Загружаю…';
-        else pTag.textContent = '';
+        pTag.textContent = '';
     }
     preloadLevel2Assets().finally(() => {
         if (startMsg) {
