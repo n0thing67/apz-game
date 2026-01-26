@@ -1145,7 +1145,7 @@ function showScreen(screenId) {
 
 
 
-function showLevels() {
+async function showLevels() {
     hideAfterLevel();
 
     showScreen('screen-levels');
@@ -2674,7 +2674,10 @@ let levelLaunchArmed = false;
 
 // В некоторых WebView (в т.ч. Telegram) inline onclick может быть отключён политиками безопасности.
 // Поэтому для критичных кнопок дублируем обработчики через addEventListener.
-window.addEventListener('DOMContentLoaded', async () => {
+let __APZ_INIT_DONE = false;
+async function __apzInit() {
+    if (__APZ_INIT_DONE) return;
+    __APZ_INIT_DONE = true;
     // Разблокируем звук на первом пользовательском жесте
     // (иначе в Telegram WebView/iOS Safari многие звуки не запускаются)
     document.addEventListener('pointerdown', unlockSfxOnce, { once: true, capture: true });
@@ -2847,7 +2850,12 @@ window.addEventListener('DOMContentLoaded', async () => {
         }
     };
 
-    // click + pointerup для надёжности
-    document.addEventListener('click', handleAction, true);
-});
+    // click + pointerup для надёжност
+}
 
+// Запускаем инициализацию даже если скрипт подгрузился после DOMContentLoaded (Telegram WebView cache)
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', __apzInit, { once: true });
+} else {
+    __apzInit();
+}
