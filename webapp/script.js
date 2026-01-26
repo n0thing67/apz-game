@@ -21,28 +21,16 @@ function assetPath(name, fallbackExt) {
 let APP_PRELOAD_DONE = false;
 window.__APZ_PRELOAD_DONE = false;
 
-// Предзагружаем ТОЛЬКО изображения.
-// Звуки НЕ предзагружаем, потому что в Telegram WebView fetch/аудио часто ведут себя нестабильно
-// и могут стопорить/ломать загрузчик.
 const APP_PRELOAD_IMAGES = ["assets/after_2048.webp", "assets/after_jumper.webp", "assets/after_puzzle.webp", "assets/after_quiz.webp", "assets/board.webp", "assets/bolt.webp", "assets/case.webp", "assets/chip.webp", "assets/device.webp", "assets/gate.webp", "assets/gear.webp", "assets/hero.webp", "assets/jetpack.webp", "assets/logo.webp", "assets/nut.webp", "assets/part.webp", "assets/platform.webp", "assets/propeller.webp", "assets/sensor.webp", "assets/spring.webp"];
+const APP_PRELOAD_SOUNDS = []; // звуки не предзагружаем (WebView может подвисать на аудио)
 
 function updateAppPreloaderProgress(pct) {
-    // Прогресс-бар убран: оставляем прелоадер лёгким и неблокирующим.
+    // Прогрессбар не используем (оставлено для совместимости).
+    const wrap = document.getElementById('app-preloader');
+    if (!wrap) return;
+    const bar = wrap.querySelector?.('[role="progressbar"]');
+    if (bar) bar.setAttribute('aria-valuenow', String(Math.round(pct || 0)));
 }
-
-
-// Даем браузеру шанс перерисовать прогрессбар между шагами загрузки
-function _appPreloadYield() {
-    // Даем браузеру гарантированно отрисовать прогресс (двойной rAF + макротаск)
-    return new Promise((resolve) => {
-        requestAnimationFrame(() => {
-            requestAnimationFrame(() => {
-                setTimeout(resolve, 0);
-            });
-        });
-    });
-}
-
 
 function hideAppPreloader() {
     const wrap = document.getElementById('app-preloader');
@@ -50,118 +38,93 @@ function hideAppPreloader() {
     wrap.classList.add('hidden');
 }
 
+function _sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+
 function _preloadOneImage(url) {
-    // В некоторых WebView событие onload/onerror может "залипать".
-    // Поэтому добавляем таймаут: если ассет не ответил, считаем шаг выполненным,
-    // чтобы прогрессбар не стоял на месте.
-    // В Telegram WebView отдельные запросы могут «подвисать» без onload/onerror.
-    // Делаем короткий таймаут на каждый файл, чтобы стартовый оверлей не зависал.
-    const timeoutMs = 2500;
     return new Promise((resolve) => {
-        let done = false;
-        const finish = () => {
-            if (done) return;
-            done = true;
-            resolve();
-        };
-
-        const t = setTimeout(() => {
-            // таймаут — не блокируем загрузчик
-            finish();
-        }, timeoutMs);
-
         const img = new Image();
         img.onload = () => {
-            clearTimeout(t);
             // Декодируем (если поддерживается), чтобы не лагало на первом кадре
             if (img.decode) {
-                img.decode().catch(() => {}).finally(() => finish());
+                img.decode().catch(() => {}).finally(() => resolve());
             } else {
-                finish();
+                resolve();
             }
         };
-        img.onerror = () => {
-            clearTimeout(t);
-            finish();
-        };
-        // cache-bust не делаем, пусть браузер кеширует как умеет
+        img.onerror = () => resolve();
         img.src = url;
     });
 }
 
+async function _preloadOneSound(url) {
+    // На мобилках автопроигрывание блокируется, но скачивание (fetch) можно сделать заранее.
+    try {
+        const r = await fetch(url, { cache: 'force-cache' });
+        // Читаем тело, чтобы реально произошла загрузка и оно попало в кеш
+        await r.arrayBuffer();
+    } catch (e) {}
+}
 
 async function appPreloadAllAssets() {
     if (APP_PRELOAD_DONE) return;
+
     const total = APP_PRELOAD_IMAGES.length || 1;
     let done = 0;
+
+    // Гарантия: прелоадер не должен висеть бесконечно
+    const HARD_HIDE_MS = 3500;
+    const hardHideTimer = setTimeout(() => hideAppPreloader(), HARD_HIDE_MS);
+
+    // Параллельная загрузка картинок с ограничением по потокам
+    const CONCURRENCY = 6;
+    const PER_ITEM_TIMEOUT_MS = 2500;
 
     updateAppPreloaderProgress(0);
     await _appPreloadYield();
 
-    // Параллельная загрузка с ограничением по потокам.
-    // Так быстрее и не залипаем на одном файле.
-    const CONCURRENCY = 6;
-    let idx = 0;
+    const queue = APP_PRELOAD_IMAGES.slice();
 
-    async function worker() {
-        while (idx < APP_PRELOAD_IMAGES.length) {
-            const my = idx++;
-            const url = APP_PRELOAD_IMAGES[my];
-            await _preloadOneImage(url);
-            done++;
-            updateAppPreloaderProgress((done / total) * 100);
-            await _appPreloadYield();
+    const loadOne = async (url) => {
+        // В некоторых WebView onload/onerror может "молчать", поэтому добавляем таймаут.
+        await Promise.race([
+            _preloadOneImage(url),
+            _sleep(PER_ITEM_TIMEOUT_MS),
+        ]);
+        done++;
+        updateAppPreloaderProgress((done / total) * 100);
+        await _appPreloadYield();
+    };
+
+    const workerCount = Math.min(CONCURRENCY, Math.max(1, queue.length));
+    const workers = Array.from({ length: workerCount }, async () => {
+        while (queue.length) {
+            const url = queue.shift();
+            if (!url) break;
+            await loadOne(url);
         }
+    });
+
+    try {
+        await Promise.race([
+            Promise.all(workers),
+            _sleep(HARD_HIDE_MS),
+        ]);
+    } finally {
+        clearTimeout(hardHideTimer);
+        APP_PRELOAD_DONE = true;
+        window.__APZ_PRELOAD_DONE = true;
+        hideAppPreloader();
     }
-
-    const workers = [];
-    for (let i = 0; i < Math.min(CONCURRENCY, APP_PRELOAD_IMAGES.length); i++) {
-        workers.push(worker());
-    }
-    await Promise.allSettled(workers);
-
-    APP_PRELOAD_DONE = true;
-    window.__APZ_PRELOAD_DONE = true;
-    updateAppPreloaderProgress(100);
-
-    // Небольшая пауза на кадр, чтобы ползунок успел дорисоваться
-    await new Promise((r) => requestAnimationFrame(() => r()));
-
-    hideAppPreloader();
 }
 
-// Запускаем глобальный прелоадер сразу при входе в веб-приложение.
-// Если ассеты уже были загружены (например, при возврате в меню), функция просто завершится.
-function _startAppPreloadOnEnter() {
-    // Спиннер крутится пока грузим ИЗОБРАЖЕНИЯ.
-    // Чтобы пользователь не застрял на бесконечной загрузке (на всякий случай), ставим "аварийный" таймаут.
-    // Если с сетью беда — приложение всё равно откроется.
-    // Важно: не держим пользователя на оверлее долго.
-    // Даже если часть картинок не догрузилась (плохая сеть/кэш TG), приложение должно открыться.
-    const MAX_SPINNER_MS = 3500;
-    const hardTimer = setTimeout(() => {
-        hideAppPreloader();
-    }, MAX_SPINNER_MS);
 
+function _startAppPreloadOnEnter() {
+    // Если ассеты уже были загружены (например, при возврате в меню), функция просто завершится.
     appPreloadAllAssets().catch(() => {
         // Даже если что-то не загрузилось, не блокируем приложение
-    }).finally(() => {
-        clearTimeout(hardTimer);
         hideAppPreloader();
     });
 }
-
-// Дополнительная страховка: если по какой-то причине стартовый код не смог скрыть оверлей,
-// прячем его при полной загрузке страницы.
-window.addEventListener('load', () => {
-    hideAppPreloader();
-}, { once: true });
-
-// Ещё один страховочный вариант: если всё загрузилось, но какой-то ранний код прервался,
-// после полного window load мы точно не блокируем интерфейс.
-window.addEventListener('load', () => {
-    setTimeout(hideAppPreloader, 0);
-});
 
 // В некоторых WebView (в т.ч. Telegram) скрипт может выполниться после DOMContentLoaded.
 // Поэтому запускаем прелоадер сразу, если документ уже готов.
@@ -1478,11 +1441,15 @@ function initPuzzle(size = 3) {
         h2.textContent = `🧩 Уровень: Логотип (${label})`;
     }
 
-    // Статус загрузки в уровнях не показываем (всё готовится при входе в приложение)
+    // Быстрый отклик, а картинку заранее декодируем (особенно важно на телефонах)
     const status = document.getElementById('puzzle-status');
     if (status) {
-        status.textContent = '';
-    }
+        if (!window.__APZ_PRELOAD_DONE) {
+            status.textContent = '⏳ Загружаю…';
+            status.style.color = '#7f8c8d';
+        } else {
+            status.textContent = '';
+        }
     }
 
     preloadPuzzleAssets().then(() => {
@@ -1778,8 +1745,8 @@ function initJumper() {
         startMsg.dataset.ready = '0';
     }
     if (pTag) {
-        // Не показываем «Загружаю…» при входе в уровень
-        // Текст вернём на дефолт после подготовки ассетов.
+        if (!window.__APZ_PRELOAD_DONE) pTag.textContent = '⏳ Загружаю…';
+        else pTag.textContent = '';
     }
     preloadLevel2Assets().finally(() => {
         if (startMsg) {
