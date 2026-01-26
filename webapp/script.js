@@ -38,10 +38,16 @@ function updateAppPreloaderProgress(pct) {
 
 // Даем браузеру шанс перерисовать прогрессбар между шагами загрузки
 function _appPreloadYield() {
+    // Даем браузеру гарантированно отрисовать прогресс (двойной rAF + макротаск)
     return new Promise((resolve) => {
-        requestAnimationFrame(() => setTimeout(resolve, 0));
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                setTimeout(resolve, 0);
+            });
+        });
     });
 }
+
 
 function hideAppPreloader() {
     const wrap = document.getElementById('app-preloader');
@@ -50,29 +56,68 @@ function hideAppPreloader() {
 }
 
 function _preloadOneImage(url) {
+    // В некоторых WebView событие onload/onerror может "залипать".
+    // Поэтому добавляем таймаут: если ассет не ответил, считаем шаг выполненным,
+    // чтобы прогрессбар не стоял на месте.
+    const timeoutMs = 6000;
     return new Promise((resolve) => {
+        let done = false;
+        const finish = () => {
+            if (done) return;
+            done = true;
+            resolve();
+        };
+
+        const t = setTimeout(() => {
+            // таймаут — не блокируем загрузчик
+            finish();
+        }, timeoutMs);
+
         const img = new Image();
         img.onload = () => {
+            clearTimeout(t);
             // Декодируем (если поддерживается), чтобы не лагало на первом кадре
             if (img.decode) {
-                img.decode().catch(() => {}).finally(() => resolve());
+                img.decode().catch(() => {}).finally(() => finish());
             } else {
-                resolve();
+                finish();
             }
         };
-        img.onerror = () => resolve();
+        img.onerror = () => {
+            clearTimeout(t);
+            finish();
+        };
+        // cache-bust не делаем, пусть браузер кеширует как умеет
         img.src = url;
     });
 }
 
+
 async function _preloadOneSound(url) {
     // На мобилках автопроигрывание блокируется, но скачивание (fetch) можно сделать заранее.
+    // Добавляем AbortController + таймаут, чтобы один зависший запрос не "замораживал" прогресс.
+    const timeoutMs = 6000;
+    let controller = null;
     try {
-        const r = await fetch(url, { cache: 'force-cache' });
+        controller = ('AbortController' in window) ? new AbortController() : null;
+        const timer = setTimeout(() => {
+            try { controller?.abort(); } catch (e) {}
+        }, timeoutMs);
+
+        const r = await fetch(url, {
+            cache: 'force-cache',
+            signal: controller ? controller.signal : undefined,
+        });
         // Читаем тело, чтобы реально произошла загрузка и оно попало в кеш
         await r.arrayBuffer();
-    } catch (e) {}
+
+        clearTimeout(timer);
+    } catch (e) {
+        // игнорируем — прелоадер не должен блокировать запуск приложения
+        try { controller?.abort(); } catch (e2) {}
+    }
 }
+
 
 async function appPreloadAllAssets() {
     if (APP_PRELOAD_DONE) return;
