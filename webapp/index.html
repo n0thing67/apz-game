@@ -11,24 +11,6 @@
 </head>
 <body>
 
-    <!-- Глобальный прелоадер при входе в приложение -->
-    <div id="app-preloader" class="app-preloader" aria-live="polite" aria-label="Загрузка">
-        <div class="app-preloader-card">
-            <div class="app-preloader-title">Загрузка…</div>
-            <div class="app-preloader-spinner" aria-hidden="true"></div>
-            <div class="app-preloader-sub">Подготавливаем изображения</div>
-        </div>
-    </div>
-    <script>
-      // Фолбэк на случай, если WebView закэшировал/не выполнил основной script.js.
-      // Прелоадер не должен перекрывать интерфейс бесконечно.
-      setTimeout(function () {
-        var el = document.getElementById('app-preloader');
-        if (el) el.classList.add('hidden');
-      }, 6000);
-    </script>
-
-
     <!-- Всплывающая подсказка для шкал теста (появляется по тапу) -->
     <div id="aptitude-tooltip" class="apt-tooltip hidden" role="status" aria-live="polite"></div>
 
