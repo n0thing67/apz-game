@@ -54,7 +54,9 @@ function _preloadOneImage(url) {
     // В некоторых WebView событие onload/onerror может "залипать".
     // Поэтому добавляем таймаут: если ассет не ответил, считаем шаг выполненным,
     // чтобы прогрессбар не стоял на месте.
-    const timeoutMs = 6000;
+    // В Telegram WebView отдельные запросы могут «подвисать» без onload/onerror.
+    // Делаем короткий таймаут на каждый файл, чтобы стартовый оверлей не зависал.
+    const timeoutMs = 2500;
     return new Promise((resolve) => {
         let done = false;
         const finish = () => {
@@ -96,13 +98,27 @@ async function appPreloadAllAssets() {
     updateAppPreloaderProgress(0);
     await _appPreloadYield();
 
-    // Важно: грузим изображения последовательно (бережём слабый интернет и WebView).
-    for (const url of APP_PRELOAD_IMAGES) {
-        await _preloadOneImage(url);
-        done++;
-        updateAppPreloaderProgress((done / total) * 100);
-        await _appPreloadYield();
+    // Параллельная загрузка с ограничением по потокам.
+    // Так быстрее и не залипаем на одном файле.
+    const CONCURRENCY = 6;
+    let idx = 0;
+
+    async function worker() {
+        while (idx < APP_PRELOAD_IMAGES.length) {
+            const my = idx++;
+            const url = APP_PRELOAD_IMAGES[my];
+            await _preloadOneImage(url);
+            done++;
+            updateAppPreloaderProgress((done / total) * 100);
+            await _appPreloadYield();
+        }
     }
+
+    const workers = [];
+    for (let i = 0; i < Math.min(CONCURRENCY, APP_PRELOAD_IMAGES.length); i++) {
+        workers.push(worker());
+    }
+    await Promise.allSettled(workers);
 
     APP_PRELOAD_DONE = true;
     window.__APZ_PRELOAD_DONE = true;
@@ -120,7 +136,9 @@ function _startAppPreloadOnEnter() {
     // Спиннер крутится пока грузим ИЗОБРАЖЕНИЯ.
     // Чтобы пользователь не застрял на бесконечной загрузке (на всякий случай), ставим "аварийный" таймаут.
     // Если с сетью беда — приложение всё равно откроется.
-    const MAX_SPINNER_MS = 8000;
+    // Важно: не держим пользователя на оверлее долго.
+    // Даже если часть картинок не догрузилась (плохая сеть/кэш TG), приложение должно открыться.
+    const MAX_SPINNER_MS = 3500;
     const hardTimer = setTimeout(() => {
         hideAppPreloader();
     }, MAX_SPINNER_MS);
@@ -132,6 +150,18 @@ function _startAppPreloadOnEnter() {
         hideAppPreloader();
     });
 }
+
+// Дополнительная страховка: если по какой-то причине стартовый код не смог скрыть оверлей,
+// прячем его при полной загрузке страницы.
+window.addEventListener('load', () => {
+    hideAppPreloader();
+}, { once: true });
+
+// Ещё один страховочный вариант: если всё загрузилось, но какой-то ранний код прервался,
+// после полного window load мы точно не блокируем интерфейс.
+window.addEventListener('load', () => {
+    setTimeout(hideAppPreloader, 0);
+});
 
 // В некоторых WebView (в т.ч. Telegram) скрипт может выполниться после DOMContentLoaded.
 // Поэтому запускаем прелоадер сразу, если документ уже готов.
