@@ -11,6 +11,18 @@
 </head>
 <body>
 
+    <!-- Глобальный прелоадер при входе в приложение -->
+    <div id="app-preloader" class="app-preloader" aria-live="polite" aria-label="Загрузка">
+        <div class="app-preloader-card">
+            <div class="app-preloader-title">Загрузка ресурсов…</div>
+            <div class="app-preloader-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                <div id="app-preloader-bar-fill" class="app-preloader-bar-fill" style="width:0%"></div>
+            </div>
+            <div id="app-preloader-percent" class="app-preloader-percent">0%</div>
+        </div>
+    </div>
+
+
     <!-- Всплывающая подсказка для шкал теста (появляется по тапу) -->
     <div id="aptitude-tooltip" class="apt-tooltip hidden" role="status" aria-live="polite"></div>
 
