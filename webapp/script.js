@@ -16,124 +16,6 @@ function assetPath(name, fallbackExt) {
 }
 
 // ==========================================
-// APP PRELOADER (загрузка всех картинок и звуков при входе)
-// ==========================================
-let APP_PRELOAD_DONE = false;
-window.__APZ_PRELOAD_DONE = false;
-
-const APP_PRELOAD_IMAGES = ["assets/after_2048.webp", "assets/after_jumper.webp", "assets/after_puzzle.webp", "assets/after_quiz.webp", "assets/board.webp", "assets/bolt.webp", "assets/case.webp", "assets/chip.webp", "assets/device.webp", "assets/gate.webp", "assets/gear.webp", "assets/hero.webp", "assets/jetpack.webp", "assets/logo.webp", "assets/nut.webp", "assets/part.webp", "assets/platform.webp", "assets/propeller.webp", "assets/sensor.webp", "assets/spring.webp"];
-const APP_PRELOAD_SOUNDS = []; // звуки не предзагружаем (WebView может подвисать на аудио)
-
-function updateAppPreloaderProgress(pct) {
-    // Прогрессбар не используем (оставлено для совместимости).
-    const wrap = document.getElementById('app-preloader');
-    if (!wrap) return;
-    const bar = wrap.querySelector?.('[role="progressbar"]');
-    if (bar) bar.setAttribute('aria-valuenow', String(Math.round(pct || 0)));
-}
-
-function hideAppPreloader() {
-    const wrap = document.getElementById('app-preloader');
-    if (!wrap) return;
-    wrap.classList.add('hidden');
-}
-
-function _sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
-
-function _preloadOneImage(url) {
-    return new Promise((resolve) => {
-        const img = new Image();
-        img.onload = () => {
-            // Декодируем (если поддерживается), чтобы не лагало на первом кадре
-            if (img.decode) {
-                img.decode().catch(() => {}).finally(() => resolve());
-            } else {
-                resolve();
-            }
-        };
-        img.onerror = () => resolve();
-        img.src = url;
-    });
-}
-
-async function _preloadOneSound(url) {
-    // На мобилках автопроигрывание блокируется, но скачивание (fetch) можно сделать заранее.
-    try {
-        const r = await fetch(url, { cache: 'force-cache' });
-        // Читаем тело, чтобы реально произошла загрузка и оно попало в кеш
-        await r.arrayBuffer();
-    } catch (e) {}
-}
-
-async function appPreloadAllAssets() {
-    if (APP_PRELOAD_DONE) return;
-
-    const total = APP_PRELOAD_IMAGES.length || 1;
-    let done = 0;
-
-    // Гарантия: прелоадер не должен висеть бесконечно
-    const HARD_HIDE_MS = 3500;
-    const hardHideTimer = setTimeout(() => hideAppPreloader(), HARD_HIDE_MS);
-
-    // Параллельная загрузка картинок с ограничением по потокам
-    const CONCURRENCY = 6;
-    const PER_ITEM_TIMEOUT_MS = 2500;
-
-    updateAppPreloaderProgress(0);
-    await _appPreloadYield();
-
-    const queue = APP_PRELOAD_IMAGES.slice();
-
-    const loadOne = async (url) => {
-        // В некоторых WebView onload/onerror может "молчать", поэтому добавляем таймаут.
-        await Promise.race([
-            _preloadOneImage(url),
-            _sleep(PER_ITEM_TIMEOUT_MS),
-        ]);
-        done++;
-        updateAppPreloaderProgress((done / total) * 100);
-        await _appPreloadYield();
-    };
-
-    const workerCount = Math.min(CONCURRENCY, Math.max(1, queue.length));
-    const workers = Array.from({ length: workerCount }, async () => {
-        while (queue.length) {
-            const url = queue.shift();
-            if (!url) break;
-            await loadOne(url);
-        }
-    });
-
-    try {
-        await Promise.race([
-            Promise.all(workers),
-            _sleep(HARD_HIDE_MS),
-        ]);
-    } finally {
-        clearTimeout(hardHideTimer);
-        APP_PRELOAD_DONE = true;
-        window.__APZ_PRELOAD_DONE = true;
-        hideAppPreloader();
-    }
-}
-
-
-function _startAppPreloadOnEnter() {
-    // Если ассеты уже были загружены (например, при возврате в меню), функция просто завершится.
-    appPreloadAllAssets().catch(() => {
-        // Даже если что-то не загрузилось, не блокируем приложение
-        hideAppPreloader();
-    });
-}
-
-// В некоторых WebView (в т.ч. Telegram) скрипт может выполниться после DOMContentLoaded.
-// Поэтому запускаем прелоадер сразу, если документ уже готов.
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', _startAppPreloadOnEnter, { once: true });
-} else {
-    _startAppPreloadOnEnter();
-}
-// ==========================================
 // SFX (звуки)
 // ==========================================
 // Все звуки лежат в папке webapp/sound/
@@ -1145,7 +1027,7 @@ function showScreen(screenId) {
 
 
 
-async function showLevels() {
+function showLevels() {
     hideAfterLevel();
 
     showScreen('screen-levels');
@@ -1176,9 +1058,6 @@ if (statLine && statMain && savedApt && savedApt.main) {
     // На некоторых Android/WebView "стартовый" тап прилетает с задержкой,
     // поэтому держим блокировку чуть дольше.
     lockClicks(900);
-
-    // Прелоадим все ассеты при входе, чтобы в уровнях не было "Загружаю…"
-    await appPreloadAllAssets();
 }
 
 // При выходе из уровня важно остановить активные игровые циклы (особенно Jumper),
@@ -1443,14 +1322,7 @@ function initPuzzle(size = 3) {
 
     // Быстрый отклик, а картинку заранее декодируем (особенно важно на телефонах)
     const status = document.getElementById('puzzle-status');
-    if (status) {
-        if (!window.__APZ_PRELOAD_DONE) {
-            status.textContent = '⏳ Загружаю…';
-            status.style.color = '#7f8c8d';
-        } else {
-            status.textContent = '';
-        }
-    }
+    if (status) { status.textContent = '⏳ Загружаю…'; status.style.color = '#7f8c8d'; }
 
     preloadPuzzleAssets().then(() => {
         const total = puzzleSize * puzzleSize;
@@ -1625,7 +1497,6 @@ function decodeImage(img) {
 let level2AssetsLoaded = false;
 let level2AssetsPromise = null;
 function preloadLevel2Assets() {
-    if (window.__APZ_PRELOAD_DONE) { level2AssetsLoaded = true; return Promise.resolve(); }
     if (level2AssetsLoaded) return Promise.resolve();
     if (level2AssetsPromise) return level2AssetsPromise;
     level2AssetsPromise = Promise.all([
@@ -1641,7 +1512,6 @@ function preloadLevel2Assets() {
 
 let puzzleAssetsReady = false;
 function preloadPuzzleAssets() {
-    if (window.__APZ_PRELOAD_DONE) { puzzleAssetsReady = Promise.resolve(); return puzzleAssetsReady; }
     // Для любого размера пазла используем одну картинку board.webp
     if (puzzleAssetsReady) return puzzleAssetsReady;
     const img = new Image();
@@ -1744,10 +1614,7 @@ function initJumper() {
         startMsg.style.pointerEvents = 'none';
         startMsg.dataset.ready = '0';
     }
-    if (pTag) {
-        if (!window.__APZ_PRELOAD_DONE) pTag.textContent = '⏳ Загружаю…';
-        else pTag.textContent = '';
-    }
+    if (pTag) pTag.textContent = '⏳ Загружаю…';
     preloadLevel2Assets().finally(() => {
         if (startMsg) {
             startMsg.style.pointerEvents = 'auto';
@@ -2674,10 +2541,7 @@ let levelLaunchArmed = false;
 
 // В некоторых WebView (в т.ч. Telegram) inline onclick может быть отключён политиками безопасности.
 // Поэтому для критичных кнопок дублируем обработчики через addEventListener.
-let __APZ_INIT_DONE = false;
-async function __apzInit() {
-    if (__APZ_INIT_DONE) return;
-    __APZ_INIT_DONE = true;
+window.addEventListener('DOMContentLoaded', () => {
     // Разблокируем звук на первом пользовательском жесте
     // (иначе в Telegram WebView/iOS Safari многие звуки не запускаются)
     document.addEventListener('pointerdown', unlockSfxOnce, { once: true, capture: true });
@@ -2850,12 +2714,7 @@ async function __apzInit() {
         }
     };
 
-    // click + pointerup для надёжност
-}
+    // click + pointerup для надёжности
+    document.addEventListener('click', handleAction, true);
+});
 
-// Запускаем инициализацию даже если скрипт подгрузился после DOMContentLoaded (Telegram WebView cache)
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', __apzInit, { once: true });
-} else {
-    __apzInit();
-}
