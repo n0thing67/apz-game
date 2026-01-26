@@ -4,25 +4,19 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Завод АПЗ</title>
-    <!-- cache-bust: Telegram WebView может агрессивно кешировать статику -->
-    <link rel="stylesheet" href="styles.css?v=20260126">
+    <link rel="stylesheet" href="styles.css?v=20260126_2">
     <link rel="preconnect" href="https://telegram.org" crossorigin>
     <!-- Подключаем скрипт Телеграма -->
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
-
     <!-- Глобальный прелоадер при входе в приложение -->
     <div id="app-preloader" class="app-preloader" aria-live="polite" aria-label="Загрузка">
         <div class="app-preloader-card">
             <div class="app-preloader-title">Загрузка ресурсов…</div>
-            <div class="app-preloader-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
-                <div id="app-preloader-bar-fill" class="app-preloader-bar-fill" style="width:0%"></div>
-            </div>
-            <div id="app-preloader-percent" class="app-preloader-percent">0%</div>
+            <div class="app-preloader-spinner" aria-hidden="true"></div>
         </div>
     </div>
-
 
     <!-- Всплывающая подсказка для шкал теста (появляется по тапу) -->
     <div id="aptitude-tooltip" class="apt-tooltip hidden" role="status" aria-live="polite"></div>
@@ -284,6 +278,6 @@
             <button class="btn" data-action="final-send-stats">К статистике</button>
         </div>
     </div>
-    <script src="script.js?v=20260126"></script>
+    <script src="script.js?v=20260126_2"></script>
 </body>
 </html>
