@@ -16,6 +16,104 @@ function assetPath(name, fallbackExt) {
 }
 
 // ==========================================
+// PRELOADER: при входе загружаем ТОЛЬКО изображения (assets/*)
+// Требование: показать прогресс (ползунок + %)...
+// ==========================================
+
+// Список ВСЕХ изображений в webapp/assets (добавлять сюда при появлении новых).
+const APP_IMAGE_MANIFEST = [
+    'after_2048',
+    'after_jumper',
+    'after_puzzle',
+    'after_quiz',
+    'board',
+    'bolt',
+    'case',
+    'chip',
+    'device',
+    'gate',
+    'gear',
+    'hero',
+    'jetpack',
+    'logo',
+    'nut',
+    'part',
+    'platform',
+    'propeller',
+    'sensor',
+    'spring'
+];
+
+function preloadOneImage(url) {
+    return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+            // decode() часто снимает фризы на первом рендере
+            if (img.decode) {
+                img.decode().catch(() => {}).finally(() => resolve());
+            } else {
+                resolve();
+            }
+        };
+        img.onerror = () => resolve();
+        img.src = url;
+        // если уже в кэше
+        if (img.complete && img.naturalWidth) {
+            if (img.decode) img.decode().catch(() => {}).finally(() => resolve());
+            else resolve();
+        }
+    });
+}
+
+let appImagesPreloaded = false;
+let appImagesPreloadPromise = null;
+
+function startAppImagePreloader() {
+    if (appImagesPreloaded) return Promise.resolve();
+    if (appImagesPreloadPromise) return appImagesPreloadPromise;
+
+    const overlay = document.getElementById('preload-overlay');
+    const bar = document.getElementById('preload-bar');
+    const percentEl = document.getElementById('preload-percent');
+    const currentEl = document.getElementById('preload-current');
+    const barWrap = overlay?.querySelector?.('.preload-bar-wrap');
+
+    if (overlay) overlay.classList.remove('hidden');
+
+    const total = APP_IMAGE_MANIFEST.length;
+    const setProgress = (loaded, currentFile) => {
+        const pct = total ? Math.round((loaded / total) * 100) : 100;
+        if (bar) bar.style.width = `${pct}%`;
+        if (percentEl) percentEl.textContent = `${pct}%`;
+        if (currentEl) currentEl.textContent = `Сейчас загружается: ${currentFile || '—'}`;
+        if (barWrap) barWrap.setAttribute('aria-valuenow', String(pct));
+    };
+
+    appImagesPreloadPromise = (async () => {
+        let loaded = 0;
+        setProgress(0, '—');
+
+        // Важно: грузим последовательно — так текст “какой файл сейчас” будет точным.
+        for (const name of APP_IMAGE_MANIFEST) {
+            const url = assetPath(name, 'png');
+            const file = url.split('/').pop();
+            setProgress(loaded, file);
+            await preloadOneImage(url);
+            loaded++;
+            setProgress(loaded, file);
+        }
+
+        appImagesPreloaded = true;
+        if (overlay) {
+            overlay.classList.add('hidden');
+            overlay.setAttribute('aria-busy', 'false');
+        }
+    })();
+
+    return appImagesPreloadPromise;
+}
+
+// ==========================================
 // SFX (звуки)
 // ==========================================
 // Все звуки лежат в папке webapp/sound/
@@ -1320,9 +1418,10 @@ function initPuzzle(size = 3) {
         h2.textContent = `🧩 Уровень: Логотип (${label})`;
     }
 
-    // Быстрый отклик, а картинку заранее декодируем (особенно важно на телефонах)
+    // Во время входа в уровень НЕ показываем “Загружаю…”.
+    // Картинки уже предзагружены глобальным прелоадером при входе.
     const status = document.getElementById('puzzle-status');
-    if (status) { status.textContent = '⏳ Загружаю…'; status.style.color = '#7f8c8d'; }
+    if (status) { status.textContent = ''; }
 
     preloadPuzzleAssets().then(() => {
         const total = puzzleSize * puzzleSize;
@@ -1614,7 +1713,9 @@ function initJumper() {
         startMsg.style.pointerEvents = 'none';
         startMsg.dataset.ready = '0';
     }
-    if (pTag) pTag.textContent = '⏳ Загружаю…';
+    // Во время входа в уровень НЕ показываем “Загружаю…”.
+    // Ассеты уже прогружены на старте приложения; здесь только "страховка".
+    if (pTag) pTag.textContent = 'Нажми, чтобы начать!';
     preloadLevel2Assets().finally(() => {
         if (startMsg) {
             startMsg.style.pointerEvents = 'auto';
@@ -2542,6 +2643,10 @@ let levelLaunchArmed = false;
 // В некоторых WebView (в т.ч. Telegram) inline onclick может быть отключён политиками безопасности.
 // Поэтому для критичных кнопок дублируем обработчики через addEventListener.
 window.addEventListener('DOMContentLoaded', () => {
+    // Прелоадер изображений при входе в приложение (assets/*) с прогрессом.
+    // Никакую игровую логику не меняем — просто прогреваем кэш браузера.
+    startAppImagePreloader();
+
     // Разблокируем звук на первом пользовательском жесте
     // (иначе в Telegram WebView/iOS Safari многие звуки не запускаются)
     document.addEventListener('pointerdown', unlockSfxOnce, { once: true, capture: true });
