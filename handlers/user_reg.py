@@ -20,6 +20,7 @@ from database.db import (
     get_top_users,
     get_top_users_stats,
     get_user,
+    get_db,
 )
 
 router = Router()
@@ -225,11 +226,45 @@ async def cmd_admin(message: types.Message):
 
 @router.message(Command("stats"))
 async def cmd_stats(message: types.Message):
-    users = await get_top_users_stats(limit=10)
+    # Пользователь должен видеть ТОЛЬКО свою статистику.
+    tg_id = message.from_user.id
 
-    if not users:
-        await message.answer("Таблица лидеров пока пуста.")
+    user = await get_user(tg_id)
+    if not user:
+        await message.answer(
+            "Похоже, ты ещё не зарегистрирован(а).\n"
+            "Нажми /start и пройди регистрацию, а потом снова введи /stats."
+        )
         return
+
+    _tid, fname, lname, _age, score = user
+
+    # aptitude_top не входит в get_user (сохранён старый формат), поэтому аккуратно читаем отдельно.
+    aptitude_top = None
+    rank = None
+    total = None
+    try:
+        db = await get_db()
+        async with db.execute(
+            'SELECT aptitude_top FROM users WHERE telegram_id = ?',
+            (tg_id,),
+        ) as cur:
+            row = await cur.fetchone()
+            aptitude_top = row[0] if row else None
+
+        # Место в общем рейтинге (не показываем других пользователей, только позицию)
+        async with db.execute(
+            'SELECT COUNT(*) FROM users WHERE score > ?',
+            (score,),
+        ) as cur:
+            higher = (await cur.fetchone() or (0,))[0]
+        rank = int(higher) + 1
+
+        async with db.execute('SELECT COUNT(*) FROM users') as cur:
+            total = (await cur.fetchone() or (0,))[0]
+    except Exception:
+        # Не ломаем бота, если что-то с БД/миграцией.
+        pass
 
     APT_LABEL = {
         "TECH": "🔧 Техническое мышление",
@@ -239,12 +274,12 @@ async def cmd_stats(message: types.Message):
         "SOCIAL": "🤝 Командное мышление",
     }
 
-    text_lines = ["🏆 **ТОП ЛУЧШИХ РАБОТНИКОВ АПЗ:**\n"]
-    for i, (_tid, fname, lname, score, aptitude_top) in enumerate(users, 1):
-        medal = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else f"{i}."
-        suffix = ""
-        if aptitude_top:
-            suffix = f" • {APT_LABEL.get(aptitude_top, aptitude_top)}"
-        text_lines.append(f"{medal} {fname} {lname} — {score} баллов{suffix}")
+    lines = ["📊 **Твоя статистика:**"]
+    lines.append(f"👤 {fname} {lname}")
+    lines.append(f"⭐ Очки: **{score}**")
+    if rank is not None and total is not None and total:
+        lines.append(f"🏁 Место в рейтинге: **{rank}** из **{total}**")
+    if aptitude_top:
+        lines.append(f"🧠 Ведущее направление: **{APT_LABEL.get(aptitude_top, aptitude_top)}**")
 
-    await message.answer("\n".join(text_lines), parse_mode="Markdown")
+    await message.answer("\n".join(lines), parse_mode="Markdown")
