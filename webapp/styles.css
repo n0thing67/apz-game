@@ -282,8 +282,8 @@ body.admin-body {
 /* === Верхняя кнопка "К уровням" во время прохождения === */
 .topbar {
     position: fixed;
-    /* Чуть выше, чтобы панель не перекрывала заголовки теста в Telegram WebView */
-    top: calc(env(safe-area-inset-top, 0px) + 2px);
+    /* Поднимаем максимально к верху, но уважаем safe-area (notch) */
+    top: env(safe-area-inset-top, 0px);
     left: 10px;
     z-index: 1001; /* поверх игровых оверлеев */
     width: auto;
@@ -309,8 +309,8 @@ body.admin-body {
 /* === Кнопка "Звук" (только меню) === */
 .sound-toggle {
     position: fixed;
-    /* Чуть выше, чтобы панель не перекрывала заголовки теста в Telegram WebView */
-    top: calc(env(safe-area-inset-top, 0px) + 2px);
+    /* Поднимаем максимально к верху, но уважаем safe-area (notch) */
+    top: env(safe-area-inset-top, 0px);
     right: 10px;
     z-index: 1001;
     background: rgba(0,0,0,0.25);
