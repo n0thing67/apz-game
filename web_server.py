@@ -6,7 +6,6 @@ import logging
 import os
 from io import BytesIO
 from urllib.parse import parse_qsl
-
 from aiohttp import web
 
 from aiogram import Bot
