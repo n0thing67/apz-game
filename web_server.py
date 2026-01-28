@@ -58,9 +58,10 @@ def _render_award_png(template_filename: str, full_name: str, event_name: str, e
     draw = ImageDraw.Draw(img)
 
     # Блоки текста (относительно размера шаблона)
-    name_y = int(h * 0.48)
-    event_y = int(h * 0.58)
-    date_y = int(h * 0.63)
+    # По запросу: название мероприятия — над ФИО, дату — чуть ниже.
+    event_y = int(h * 0.46)
+    name_y = int(h * 0.54)
+    date_y = int(h * 0.66)
     max_text_width = int(w * 0.78)
 
     # Имя участника — самое крупное
@@ -69,8 +70,8 @@ def _render_award_png(template_filename: str, full_name: str, event_name: str, e
     name_w = name_bbox[2] - name_bbox[0]
     draw.text(((w - name_w) / 2, name_y), full_name, font=name_font, fill=(20, 30, 45, 255))
 
-    # Мероприятие
-    event_text = f"Мероприятие: {event_name}".strip()
+    # Мероприятие (без префикса "Мероприятие:")
+    event_text = (event_name or "").strip()
     event_font = _fit_font(draw, event_text, _font_path(), max_text_width, start_size=int(h * 0.03), min_size=18)
     event_bbox = draw.textbbox((0, 0), event_text, font=event_font)
     event_w = event_bbox[2] - event_bbox[0]
@@ -252,18 +253,12 @@ async def admin_send_award(request: web.Request) -> web.Response:
     if template_key not in template_map:
         raise web.HTTPBadRequest(text="Bad template_key")
 
-    try:
-        png_bytes = _render_award_png(
-            template_filename=template_map[template_key],
-            full_name=full_name,
-            event_name=event_name,
-            event_date=event_date,
-        )
-    except FileNotFoundError as e:
-        raise web.HTTPBadRequest(text=f"Template not found: {e}")
-    except Exception as e:
-        logging.getLogger(__name__).exception("Award render failed")
-        raise web.HTTPBadRequest(text=f"Render failed: {e}")
+    png_bytes = _render_award_png(
+        template_filename=template_map[template_key],
+        full_name=full_name,
+        event_name=event_name,
+        event_date=event_date,
+    )
 
     bot: Bot = request.app["bot"]
     filename = f"award_{template_key}_{tg_id}.png"
