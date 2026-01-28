@@ -91,6 +91,9 @@ body.admin-body {
     align-items: center;
     padding-top: 18px;
     padding-bottom: 24px;
+    user-select: text;
+    -webkit-user-select: text;
+    -ms-user-select: text;
 }
 
 .admin-screen {
