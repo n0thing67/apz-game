@@ -284,6 +284,11 @@ async function init() {
   // --- AWARDS page actions ---
   byId("back-from-awards").addEventListener("click", () => showScreen("home"));
   byId("btn-award-refresh").addEventListener("click", () => loadAwardsUsers().catch((e) => alert(e.message)));
+  byId("btn-award-clear").addEventListener("click", () => {
+    byId("award-user").value = "";
+    byId("award-event").value = "";
+    byId("award-date").value = "";
+  });
   byId("btn-award-send").addEventListener("click", async () => {
     const tgId = Number((byId("award-user").value || "").trim());
     const templateKey = String(byId("award-template").value || "participation");
