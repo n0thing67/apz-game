@@ -6,6 +6,7 @@ import logging
 import os
 from io import BytesIO
 from urllib.parse import parse_qsl
+
 from aiohttp import web
 
 from aiogram import Bot
@@ -251,12 +252,18 @@ async def admin_send_award(request: web.Request) -> web.Response:
     if template_key not in template_map:
         raise web.HTTPBadRequest(text="Bad template_key")
 
-    png_bytes = _render_award_png(
-        template_filename=template_map[template_key],
-        full_name=full_name,
-        event_name=event_name,
-        event_date=event_date,
-    )
+    try:
+        png_bytes = _render_award_png(
+            template_filename=template_map[template_key],
+            full_name=full_name,
+            event_name=event_name,
+            event_date=event_date,
+        )
+    except FileNotFoundError as e:
+        raise web.HTTPBadRequest(text=f"Template not found: {e}")
+    except Exception as e:
+        logging.getLogger(__name__).exception("Award render failed")
+        raise web.HTTPBadRequest(text=f"Render failed: {e}")
 
     bot: Bot = request.app["bot"]
     filename = f"award_{template_key}_{tg_id}.png"
