@@ -1113,7 +1113,7 @@ function showScreen(screenId) {
     // - на экране результатов теста всегда видна снизу
     const bottombar = document.getElementById('global-bottombar');
     if (bottombar) {
-        const showBottom = ((isLevelScreen && levelCompleted) || isAptitudeResult);
+        const showBottom = ((isLevelScreen && afterLevelShown) || isAptitudeResult);
         bottombar.classList.toggle('hidden', !showBottom);
     }
 
@@ -1221,6 +1221,13 @@ function hideAfterLevel() {
         c.classList.remove('gate-visible', 'lights-on');
     }
 
+    // Экран после уровня скрыт — нижняя кнопка "К уровням" не должна показываться
+    afterLevelShown = false;
+    try {
+        const active = document.querySelector('.screen.active');
+        if (active && active.id) showScreen(active.id);
+    } catch (e) {}
+
     // Вернём скрытые элементы интерфейса (если прятали для экрана "после уровня")
     try {
         const board = document.getElementById('puzzle-board');
@@ -1299,6 +1306,14 @@ function showAfterLevel(levelId) {
 
     c.style.display = 'block';
 
+    // Экран после уровня показан — можно показывать нижнюю кнопку "К уровням"
+    afterLevelShown = true;
+    try {
+        const active = document.querySelector('.screen.active');
+        if (active && active.id) showScreen(active.id);
+    } catch (e) {}
+
+
     // Плавно проявляем блок (CSS transition)
     requestAnimationFrame(() => c.classList.add('gate-visible'));
 
@@ -1319,6 +1334,7 @@ function exitToLevels() {
 let currentLevelId = null;
 let levelStartTime = 0; // Для засекания времени
 let levelCompleted = false; // Для переключения кнопок "К уровням" (верх/низ)
+let afterLevelShown = false; // Появление нижней кнопки только на экране после уровня
 
 function startLevel(levelId) {
     hideAfterLevel();
