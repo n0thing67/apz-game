@@ -36,6 +36,8 @@ const APP_IMAGE_MANIFEST = [
     'hero',
     'jetpack',
     'logo',
+    'logo_3x3',
+    'logo_4x4',
     'nut',
     'part',
     'platform',
@@ -1473,7 +1475,12 @@ function createPuzzleElements() {
         const correctRow = Math.floor(correctIndex / puzzleSize);
         const correctCol = correctIndex % puzzleSize;
 
-        div.style.backgroundImage = `url('${assetPath('logo', 'jpg')}')`;
+        const puzzleImage = (puzzleSize === 2)
+            ? assetPath('logo', 'jpg')
+            : (puzzleSize === 3)
+                ? assetPath('logo_3x3', 'jpg')
+                : assetPath('logo_4x4', 'jpg');
+        div.style.backgroundImage = `url('${puzzleImage}')`;
         div.style.backgroundSize = `${puzzleSize * 100}% ${puzzleSize * 100}%`;
 
         const x = (puzzleSize === 1) ? 0 : (correctCol / (puzzleSize - 1)) * 100;
