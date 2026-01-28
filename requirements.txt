@@ -3,3 +3,4 @@ aiogram>=3.0
 aiosqlite>=0.19
 python-dotenv>=1.0
 aiohttp>=3.9
+Pillow>=10.0
