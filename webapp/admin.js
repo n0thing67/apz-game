@@ -23,12 +23,14 @@ async function init() {
   const $statsAll = byId("stats-all");
   const $users = byId("users");
   const $levels = byId("levels");
+  const $awardsUsers = byId("awards-users");
 
   const screens = {
     home: byId("screen-admin-home"),
     stats: byId("screen-admin-stats"),
     users: byId("screen-admin-users"),
     levels: byId("screen-admin-levels"),
+    awards: byId("screen-admin-awards"),
   };
 
   function showScreen(key) {
@@ -135,6 +137,14 @@ async function init() {
     $users.textContent = users.length ? users.map(fmtUser).join("\n") : "Пока нет";
   }
 
+  async function loadAwardsUsers() {
+    if (!$awardsUsers) return;
+    $awardsUsers.textContent = "…";
+    const data = await api("/api/admin/stats");
+    const users = (data.users || []).slice(0, 200);
+    $awardsUsers.textContent = users.length ? users.map(fmtUser).join("\n") : "Пока нет";
+  }
+
   async function loadLevels() {
     $levels.innerHTML = "";
     const levelsResp = await api("/api/levels");
@@ -219,6 +229,16 @@ async function init() {
     }
   });
 
+  byId("go-awards").addEventListener("click", async () => {
+    try {
+      if (!(await checkAccess())) return;
+      showScreen("awards");
+      await loadAwardsUsers();
+    } catch (e) {
+      alert(e.message);
+    }
+  });
+
   // --- HOME actions ---
   byId("btn-exit").addEventListener("click", exit);
 
@@ -260,6 +280,51 @@ async function init() {
   // --- LEVELS page actions ---
   byId("back-from-levels").addEventListener("click", () => showScreen("home"));
   byId("btn-refresh-levels").addEventListener("click", () => loadLevels().catch((e) => alert(e.message)));
+
+  // --- AWARDS page actions ---
+  byId("back-from-awards").addEventListener("click", () => showScreen("home"));
+  byId("btn-award-refresh").addEventListener("click", () => loadAwardsUsers().catch((e) => alert(e.message)));
+  byId("btn-award-send").addEventListener("click", async () => {
+    const tgId = Number((byId("award-user").value || "").trim());
+    const templateKey = String(byId("award-template").value || "participation");
+    const eventName = String((byId("award-event").value || "").trim());
+    const eventDate = String((byId("award-date").value || "").trim());
+
+    if (!tgId) {
+      alert("Укажи Telegram ID пользователя");
+      return;
+    }
+    if (!eventName) {
+      alert("Укажи название мероприятия");
+      return;
+    }
+    if (!eventDate) {
+      alert("Укажи дату");
+      return;
+    }
+
+    const ok = confirm("Сформировать и отправить документ этому пользователю?");
+    if (!ok) return;
+
+    const btn = byId("btn-award-send");
+    btn.disabled = true;
+    try {
+      await api("/api/admin/send_award", {
+        method: "POST",
+        body: JSON.stringify({
+          telegram_id: tgId,
+          template_key: templateKey,
+          event_name: eventName,
+          event_date: eventDate,
+        }),
+      });
+      alert("Отправлено ✅");
+    } catch (e) {
+      alert("Ошибка: " + e.message);
+    } finally {
+      btn.disabled = false;
+    }
+  });
 
   // Start: stay on home, verify access once
   showScreen("home");
