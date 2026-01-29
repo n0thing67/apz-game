@@ -21,9 +21,19 @@ document.addEventListener("DOMContentLoaded", () => {
 async function init() {
   const $who = byId("who");
   const $statsAll = byId("stats-all");
-  const $users = byId("users");
   const $levels = byId("levels");
-  const $awardsUsers = byId("awards-users");
+
+  // USERS (delete) UI
+  const $usersSearch = byId("users-search");
+  const $usersList = byId("users-list");
+  const $usersSelected = byId("users-selected");
+  const $deleteId = byId("delete-id");
+  const $btnDeleteUser = byId("btn-delete-user");
+
+  // AWARDS UI
+  const $awardsSearch = byId("awards-search");
+  const $awardsList = byId("awards-list");
+  const $awardsSelected = byId("awards-selected");
 
   const screens = {
     home: byId("screen-admin-home"),
@@ -89,6 +99,103 @@ async function init() {
     return res.json();
   }
 
+  // --- Users list helpers ---
+  let usersCache = [];
+  let selectedDeleteId = null;
+  let selectedAwardId = null;
+
+  function norm(s) {
+    return String(s || "")
+      .trim()
+      .toLowerCase()
+      .replace(/ё/g, "е");
+  }
+
+  function userTitle(u) {
+    const fn = String(u.first_name || "").trim();
+    const ln = String(u.last_name || "").trim();
+    return `${fn} ${ln}`.trim() || `ID ${u.telegram_id}`;
+  }
+
+  function filterUsers(q, list) {
+    const nq = norm(q);
+    if (!nq) return list;
+    return (list || []).filter((u) => {
+      const fn = norm(u.first_name);
+      const ln = norm(u.last_name);
+      const full = `${fn} ${ln}`.trim();
+      return fn.includes(nq) || ln.includes(nq) || full.includes(nq);
+    });
+  }
+
+  function renderUsersList({
+    container,
+    list,
+    selectedId,
+    onSelect,
+  }) {
+    if (!container) return;
+    container.innerHTML = "";
+
+    if (!list.length) {
+      container.innerHTML = '<div class="muted" style="padding:10px;">Пока нет</div>';
+      return;
+    }
+
+    list.forEach((u) => {
+      const id = Number(u.telegram_id);
+      const row = document.createElement("button");
+      row.type = "button";
+      row.className = "admin-useritem" + (id === selectedId ? " selected" : "");
+      row.innerHTML = `
+        <div class="admin-useritem-name">${esc(userTitle(u))}</div>
+        <div class="admin-useritem-meta">ID: ${esc(id)} • Очки: ${esc(u.score ?? 0)}</div>
+      `;
+      row.addEventListener("click", () => onSelect?.(u));
+      container.appendChild(row);
+    });
+  }
+
+  function renderDeleteListFromCache() {
+    const filtered = filterUsers($usersSearch?.value, usersCache);
+    renderUsersList({
+      container: $usersList,
+      list: filtered,
+      selectedId: selectedDeleteId,
+      onSelect: (u) => {
+        selectedDeleteId = Number(u.telegram_id);
+        $deleteId.value = String(selectedDeleteId);
+        if ($usersSelected) $usersSelected.textContent = `${userTitle(u)} (ID: ${selectedDeleteId})`;
+        if ($btnDeleteUser) $btnDeleteUser.disabled = false;
+        renderDeleteListFromCache();
+      },
+    });
+
+    if (!selectedDeleteId) {
+      if ($usersSelected) $usersSelected.textContent = "Не выбран";
+      if ($btnDeleteUser) $btnDeleteUser.disabled = true;
+    }
+  }
+
+  function renderAwardsListFromCache() {
+    const filtered = filterUsers($awardsSearch?.value, usersCache);
+    renderUsersList({
+      container: $awardsList,
+      list: filtered,
+      selectedId: selectedAwardId,
+      onSelect: (u) => {
+        selectedAwardId = Number(u.telegram_id);
+        byId("award-user").value = String(selectedAwardId);
+        if ($awardsSelected) $awardsSelected.textContent = `${userTitle(u)} (ID: ${selectedAwardId})`;
+        renderAwardsListFromCache();
+      },
+    });
+
+    if (!selectedAwardId) {
+      if ($awardsSelected) $awardsSelected.textContent = "Не выбран";
+    }
+  }
+
   // --- Data loaders ---
   async function checkAccess() {
     $who.textContent = "Проверка доступа…";
@@ -131,18 +238,27 @@ async function init() {
   }
 
   async function loadUsers() {
-    $users.textContent = "…";
     const data = await api("/api/admin/stats");
-    const users = (data.users || []).slice(0, 200);
-    $users.textContent = users.length ? users.map(fmtUser).join("\n") : "Пока нет";
+    usersCache = (data.users || []).slice(0, 200);
+
+    // если выбранного уже нет — сбросим
+    if (selectedDeleteId && !usersCache.some((u) => Number(u.telegram_id) === selectedDeleteId)) {
+      selectedDeleteId = null;
+      $deleteId.value = "";
+    }
+
+    renderDeleteListFromCache();
   }
 
   async function loadAwardsUsers() {
-    if (!$awardsUsers) return;
-    $awardsUsers.textContent = "…";
     const data = await api("/api/admin/stats");
-    const users = (data.users || []).slice(0, 200);
-    $awardsUsers.textContent = users.length ? users.map(fmtUser).join("\n") : "Пока нет";
+    usersCache = (data.users || []).slice(0, 200);
+
+    if (selectedAwardId && !usersCache.some((u) => Number(u.telegram_id) === selectedAwardId)) {
+      selectedAwardId = null;
+    }
+
+    renderAwardsListFromCache();
   }
 
   async function loadLevels() {
@@ -260,17 +376,23 @@ async function init() {
   byId("back-from-users").addEventListener("click", () => showScreen("home"));
   byId("btn-refresh-users").addEventListener("click", () => loadUsers().catch((e) => alert(e.message)));
 
+  $usersSearch?.addEventListener("input", () => {
+    // фильтрация без запроса на сервер
+    renderDeleteListFromCache();
+  });
+
   byId("btn-delete-user").addEventListener("click", async () => {
-    const val = (byId("delete-id").value || "").trim();
+    const val = Number(($deleteId.value || "").trim());
     if (!val) return;
-    const ok = confirm(`Удалить пользователя ${val}?`);
+    const ok = confirm(`Удалить выбранного пользователя (ID: ${val})?`);
     if (!ok) return;
     try {
       await api("/api/admin/delete_user", {
         method: "POST",
-        body: JSON.stringify({ telegram_id: Number(val) }),
+        body: JSON.stringify({ telegram_id: val }),
       });
-      byId("delete-id").value = "";
+      selectedDeleteId = null;
+      $deleteId.value = "";
       await loadUsers();
     } catch (e) {
       alert("Ошибка: " + e.message);
@@ -284,10 +406,19 @@ async function init() {
   // --- AWARDS page actions ---
   byId("back-from-awards").addEventListener("click", () => showScreen("home"));
   byId("btn-award-refresh").addEventListener("click", () => loadAwardsUsers().catch((e) => alert(e.message)));
+
+  $awardsSearch?.addEventListener("input", () => {
+    renderAwardsListFromCache();
+  });
+
   byId("btn-award-clear").addEventListener("click", () => {
     byId("award-user").value = "";
     byId("award-event").value = "";
     byId("award-date").value = "";
+
+    selectedAwardId = null;
+    if ($awardsSelected) $awardsSelected.textContent = "Не выбран";
+    renderAwardsListFromCache();
   });
   byId("btn-award-send").addEventListener("click", async () => {
     const tgId = Number((byId("award-user").value || "").trim());
