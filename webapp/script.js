@@ -842,9 +842,9 @@ const STATS_KEY = 'apzQuestStatsV1';
 // Локальная статистика хранится в localStorage и должна сохраняться между запусками WebApp.
 // Сброс выполняется только по явному действию пользователя (кнопка "Сбросить статистику").
 
-// При каждом запуске сбрасываем только результаты профтеста "что тебе подходит?" и рекомендации (⭐)
-// (это не относится к общей статистике игр).
-try { localStorage.removeItem(APTITUDE_STORAGE_KEY); } catch (e) {}
+// Результаты профтеста "что тебе подходит?" и рекомендации (⭐)
+// должны сохраняться между запусками WebApp.
+// Сброс выполняется только по явному действию пользователя (кнопка "Сбросить статистику" или "Пройти ещё раз" в тесте).
 
 function loadStats() {
     try {
@@ -2728,13 +2728,29 @@ window.addEventListener('DOMContentLoaded', () => {
         currentLevelId = null;
         showScreen('screen-welcome');
         updateSoundToggleUI();
-        // На каждом запуске скрываем строку профиля и убираем ⭐ рекомендации
+        // При запуске восстанавливаем результаты профтеста (если они уже были сохранены)
+        // и показываем ⭐ рекомендации в меню.
         try {
+            const savedApt = loadSavedAptitudeResult();
             const statLine = document.getElementById('aptitude-stat-line');
             const statMain = document.getElementById('stat-aptitude-main');
-            if (statMain) statMain.textContent = '—';
-            if (statLine) statLine.style.display = 'none';
-            clearAptitudeMenuRecommendations();
+
+            if (savedApt && savedApt.main) {
+                const LABEL = {
+                    TECH: '🔧 Техническое мышление',
+                    LOGIC: '🧩 Логическое мышление',
+                    CREATIVE: '🎨 Творческое мышление',
+                    HUMAN: '📖 Гуманитарное мышление',
+                    SOCIAL: '🤝 Командное мышление',
+                };
+                if (statMain) statMain.textContent = LABEL[savedApt.main] || savedApt.main;
+                if (statLine) statLine.style.display = '';
+                applyAptitudeRecommendationsToMenu(savedApt);
+            } else {
+                if (statMain) statMain.textContent = '—';
+                if (statLine) statLine.style.display = 'none';
+                clearAptitudeMenuRecommendations();
+            }
         } catch (e) {}
     } catch (e) {}
 
