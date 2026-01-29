@@ -46,23 +46,37 @@ const APP_IMAGE_MANIFEST = [
     'spring'
 ];
 
-function preloadOneImage(url) {
+function preloadOneImage(url, timeoutMs = 8000) {
+    // В редких случаях WebView может «повиснуть» на загрузке ресурса
+    // без onload/onerror. Ставим страховочный таймаут, чтобы прелоадер
+    // не зависал навсегда.
     return new Promise((resolve) => {
         const img = new Image();
+        let done = false;
+
+        const finish = () => {
+            if (done) return;
+            done = true;
+            clearTimeout(t);
+            resolve();
+        };
+
+        const t = setTimeout(finish, timeoutMs);
+
         img.onload = () => {
             // decode() часто снимает фризы на первом рендере
             if (img.decode) {
-                img.decode().catch(() => {}).finally(() => resolve());
+                img.decode().catch(() => {}).finally(finish);
             } else {
-                resolve();
+                finish();
             }
         };
-        img.onerror = () => resolve();
+        img.onerror = finish;
         img.src = url;
         // если уже в кэше
         if (img.complete && img.naturalWidth) {
-            if (img.decode) img.decode().catch(() => {}).finally(() => resolve());
-            else resolve();
+            if (img.decode) img.decode().catch(() => {}).finally(finish);
+            else finish();
         }
     });
 }
@@ -95,6 +109,16 @@ function startAppImagePreloader() {
         let loaded = 0;
         setProgress(0, '—');
 
+        // Общая страховка (если WebView/сеть глючит):
+        // максимум 25 секунд на весь прогрев.
+        const hardStop = setTimeout(() => {
+            appImagesPreloaded = true;
+            if (overlay) {
+                overlay.classList.add('hidden');
+                overlay.setAttribute('aria-busy', 'false');
+            }
+        }, 25000);
+
         // Важно: грузим последовательно — так текст “какой файл сейчас” будет точным.
         for (const name of APP_IMAGE_MANIFEST) {
             const url = assetPath(name, 'png');
@@ -106,6 +130,7 @@ function startAppImagePreloader() {
         }
 
         appImagesPreloaded = true;
+        clearTimeout(hardStop);
         if (overlay) {
             overlay.classList.add('hidden');
             overlay.setAttribute('aria-busy', 'false');
