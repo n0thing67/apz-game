@@ -62,14 +62,20 @@
 
       <div class="level-card" style="margin:0;">
         <div class="level-title">Удаление пользователей</div>
-        <div class="level-stats muted">Удаление по Telegram ID</div>
-        <div class="admin-row">
-          <input id="delete-id" type="number" placeholder="Telegram ID" class="admin-input" />
-          <button class="btn" id="btn-delete-user">Удалить</button>
+        <div class="level-stats muted">Выбери пользователя из списка ниже (можно искать по имени/фамилии).</div>
+
+        <div class="admin-row" style="margin-top:10px;">
+          <input id="users-search" type="text" placeholder="Поиск: имя или фамилия" class="admin-input" />
         </div>
+
         <div class="level-stats" style="margin-top:10px;">
-          <div class="muted">Список (первые 200):</div>
-          <pre id="users" style="white-space:pre-wrap; margin:0;">—</pre>
+          <div class="admin-selected" id="users-selected">Не выбран</div>
+          <div id="users-list" class="admin-userlist" aria-label="Список пользователей"></div>
+          <input id="delete-id" type="hidden" />
+        </div>
+
+        <div class="admin-actions" style="margin-top:12px;">
+          <button class="btn" id="btn-delete-user" disabled>Удалить выбранного</button>
         </div>
       </div>
 
@@ -116,7 +122,7 @@
 
       <div class="level-card" style="margin:0;">
         <div class="level-title">Сформировать и отправить</div>
-        <div class="level-stats muted">Имя и фамилия подставляются из статистики по Telegram ID.</div>
+        <div class="level-stats muted">Выбери пользователя из списка ниже (поиск по имени/фамилии). Имя и фамилия подставляются из статистики по Telegram ID.</div>
 
         <div class="admin-row" style="gap:10px; flex-wrap:wrap;">
           <select id="award-template" class="admin-input" style="flex:1; min-width:180px;">
@@ -125,7 +131,7 @@
             <option value="2">Диплом — 2 место</option>
             <option value="3">Диплом — 3 место</option>
           </select>
-          <input id="award-user" type="number" placeholder="Telegram ID" class="admin-input" style="flex:1; min-width:180px;" />
+          <input id="award-user" type="number" placeholder="Telegram ID (выбери ниже)" class="admin-input" style="flex:1; min-width:180px;" />
         </div>
 
         <div class="admin-row" style="gap:10px; flex-wrap:wrap; margin-top:10px;">
@@ -140,8 +146,12 @@
         </div>
 
         <div class="level-stats" style="margin-top:10px;">
-          <div class="muted">Первые 200 пользователей (можно копировать Telegram ID):</div>
-          <pre id="awards-users" style="white-space:pre-wrap; margin:0;">—</pre>
+          <div class="muted">Выбор пользователя (первые 200, есть поиск):</div>
+          <div class="admin-row" style="margin-top:10px;">
+            <input id="awards-search" type="text" placeholder="Поиск: имя или фамилия" class="admin-input" />
+          </div>
+          <div class="admin-selected" id="awards-selected">Не выбран</div>
+          <div id="awards-list" class="admin-userlist" aria-label="Список пользователей для награждения"></div>
         </div>
 
         <div class="level-stats" style="margin-top:10px;">
