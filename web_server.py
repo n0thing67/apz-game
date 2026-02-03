@@ -12,6 +12,7 @@ from aiohttp import web
 from aiogram import Bot
 from aiogram.types import BufferedInputFile
 from PIL import Image, ImageDraw, ImageFont
+
 from database.db import (
     get_levels,
     set_level_active,
@@ -21,6 +22,7 @@ from database.db import (
     get_user_profile,
     delete_user,
     reset_all_scores,
+    get_stats_reset_token,
 )
 
 
@@ -170,7 +172,7 @@ async def handle_me(request: web.Request) -> web.Response:
 
     user_raw = parsed.get("user")
     if not user_raw:
-        return web.json_response({"ok": True, "exists": False, "user": None})
+        return web.json_response({"ok": True, "exists": False, "user": None, "reset_token": reset_token})
 
     try:
         user_obj = json.loads(user_raw) if isinstance(user_raw, str) else user_raw
@@ -179,13 +181,15 @@ async def handle_me(request: web.Request) -> web.Response:
         return web.json_response({"ok": False, "error": "bad_user"}, status=400)
 
     row = await get_user_profile(tg_id)
+    reset_token = await get_stats_reset_token()
     if not row:
-        return web.json_response({"ok": True, "exists": False, "user": None})
+        return web.json_response({"ok": True, "exists": False, "user": None, "reset_token": reset_token})
 
     telegram_id, first_name, last_name, age, score, aptitude_top = row
     return web.json_response(
         {
             "ok": True,
+            "reset_token": reset_token,
             "exists": True,
             "user": {
                 "telegram_id": telegram_id,
@@ -224,6 +228,7 @@ async def admin_get_stats(request: web.Request) -> web.Response:
     return web.json_response(
         {
             "ok": True,
+            "reset_token": reset_token,
             "top": [
                 {"first_name": f, "last_name": l, "score": s}
                 for (f, l, s) in top
