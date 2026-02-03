@@ -148,7 +148,11 @@ async def cors_middleware(request: web.Request, handler):
 
     resp.headers["Access-Control-Allow-Origin"] = "*"
     resp.headers["Access-Control-Allow-Methods"] = "GET,POST,OPTIONS"
-    resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
+    # В WebApp мы передаём initData в кастомном заголовке X-Telegram-InitData.
+    # Если его не разрешить в CORS, браузер/вебвью заблокирует запросы к /api/me,
+    # из-за чего после админского «Сбросить всю статистику» у пользователя может
+    # оставаться старая статистика/рекомендации из localStorage.
+    resp.headers["Access-Control-Allow-Headers"] = "Content-Type, X-Telegram-InitData"
     return resp
 
 
