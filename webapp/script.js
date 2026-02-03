@@ -796,6 +796,37 @@ function apiUrl(path) {
     return API_BASE + path;
 }
 
+
+
+// Синхронизация профтеста ("Что тебе больше подходит") с сервером.
+// Если админ удалил пользователя/сбросил статистику, локальный localStorage может
+// «сохранить» старый результат и показывать его после повторной регистрации.
+// Здесь мы аккуратно очищаем только результат профтеста, если на сервере его нет.
+async function syncAptitudeWithServer() {
+    try {
+        if (!API_BASE) return;
+        if (!tg?.initData) return;
+
+        const res = await fetch(apiUrl('/api/me'), {
+            method: 'GET',
+            cache: 'no-store',
+            headers: { 'X-Telegram-InitData': tg.initData }
+        });
+        if (!res.ok) return;
+
+        const data = await res.json();
+        const serverTop = data?.user?.aptitude_top;
+
+        if (!data?.exists || !serverTop) {
+            localStorage.removeItem(APTITUDE_STORAGE_KEY);
+            // Также убираем ⭐ из меню, если они были
+            try { clearAptitudeMenuRecommendations(); } catch (e) {}
+        }
+    } catch (e) {
+        // silently ignore
+    }
+}
+
 async function loadLevelAvailability() {
     try {
         const res = await fetch(apiUrl('/api/levels'), { cache: 'no-store' });
@@ -2695,6 +2726,9 @@ window.addEventListener('DOMContentLoaded', () => {
     // Прелоадер изображений при входе в приложение (assets/*) с прогрессом.
     // Никакую игровую логику не меняем — просто прогреваем кэш браузера.
     startAppImagePreloader();
+
+    // Синхронизируем профтест с сервером (на случай удаления/сброса пользователя в админке)
+    syncAptitudeWithServer();
 
     // Разблокируем звук на первом пользовательском жесте
     // (иначе в Telegram WebView/iOS Safari многие звуки не запускаются)
