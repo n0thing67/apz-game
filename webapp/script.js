@@ -829,6 +829,9 @@ async function syncAptitudeWithServer() {
             try { localStorage.setItem(RESET_TOKEN_KEY, serverReset); } catch (e) {}
             // сбрасываем in-memory статы, чтобы сразу обновились очки/рекомендации в интерфейсе
             try { stats = {}; } catch (e) {}
+            // старый механизм очков (levelScores) тоже должен сбрасываться,
+            // иначе в некоторых местах UI может «оживать» прошлый счёт.
+            try { levelScores = { 1: 0, 2: 0, 3: 0, 4: 0 }; } catch (e) {}
             try { clearAptitudeMenuRecommendations(); } catch (e) {}
         }
 
@@ -2787,6 +2790,14 @@ window.addEventListener('DOMContentLoaded', () => {
     document.addEventListener('visibilitychange', () => {
         if (!document.hidden) syncResetAndRefreshUIThrottled();
     });
+
+    // На некоторых устройствах Telegram может не триггерить focus/visibility при повторном открытии мини‑веба.
+    // Поэтому делаем редкий фоновый синк (троттл уже защищает от спама).
+    try {
+        if (!window.__apzResetSyncInterval) {
+            window.__apzResetSyncInterval = setInterval(syncResetAndRefreshUIThrottled, 5000);
+        }
+    } catch (e) {}
 
     // Разблокируем звук на первом пользовательском жесте
     // (иначе в Telegram WebView/iOS Safari многие звуки не запускаются)
