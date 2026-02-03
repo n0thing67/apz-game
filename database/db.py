@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from typing import Any
 
 # Поддерживаем ДВА режима:
 # 1) PostgreSQL (рекомендуется) — если задана переменная окружения DATABASE_URL.
@@ -150,20 +151,35 @@ if not _using_postgres:
         ) as cursor:
             return await cursor.fetchone()
 
-    async def get_user_profile(tg_id: int):
-        """Расширенные данные пользователя для webapp (в т.ч. результат профтеста)."""
+    # Backward compatible helper for web_server.py
+    async def get_user_profile(tg_id: int) -> dict[str, Any] | None:
+        """Возвращает профиль пользователя (включая aptitude_top).
+
+        Нужен для совместимости: некоторые версии web_server.py импортируют
+        get_user_profile напрямую.
+        """
         db = await get_db()
         async with db.execute(
-            "SELECT telegram_id, first_name, last_name, age, score, aptitude_top FROM users WHERE telegram_id = ?",
+            "SELECT telegram_id, first_name, last_name, age, score, aptitude_top "
+            "FROM users WHERE telegram_id = ?",
             (tg_id,),
         ) as cursor:
-            return await cursor.fetchone()
-
+            row = await cursor.fetchone()
+        if row is None:
+            return None
+        return {
+            "telegram_id": row[0],
+            "first_name": row[1],
+            "last_name": row[2],
+            "age": row[3],
+            "score": row[4],
+            "aptitude_top": row[5],
+        }
 
     async def reset_all_scores():
         db = await get_db()
-        # Сбрасываем общие очки и результат профтеста (игра "Что тебе больше подходит").
-        # Иначе после сброса статистики в админке у пользователя может оставаться aptitude_top.
+        # Важно: при «сбросе статистики» очищаем и результат профтеста,
+        # иначе фронт может показать старый итог после повторной регистрации.
         await db.execute("UPDATE users SET score = 0, aptitude_top = NULL")
         await db.commit()
 
@@ -211,6 +227,30 @@ if not _using_postgres:
         )
         await db.commit()
 
+    async def get_user_profile(tg_id: int) -> dict[str, Any] | None:
+        """Профиль пользователя для WebApp.
+
+        Нужен для синхронизации локального состояния (localStorage) с сервером.
+        Держим эту функцию для совместимости с web_server.py.
+        """
+        db = await get_db()
+        async with db.execute(
+            "SELECT telegram_id, first_name, last_name, age, score, aptitude_top "
+            "FROM users WHERE telegram_id = ?",
+            (tg_id,),
+        ) as cursor:
+            row = await cursor.fetchone()
+        if not row:
+            return None
+        return {
+            "telegram_id": row[0],
+            "first_name": row[1],
+            "last_name": row[2],
+            "age": row[3],
+            "score": row[4],
+            "aptitude_top": row[5],
+        }
+
     async def get_top_users_stats(limit: int = 10):
         db = await get_db()
         async with db.execute(
@@ -227,6 +267,7 @@ else:
     import asyncpg  # type: ignore
     import ssl
     import urllib.parse
+    import certifi
 
     _pool: asyncpg.Pool | None = None
 
@@ -255,12 +296,45 @@ else:
             pass
         return False
 
+    def _build_ssl_context(dsn: str) -> ssl.SSLContext | None:
+        """Создаёт SSLContext в стиле libpq sslmode.
+
+        - sslmode=disable => без TLS
+        - sslmode=require => TLS БЕЗ проверки сертификата (как в libpq)
+        - verify-ca/verify-full => TLS с проверкой (через certifi)
+
+        Это решает падение на Render вида:
+        SSLCertVerificationError: self-signed certificate in certificate chain
+        (часто встречается при pooler/прокси и sslmode=require).
+        """
+        try:
+            u = urllib.parse.urlparse(dsn)
+            q = urllib.parse.parse_qs(u.query)
+            sslmode = (q.get("sslmode", [""])[0] or "").lower()
+        except Exception:
+            sslmode = ""
+
+        if sslmode in {"disable", "allow", "prefer"}:
+            return None
+
+        # По умолчанию — пытаемся безопасный контекст
+        ctx = ssl.create_default_context(cafile=certifi.where())
+
+        if sslmode == "require":
+            # Как в libpq: шифрование есть, проверки цепочки нет.
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+            return ctx
+
+        # verify-ca / verify-full / пусто (для облака) — оставляем проверку
+        return ctx
+
     async def get_db() -> asyncpg.Pool:
         global _pool
         if _pool is None:
             ssl_ctx = None
             if _needs_ssl(DATABASE_URL):
-                ssl_ctx = ssl.create_default_context()
+                ssl_ctx = _build_ssl_context(DATABASE_URL)
             _pool = await asyncpg.create_pool(
                 dsn=DATABASE_URL,
                 ssl=ssl_ctx,
@@ -353,10 +427,31 @@ else:
             return None
         return (row["telegram_id"], row["first_name"], row["last_name"], row["age"], row["score"])
 
+    # Backward compatible helper for web_server.py
+    async def get_user_profile(tg_id: int) -> dict[str, Any] | None:
+        """Возвращает профиль пользователя (включая aptitude_top)."""
+        pool = await get_db()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT telegram_id, first_name, last_name, age, score, aptitude_top "
+                "FROM users WHERE telegram_id = $1",
+                int(tg_id),
+            )
+        if row is None:
+            return None
+        return {
+            "telegram_id": row["telegram_id"],
+            "first_name": row["first_name"],
+            "last_name": row["last_name"],
+            "age": row["age"],
+            "score": row["score"],
+            "aptitude_top": row["aptitude_top"],
+        }
+
     async def reset_all_scores():
         pool = await get_db()
         async with pool.acquire() as conn:
-            await conn.execute("UPDATE users SET score = 0")
+            await conn.execute("UPDATE users SET score = 0, aptitude_top = NULL")
 
     async def delete_all_users():
         pool = await get_db()
@@ -413,3 +508,23 @@ else:
             (r["telegram_id"], r["first_name"], r["last_name"], r["score"], r["aptitude_top"])
             for r in rows
         ]
+
+    async def get_user_profile(tg_id: int) -> dict[str, Any] | None:
+        """Профиль пользователя для WebApp (совместимость)."""
+        pool = await get_db()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT telegram_id, first_name, last_name, age, score, aptitude_top "
+                "FROM users WHERE telegram_id = $1",
+                int(tg_id),
+            )
+        if row is None:
+            return None
+        return {
+            "telegram_id": row["telegram_id"],
+            "first_name": row["first_name"],
+            "last_name": row["last_name"],
+            "age": row["age"],
+            "score": row["score"],
+            "aptitude_top": row["aptitude_top"],
+        }
