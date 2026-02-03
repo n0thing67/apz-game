@@ -150,9 +150,21 @@ if not _using_postgres:
         ) as cursor:
             return await cursor.fetchone()
 
+    async def get_user_profile(tg_id: int):
+        """Расширенные данные пользователя для webapp (в т.ч. результат профтеста)."""
+        db = await get_db()
+        async with db.execute(
+            "SELECT telegram_id, first_name, last_name, age, score, aptitude_top FROM users WHERE telegram_id = ?",
+            (tg_id,),
+        ) as cursor:
+            return await cursor.fetchone()
+
+
     async def reset_all_scores():
         db = await get_db()
-        await db.execute("UPDATE users SET score = 0")
+        # Сбрасываем общие очки и результат профтеста (игра "Что тебе больше подходит").
+        # Иначе после сброса статистики в админке у пользователя может оставаться aptitude_top.
+        await db.execute("UPDATE users SET score = 0, aptitude_top = NULL")
         await db.commit()
 
     async def delete_all_users():
@@ -213,18 +225,48 @@ if not _using_postgres:
 # -------------------------
 else:
     import asyncpg  # type: ignore
+    import ssl
+    import urllib.parse
 
     _pool: asyncpg.Pool | None = None
 
     def _needs_ssl(dsn: str) -> bool:
-        dsn_l = dsn.lower()
-        return ("sslmode=require" in dsn_l) or ("ssl=true" in dsn_l)
+        """Определяет, нужно ли TLS/SSL для подключения.
+
+        Для Supabase (и большинства облачных Postgres) TLS обязателен, даже если в URI нет sslmode.
+        """
+        try:
+            u = urllib.parse.urlparse(dsn)
+            host = (u.hostname or "").lower()
+            q = urllib.parse.parse_qs(u.query)
+            sslmode = (q.get("sslmode", [""])[0] or "").lower()
+            ssl_flag = (q.get("ssl", [""])[0] or "").lower()
+            if sslmode in {"require", "verify-ca", "verify-full"}:
+                return True
+            if ssl_flag in {"1", "true", "yes"}:
+                return True
+            # Supabase pooler/direct endpoints require TLS
+            if "supabase" in host:
+                return True
+            # Default for remote hosts: prefer TLS unless explicitly disabled
+            if host and host not in {"localhost", "127.0.0.1"} and not host.startswith("10.") and not host.startswith("192.168.") and not host.startswith("172."):
+                return True
+        except Exception:
+            pass
+        return False
 
     async def get_db() -> asyncpg.Pool:
         global _pool
         if _pool is None:
-            ssl = "require" if _needs_ssl(DATABASE_URL) else None
-            _pool = await asyncpg.create_pool(dsn=DATABASE_URL, ssl=ssl, min_size=1, max_size=5)
+            ssl_ctx = None
+            if _needs_ssl(DATABASE_URL):
+                ssl_ctx = ssl.create_default_context()
+            _pool = await asyncpg.create_pool(
+                dsn=DATABASE_URL,
+                ssl=ssl_ctx,
+                min_size=1,
+                max_size=5,
+            )
         return _pool
 
     async def close_db() -> None:
