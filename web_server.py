@@ -164,6 +164,9 @@ async def handle_me(request: web.Request) -> web.Response:
     локальная статистика (localStorage) не «оживляла» старые результаты
     после повторной регистрации.
     """
+    # Сначала получаем текущий reset_token (он нужен даже если пользователя ещё нет в БД)
+    reset_token = await get_stats_reset_token()
+
     init_data = request.headers.get("X-Telegram-InitData", "")
     token = os.getenv("BOT_TOKEN", "")
     parsed = _verify_telegram_webapp_init_data(init_data, token)
@@ -181,7 +184,6 @@ async def handle_me(request: web.Request) -> web.Response:
         return web.json_response({"ok": False, "error": "bad_user"}, status=400)
 
     row = await get_user_profile(tg_id)
-    reset_token = await get_stats_reset_token()
     if not row:
         return web.json_response({"ok": True, "exists": False, "user": None, "reset_token": reset_token})
 
@@ -223,6 +225,7 @@ async def _require_admin(request: web.Request) -> int:
 
 async def admin_get_stats(request: web.Request) -> web.Response:
     await _require_admin(request)
+    reset_token = await get_stats_reset_token()
     top = await get_top_users()
     users = await get_all_users(limit=500)
     return web.json_response(
