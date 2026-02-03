@@ -14,7 +14,6 @@ const USE_WEBP = supportsWebP();
 function assetPath(name, fallbackExt) {
     return `assets/${name}.${USE_WEBP ? 'webp' : fallbackExt}`;
 }
-
 // ==========================================
 // PRELOADER: при входе загружаем ТОЛЬКО изображения (assets/*)
 // Требование: показать прогресс (ползунок + %)...
