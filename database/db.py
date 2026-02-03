@@ -430,7 +430,18 @@ else:
     async def get_stats_reset_token() -> str:
         pool = await get_db()
         async with pool.acquire() as conn:
-            row = await conn.fetchrow("SELECT value FROM app_meta WHERE key = 'stats_reset_token'")
+            # На старых БД таблицы app_meta может не быть. Делаем функцию устойчивой,
+            # чтобы админка не падала 500-ой.
+            try:
+                row = await conn.fetchrow("SELECT value FROM app_meta WHERE key = 'stats_reset_token'")
+            except Exception:
+                await conn.execute(
+                    "CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY, value TEXT);"
+                )
+                await conn.execute(
+                    "INSERT INTO app_meta(key, value) VALUES('stats_reset_token', '0') ON CONFLICT (key) DO NOTHING"
+                )
+                row = await conn.fetchrow("SELECT value FROM app_meta WHERE key = 'stats_reset_token'")
         return str(row["value"]) if row and row["value"] is not None else "0"
 
 
@@ -438,7 +449,17 @@ else:
         pool = await get_db()
         async with pool.acquire() as conn:
             await conn.execute("UPDATE users SET score = 0, aptitude_top = NULL")
-            await conn.execute("UPDATE app_meta SET value = $1 WHERE key = 'stats_reset_token'", str(int(time.time())))
+            # Таблица app_meta может отсутствовать (если проект обновляли поверх старой БД)
+            await conn.execute(
+                "CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY, value TEXT);"
+            )
+            await conn.execute(
+                "INSERT INTO app_meta(key, value) VALUES('stats_reset_token', '0') ON CONFLICT (key) DO NOTHING"
+            )
+            await conn.execute(
+                "UPDATE app_meta SET value = $1 WHERE key = 'stats_reset_token'",
+                str(int(time.time())),
+            )
 
     async def delete_all_users():
         pool = await get_db()
