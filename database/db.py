@@ -258,40 +258,49 @@ else:
     import asyncpg  # type: ignore
     import ssl
     import urllib.parse
+    import certifi
 
     _pool: asyncpg.Pool | None = None
 
-    def _needs_ssl(dsn: str) -> bool:
-        """Определяет, нужно ли TLS/SSL для подключения.
+    def _parse_sslmode(dsn: str) -> str:
+        """Возвращает sslmode из DSN (как в libpq) либо пустую строку."""
+        try:
+            u = urllib.parse.urlparse(dsn)
+            q = urllib.parse.parse_qs(u.query)
+            return (q.get("sslmode", [""])[0] or "").lower()
+        except Exception:
+            return ""
 
-        Для Supabase (и большинства облачных Postgres) TLS обязателен, даже если в URI нет sslmode.
+    def _make_ssl_ctx(dsn: str):
+        """Создаёт SSL context для asyncpg с поведением, похожим на libpq.
+
+        - sslmode=require  -> TLS без проверки сертификата (иначе Supabase pooler на некоторых средах падает)
+        - sslmode=verify-* -> TLS с проверкой (используем CA из certifi)
+        - если sslmode не задан, но хост удалённый -> включаем TLS (без проверки)
         """
         try:
             u = urllib.parse.urlparse(dsn)
             host = (u.hostname or "").lower()
-            q = urllib.parse.parse_qs(u.query)
-            sslmode = (q.get("sslmode", [""])[0] or "").lower()
-            ssl_flag = (q.get("ssl", [""])[0] or "").lower()
-            if sslmode in {"require", "verify-ca", "verify-full"}:
-                return True
-            if ssl_flag in {"1", "true", "yes"}:
-                return True
-            # Supabase pooler/direct endpoints require TLS
-            if "supabase" in host:
-                return True
-            # Default for remote hosts: prefer TLS unless explicitly disabled
-            if host and host not in {"localhost", "127.0.0.1"} and not host.startswith("10.") and not host.startswith("192.168.") and not host.startswith("172."):
-                return True
         except Exception:
-            pass
-        return False
+            host = ""
+
+        sslmode = _parse_sslmode(dsn)
+        if sslmode in {"verify-ca", "verify-full"}:
+            return ssl.create_default_context(cafile=certifi.where())
+
+        # 'require' и дефолт для удалённых хостов — TLS без verify.
+        if sslmode == "require" or (sslmode == "" and host and host not in {"localhost", "127.0.0.1"}):
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+            return ctx
+
+        return None
 
     async def get_db() -> asyncpg.Pool:
         global _pool
         if _pool is None:
-            ssl_ctx = None
-            if _needs_ssl(DATABASE_URL):
-                ssl_ctx = ssl.create_default_context()
+            ssl_ctx = _make_ssl_ctx(DATABASE_URL)
             _pool = await asyncpg.create_pool(
                 dsn=DATABASE_URL,
                 ssl=ssl_ctx,
@@ -345,7 +354,7 @@ else:
                 "INSERT INTO app_meta(key, value) VALUES('stats_reset_token', '0') ON CONFLICT (key) DO NOTHING"
             )
 
-default_levels = [
+            default_levels = [
                 "puzzle-2x2",
                 "puzzle-3x3",
                 "puzzle-4x4",
