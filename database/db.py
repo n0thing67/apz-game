@@ -1,7 +1,6 @@
 import os
 from pathlib import Path
 from typing import Any
-
 # Поддерживаем ДВА режима:
 # 1) PostgreSQL (рекомендуется) — если задана переменная окружения DATABASE_URL.
 #    Это даёт сохранность данных между полными перезапусками (в т.ч. на хостинге с эфемерной FS).
