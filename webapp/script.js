@@ -845,6 +845,36 @@ async function syncAptitudeWithServer() {
     }
 }
 
+// Telegram WebApp часто НЕ перезагружает страницу при повторном открытии мини‑веба.
+// Из-за этого DOMContentLoaded может не сработать повторно, и синхронизация со сбросом
+// статистики из админки не выполняется. Поэтому делаем принудительную синхронизацию
+// при возврате в WebView (focus/visibilitychange) и после синка обновляем UI.
+async function syncResetAndRefreshUI() {
+    await syncAptitudeWithServer();
+    // После возможной очистки localStorage перезагружаем in-memory статы и обновляем меню.
+    try { stats = loadStats(); } catch (e) {}
+    try { renderLevelMenuStats(); } catch (e) {}
+    try {
+        const savedApt = loadSavedAptitudeResult();
+        if (savedApt) applyAptitudeRecommendationsToMenu(savedApt);
+        else clearAptitudeMenuRecommendations();
+    } catch (e) {}
+}
+
+let _syncResetBusy = false;
+let _syncResetLastAt = 0;
+function syncResetAndRefreshUIThrottled() {
+    const now = Date.now();
+    if (_syncResetBusy) return;
+    // Не чаще, чем раз в 2 секунды — чтобы не спамить /api/me.
+    if (now - _syncResetLastAt < 2000) return;
+    _syncResetLastAt = now;
+    _syncResetBusy = true;
+    Promise.resolve(syncResetAndRefreshUI()).finally(() => {
+        _syncResetBusy = false;
+    });
+}
+
 async function loadLevelAvailability() {
     try {
         const res = await fetch(apiUrl('/api/levels'), { cache: 'no-store' });
@@ -2747,7 +2777,16 @@ window.addEventListener('DOMContentLoaded', () => {
     startAppImagePreloader();
 
     // Синхронизируем профтест с сервером (на случай удаления/сброса пользователя в админке)
-    syncAptitudeWithServer();
+    // Важно: Telegram может не перезагружать страницу при повторном открытии мини‑веба,
+    // поэтому синк должен выполняться не только один раз на загрузке.
+    syncResetAndRefreshUIThrottled();
+
+    // Повторный синх при возврате в WebView (после закрытия/сворачивания/повторного открытия)
+    // — именно тут чаще всего «оживают» очки/рекомендации из localStorage.
+    window.addEventListener('focus', syncResetAndRefreshUIThrottled);
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) syncResetAndRefreshUIThrottled();
+    });
 
     // Разблокируем звук на первом пользовательском жесте
     // (иначе в Telegram WebView/iOS Safari многие звуки не запускаются)
