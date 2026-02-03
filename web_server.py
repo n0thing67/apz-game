@@ -12,7 +12,6 @@ from aiohttp import web
 from aiogram import Bot
 from aiogram.types import BufferedInputFile
 from PIL import Image, ImageDraw, ImageFont
-
 from database.db import (
     get_levels,
     set_level_active,
