@@ -211,7 +211,16 @@ async def handle_me(request: web.Request) -> web.Response:
 
     user_raw = parsed.get("user")
     if not user_raw:
-        return web.json_response({"ok": True, "exists": False, "user": None, "reset_token": reset_token})
+        return web.json_response(
+            {
+                "ok": True,
+                "exists": False,
+                "user_exists": False,
+                "user": None,
+                "reset_token": reset_token,
+                "user_deleted_token": "0",
+            }
+        )
 
     try:
         user_obj = json.loads(user_raw) if isinstance(user_raw, str) else user_raw
@@ -219,9 +228,21 @@ async def handle_me(request: web.Request) -> web.Response:
     except Exception:
         return web.json_response({"ok": False, "error": "bad_user"}, status=400)
 
+    # Метка удаления пользователя (если админ удалил его в панели) — нужна, чтобы очистить localStorage в WebApp.
+    user_deleted_token = await get_user_deleted_token(tg_id)
+
     row = await get_user_profile(tg_id)
     if not row:
-        return web.json_response({"ok": True, "exists": False, "user": None, "reset_token": reset_token})
+        return web.json_response(
+            {
+                "ok": True,
+                "exists": False,
+                "user_exists": False,
+                "user": None,
+                "reset_token": reset_token,
+                "user_deleted_token": user_deleted_token,
+            }
+        )
 
     telegram_id, first_name, last_name, age, score, aptitude_top = row
     return web.json_response(
@@ -229,6 +250,8 @@ async def handle_me(request: web.Request) -> web.Response:
             "ok": True,
             "reset_token": reset_token,
             "exists": True,
+            "user_exists": True,
+            "user_deleted_token": user_deleted_token,
             "user": {
                 "telegram_id": telegram_id,
                 "first_name": first_name,
@@ -239,7 +262,6 @@ async def handle_me(request: web.Request) -> web.Response:
             },
         }
     )
-
 
 async def _require_admin(request: web.Request) -> int:
     """Проверка admin по initData (передаётся в заголовке X-Telegram-InitData или ?initData=...)."""
@@ -378,6 +400,7 @@ def create_app() -> web.Application:
             await app_["bot"].session.close()
         except Exception:
             pass
+
     app.on_cleanup.append(_close_bot)
 
     # API
