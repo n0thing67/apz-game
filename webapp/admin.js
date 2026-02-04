@@ -361,11 +361,20 @@ async function init() {
   async function checkAccess() {
     $who.textContent = "Проверка доступа…";
     try {
-      await api("/api/admin/stats", { method: "GET" });
+      // Доп. страховка: если WebView/браузер подвисает и AbortController не срабатывает,
+      // Promise.race гарантирует, что мы выйдем из проверки с понятным сообщением.
+      const data = await Promise.race([
+        api("/api/admin/stats", { method: "GET" }),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("Таймаут проверки доступа. Проверь интернет и попробуй ещё раз.")), 14000)
+        ),
+      ]);
+
+      if (data && data.ok === false) throw new Error("Нет доступа");
       $who.textContent = "Доступ подтвержден";
       return true;
     } catch (e) {
-      $who.textContent = "Нет доступа: " + e.message;
+      $who.textContent = "Нет доступа: " + (e?.message || e);
       return false;
     }
   }
