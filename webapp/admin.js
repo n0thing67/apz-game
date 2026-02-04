@@ -10,21 +10,6 @@ function esc(s) {
   return String(s ?? "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
 }
 
-function todayISO() {
-  const d = new Date();
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
-}
-
-function isoToRu(iso) {
-  // iso: YYYY-MM-DD -> DD.MM.YYYY
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || "").trim());
-  if (!m) return String(iso || "").trim();
-  return `${m[3]}.${m[2]}.${m[1]}`;
-}
-
 function fmtUser(u) {
   return `${u.telegram_id} — ${u.first_name} ${u.last_name} (${u.age}) | ${u.score}`;
 }
@@ -164,11 +149,33 @@ async function init() {
       row.className = "admin-useritem" + (id === selectedId ? " selected" : "");
       row.innerHTML = `
         <div class="admin-useritem-name">${esc(userTitle(u))}</div>
-        <div class="admin-useritem-meta">ID: ${esc(id)} • Очки: ${esc(u.score ?? 0)}</div>
+        <div class="admin-useritem-meta">Telegram ID: ${esc(id)}</div>
+        <div class="admin-useritem-meta2">Очки: ${esc(u.score ?? 0)}</div>
       `;
       row.addEventListener("click", () => onSelect?.(u));
       container.appendChild(row);
     });
+  }
+
+  function todayISO() {
+    const d = new Date();
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
+  }
+
+  function isoToRu(iso) {
+    // iso: YYYY-MM-DD -> DD.MM.YYYY
+    const m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!m) return String(iso || "").trim();
+    return `${m[3]}.${m[2]}.${m[1]}`;
+  }
+
+  function setAwardsDateTodayIfEmpty(force = false) {
+    const el = byId("award-date");
+    if (!el) return;
+    if (force || !String(el.value || "").trim()) el.value = todayISO();
   }
 
   function renderDeleteListFromCache() {
@@ -391,8 +398,7 @@ async function init() {
     try {
       if (!(await checkAccess())) return;
       showScreen("awards");
-      const $date = byId("award-date");
-      if ($date && !$date.value) $date.value = todayISO();
+      setAwardsDateTodayIfEmpty(true);
       await loadAwardsUsers();
     } catch (e) {
       alert(e.message);
@@ -458,8 +464,8 @@ async function init() {
   byId("btn-award-clear").addEventListener("click", () => {
     byId("award-user").value = "";
     byId("award-event").value = "";
-    const $date = byId("award-date");
-    if ($date) $date.value = todayISO();
+    byId("award-date").value = "";
+    setAwardsDateTodayIfEmpty(true);
 
     selectedAwardId = null;
     if ($awardsSelected) $awardsSelected.textContent = "Не выбран";
@@ -468,13 +474,13 @@ async function init() {
   byId("btn-award-send").addEventListener("click", async () => {
     const tgId = Number((byId("award-user").value || "").trim());
     const templateKey = String(byId("award-template").value || "participation");
+    const fontKey = String(byId("award-font")?.value || "dejavu_sans");
     const eventName = String((byId("award-event").value || "").trim());
-    const rawDate = String((byId("award-date").value || "").trim());
-    const eventDate = isoToRu(rawDate);
-    const fontKey = String(byId("award-font")?.value || "sans");
+    const eventDateIso = String((byId("award-date").value || "").trim());
+    const eventDate = isoToRu(eventDateIso);
 
     if (!tgId) {
-      alert("Укажи Telegram ID пользователя");
+      alert("Выбери пользователя из списка ниже");
       return;
     }
     if (!eventName) {
@@ -497,9 +503,9 @@ async function init() {
         body: JSON.stringify({
           telegram_id: tgId,
           template_key: templateKey,
+          font_key: fontKey,
           event_name: eventName,
           event_date: eventDate,
-          font_key: fontKey,
         }),
       });
       alert("Отправлено ✅");
