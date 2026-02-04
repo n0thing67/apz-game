@@ -2988,6 +2988,16 @@ window.addEventListener('DOMContentLoaded', () => {
                 e.stopPropagation();
                 return;
             }
+            // Отдельная логика для игры «Узнать, что мне подходит»
+            // Она управляется через те же переключатели уровней, но запускается своим экраном.
+            if (el.dataset.level === 'aptitude') {
+                if (!enabledLevels.has('aptitude')) {
+                    showToast("Эта игра отключена администратором");
+                    return;
+                }
+                openAptitudeMode();
+                return;
+            }
             startLevel(el.dataset.level);
             return;
         }
