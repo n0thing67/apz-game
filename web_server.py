@@ -23,6 +23,7 @@ from database.db import (
     delete_user,
     reset_all_scores,
     get_stats_reset_token,
+    get_user_deleted_token,
 )
 
 
@@ -159,9 +160,37 @@ async def handle_levels(request: web.Request) -> web.Response:
     # ВАЖНО: сброс статистики в WebApp должен работать так же надёжно,
     # как и отключение уровней. /api/levels вызывается без кастомных заголовков
     # (значит, без CORS-preflight), поэтому сюда также добавляем reset_token.
+    #
+    # Также сюда же (по uid в query) добавляем признак существования пользователя и метку удаления:
+    # при удалении пользователя в админке WebApp должен очистить localStorage при следующем входе
+    # так же надёжно, как и подхватываются отключённые уровни.
     levels = await get_levels()
     reset_token = await get_stats_reset_token()
-    return web.json_response({"ok": True, "levels": levels, "reset_token": reset_token})
+
+    uid_raw = request.query.get("uid")
+    user_exists = None
+    user_deleted_token = "0"
+    if uid_raw:
+        try:
+            uid = int(uid_raw)
+            user = await get_user(uid)
+            user_exists = bool(user)
+            if not user_exists:
+                user_deleted_token = await get_user_deleted_token(uid)
+        except Exception:
+            user_exists = None
+            user_deleted_token = "0"
+
+    return web.json_response(
+        {
+            "ok": True,
+            "levels": levels,
+            "reset_token": reset_token,
+            "user_exists": user_exists,
+            "user_deleted_token": str(user_deleted_token or "0"),
+        }
+    )
+
 
 
 async def handle_me(request: web.Request) -> web.Response:
