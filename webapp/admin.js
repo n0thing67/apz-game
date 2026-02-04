@@ -10,6 +10,21 @@ function esc(s) {
   return String(s ?? "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
 }
 
+function todayISO() {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function isoToRu(iso) {
+  // iso: YYYY-MM-DD -> DD.MM.YYYY
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || "").trim());
+  if (!m) return String(iso || "").trim();
+  return `${m[3]}.${m[2]}.${m[1]}`;
+}
+
 function fmtUser(u) {
   return `${u.telegram_id} — ${u.first_name} ${u.last_name} (${u.age}) | ${u.score}`;
 }
@@ -376,6 +391,8 @@ async function init() {
     try {
       if (!(await checkAccess())) return;
       showScreen("awards");
+      const $date = byId("award-date");
+      if ($date && !$date.value) $date.value = todayISO();
       await loadAwardsUsers();
     } catch (e) {
       alert(e.message);
@@ -441,7 +458,8 @@ async function init() {
   byId("btn-award-clear").addEventListener("click", () => {
     byId("award-user").value = "";
     byId("award-event").value = "";
-    byId("award-date").value = "";
+    const $date = byId("award-date");
+    if ($date) $date.value = todayISO();
 
     selectedAwardId = null;
     if ($awardsSelected) $awardsSelected.textContent = "Не выбран";
@@ -451,7 +469,9 @@ async function init() {
     const tgId = Number((byId("award-user").value || "").trim());
     const templateKey = String(byId("award-template").value || "participation");
     const eventName = String((byId("award-event").value || "").trim());
-    const eventDate = String((byId("award-date").value || "").trim());
+    const rawDate = String((byId("award-date").value || "").trim());
+    const eventDate = isoToRu(rawDate);
+    const fontKey = String(byId("award-font")?.value || "sans");
 
     if (!tgId) {
       alert("Укажи Telegram ID пользователя");
@@ -479,6 +499,7 @@ async function init() {
           template_key: templateKey,
           event_name: eventName,
           event_date: eventDate,
+          font_key: fontKey,
         }),
       });
       alert("Отправлено ✅");
