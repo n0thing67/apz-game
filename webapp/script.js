@@ -912,6 +912,22 @@ async function loadLevelAvailability() {
                 try { renderLevelMenuStats(); } catch (e) {}
             }
         } catch (e) {}
+        // Если админ удалил пользователя: при следующем открытии WebApp нужно очистить localStorage.
+        // Делаем это так же надёжно, как и подхват отключённых уровней — через /api/levels (без initData).
+        try {
+            const serverExists = data?.user_exists;
+            const serverDeleted = String(data?.user_deleted_token ?? '0');
+            const localDeleted = String(localStorage.getItem(USER_DELETED_TOKEN_KEY) ?? '0');
+            if (serverExists === false && serverDeleted && serverDeleted !== localDeleted) {
+                try { localStorage.removeItem(STATS_KEY); } catch (e) {}
+                try { localStorage.removeItem(APTITUDE_STORAGE_KEY); } catch (e) {}
+                try { localStorage.setItem(USER_DELETED_TOKEN_KEY, serverDeleted); } catch (e) {}
+                // сбрасываем in-memory, чтобы UI обновился сразу
+                try { stats = {}; } catch (e) {}
+                try { clearAptitudeMenuRecommendations(); } catch (e) {}
+                try { renderLevelMenuStats(); } catch (e) {}
+            }
+        } catch (e) {}
         LEVEL_AVAIL = data && data.levels ? data.levels : null;
     } catch (e) {
         LEVEL_AVAIL = null;
