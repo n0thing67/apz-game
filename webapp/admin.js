@@ -262,7 +262,6 @@ async function init() {
   }
 
   async function loadLevels() {
-    $levels.innerHTML = "";
     const levelsResp = await api("/api/levels");
     const levels = levelsResp.levels || {};
     const keys = Object.keys(levels).sort();
@@ -277,32 +276,57 @@ async function init() {
       if (k.includes("puzzle") || k.includes("logo") || k.includes(" пазл") || k.includes("пазл")) return "🧩";
       if (k.includes("2048")) return "🔢";
       if (k.includes("quiz") || k.includes("квиз") || k.includes("test") || k.includes("тест")) return "❓";
+      if (k.includes("aptitude") || k.includes("подходит") || k.includes("проф")) return "🧠";
       if (k.includes("jumper") || k.includes("doodle") || k.includes("джампер") || k.includes("прыж")) return "🦘";
       return "🎮";
     }
 
+    function levelTitle(levelKey) {
+      // Чтобы в админке было понятно, что это за уровень.
+      if (String(levelKey) === "aptitude") return "что тебе подходит";
+      return String(levelKey);
+    }
+
+    const frag = document.createDocumentFragment();
+
     keys.forEach((key) => {
-      const active = !!levels[key];
+      let active = !!levels[key];
       const row = document.createElement("div");
       row.className = "level-card";
       row.style.margin = "0";
+      row.dataset.levelKey = key;
       row.innerHTML = `
-        <div class="level-title">${levelEmoji(key)} ${esc(key)}</div>
-        <div class="level-stats">Статус: <b>${active ? "ВКЛ" : "ВЫКЛ"}</b></div>
+        <div class="level-title">${levelEmoji(key)} ${esc(levelTitle(key))}</div>
+        <div class="level-stats">Статус: <b class="level-status">${active ? "ВКЛ" : "ВЫКЛ"}</b></div>
         <button class="btn ${active ? "btn-secondary" : ""}" data-next="${active ? "0" : "1"}">
           ${active ? "Отключить" : "Включить"}
         </button>
       `;
 
+      const statusEl = row.querySelector(".level-status");
       const btn = row.querySelector("button");
+
+      function applyState() {
+        if (statusEl) statusEl.textContent = active ? "ВКЛ" : "ВЫКЛ";
+        if (btn) {
+          btn.classList.toggle("btn-secondary", active);
+          btn.dataset.next = active ? "0" : "1";
+          btn.textContent = active ? "Отключить" : "Включить";
+        }
+      }
+
       btn.addEventListener("click", async () => {
+        const nextActive = btn.dataset.next === "1";
         btn.disabled = true;
         try {
           await api("/api/admin/set_level", {
             method: "POST",
-            body: JSON.stringify({ level_key: key, is_active: btn.dataset.next === "1" }),
+            body: JSON.stringify({ level_key: key, is_active: nextActive }),
           });
-          await loadLevels();
+          // Обновляем только эту карточку — без полного перерендера,
+          // чтобы не было рывков страницы вверх-вниз.
+          active = nextActive;
+          applyState();
         } catch (e) {
           alert("Ошибка: " + e.message);
         } finally {
@@ -310,8 +334,11 @@ async function init() {
         }
       });
 
-      $levels.appendChild(row);
+      frag.appendChild(row);
     });
+
+    // replaceChildren перерисовывает разом, без промежуточного "пусто" (меньше дерганий)
+    $levels.replaceChildren(frag);
   }
 
   // --- Navigation buttons (HOME) ---
