@@ -208,7 +208,8 @@ body.admin-body {
 .admin-userlist {
     margin-top: 10px;
     width: 100%;
-    max-height: 320px;
+    /* чтобы одновременно было видно примерно 5 пользователей */
+    max-height: 280px;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
     border: 1px solid rgba(255,255,255,0.15);
@@ -243,9 +244,22 @@ body.admin-body {
 }
 
 .admin-useritem-meta {
+    opacity: 0.55;
+    font-size: 0.92em;
+    margin-top: 2px;
+}
+
+.admin-useritem-meta2 {
     opacity: 0.75;
     font-size: 0.92em;
     margin-top: 2px;
+}
+
+.admin-templates {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    justify-content: center;
 }
 
 .admin-selected {
@@ -1440,4 +1454,56 @@ hr {
 .preload-card{
     width: min(520px, calc(100vw - 32px));
     background: rgba(255,255,255,0.95);
- 
+    border-radius: 18px;
+    padding: 18px 16px;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.35);
+    color: #111;
+}
+
+.preload-title{
+    font-weight: 800;
+    font-size: 16px;
+    margin-bottom: 12px;
+    text-align: center;
+}
+
+.preload-bar-wrap{
+    width: 100%;
+    height: 12px;
+    border-radius: 999px;
+    background: rgba(0,0,0,0.12);
+    overflow: hidden;
+}
+
+.preload-bar{
+    height: 100%;
+    border-radius: 999px;
+    background: #2ecc71;
+    width: 0%;
+    transition: width 120ms linear;
+}
+
+.preload-meta{
+    margin-top: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    align-items: center;
+    text-align: center;
+}
+
+.preload-percent{
+    font-weight: 800;
+    font-size: 18px;
+}
+
+.preload-current{
+    font-size: 13px;
+    opacity: 0.85;
+    word-break: break-word;
+}
+
+/* Скрытие прелоадера */
+.preload-overlay.hidden{
+    display: none;
+}
