@@ -198,6 +198,128 @@ body.admin-body {
     color: #fff;
 }
 
+/* --- Awards: выбор шрифта (mobile-friendly) --- */
+.admin-font-mobile {
+    width: 100%;
+}
+
+.admin-font-mobile-btn {
+    width: 100%;
+}
+
+.admin-font-mobile-preview {
+    margin-top: 8px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.15);
+    background: rgba(0,0,0,0.10);
+    text-align: left;
+}
+
+.admin-font-mobile-label {
+    font-weight: 800;
+    opacity: 0.9;
+}
+
+.admin-font-mobile-sample {
+    margin-top: 4px;
+    opacity: 0.85;
+    font-size: 0.98em;
+}
+
+.admin-font-modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.55);
+    display: none;
+    align-items: flex-end;
+    justify-content: center;
+    z-index: 9999;
+}
+
+.admin-font-modal.open {
+    display: flex;
+}
+
+.admin-font-modal-sheet {
+    width: 100%;
+    max-width: 900px;
+    border-radius: 18px 18px 0 0;
+    background: rgba(25, 35, 50, 0.98);
+    border: 1px solid rgba(255,255,255,0.18);
+    padding: 14px;
+    max-height: 78vh;
+    overflow: hidden;
+}
+
+.admin-font-modal-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.admin-font-modal-title {
+    font-weight: 900;
+    text-align: left;
+}
+
+.admin-font-modal-list {
+    margin-top: 12px;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    max-height: calc(78vh - 80px);
+    padding-bottom: 8px;
+}
+
+.admin-font-item {
+    width: 100%;
+    text-align: left;
+    border: 1px solid rgba(255,255,255,0.12);
+    background: rgba(0,0,0,0.10);
+    color: #fff;
+    border-radius: 14px;
+    padding: 12px;
+    cursor: pointer;
+    margin: 8px 0;
+}
+
+.admin-font-item-name {
+    font-weight: 900;
+}
+
+.admin-font-item-sample {
+    opacity: 0.82;
+    margin-top: 4px;
+}
+
+/* --- Awards: дата (календарь) --- */
+#award-date {
+    font-size: 16px; /* чтобы iOS не делал zoom */
+}
+
+#award-date::-webkit-calendar-picker-indicator {
+    cursor: pointer;
+    opacity: 0.9;
+}
+
+@media (max-width: 640px) {
+    #award-date {
+        padding: 12px 12px;
+        min-height: 48px;
+        width: 100%;
+    }
+
+    #award-date::-webkit-calendar-picker-indicator {
+        width: 28px;
+        height: 28px;
+    }
+
+    .admin-actions-bottom .btn {
+        width: 100%;
+    }
+}
+
 .admin-levels {
     display: grid;
     gap: 10px;
@@ -208,8 +330,7 @@ body.admin-body {
 .admin-userlist {
     margin-top: 10px;
     width: 100%;
-    /* чтобы одновременно было видно примерно 5 пользователей */
-    max-height: 280px;
+    max-height: 320px;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
     border: 1px solid rgba(255,255,255,0.15);
@@ -244,22 +365,9 @@ body.admin-body {
 }
 
 .admin-useritem-meta {
-    opacity: 0.55;
-    font-size: 0.92em;
-    margin-top: 2px;
-}
-
-.admin-useritem-meta2 {
     opacity: 0.75;
     font-size: 0.92em;
     margin-top: 2px;
-}
-
-.admin-templates {
-    display: flex;
-    gap: 10px;
-    flex-wrap: wrap;
-    justify-content: center;
 }
 
 .admin-selected {
