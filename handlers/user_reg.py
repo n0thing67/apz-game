@@ -231,7 +231,7 @@ async def cmd_admin(message: types.Message):
         return
 
     await message.answer(
-        "Админ-панель",
+        "Панель администратора",
         reply_markup=admin_inline_keyboard(),
     )
 
