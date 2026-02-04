@@ -879,6 +879,22 @@ async function loadLevelAvailability() {
     try {
         const res = await fetch(apiUrl('/api/levels'), { cache: 'no-store' });
         const data = await res.json();
+        // Сброс статистики в админке должен подхватываться в WebApp так же,
+        // как и отключение уровней (и без зависимости от initData / CORS-preflight).
+        // Поэтому используем reset_token, который сервер возвращает в /api/levels.
+        try {
+            const serverReset = String(data?.reset_token ?? '0');
+            const localReset = String(localStorage.getItem(RESET_TOKEN_KEY) ?? '0');
+            if (serverReset && serverReset !== localReset) {
+                try { localStorage.removeItem(STATS_KEY); } catch (e) {}
+                try { localStorage.removeItem(APTITUDE_STORAGE_KEY); } catch (e) {}
+                try { localStorage.setItem(RESET_TOKEN_KEY, serverReset); } catch (e) {}
+                // сбрасываем in-memory, чтобы UI обновился сразу
+                try { stats = {}; } catch (e) {}
+                try { clearAptitudeMenuRecommendations(); } catch (e) {}
+                try { renderLevelMenuStats(); } catch (e) {}
+            }
+        } catch (e) {}
         LEVEL_AVAIL = data && data.levels ? data.levels : null;
     } catch (e) {
         LEVEL_AVAIL = null;
