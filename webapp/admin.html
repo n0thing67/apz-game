@@ -122,7 +122,7 @@
 
       <div class="level-card" style="margin:0;">
         <div class="level-title">Сформировать и отправить</div>
-        <div class="level-stats muted">Выбери пользователя из списка ниже (поиск по имени/фамилии). Имя и фамилия подставляются из статистики по Telegram ID.</div>
+        <div class="level-stats muted">Выбери пользователя из списка ниже (поиск по имени/фамилии). Telegram ID показывается под именем.</div>
 
         <div class="admin-row" style="gap:10px; flex-wrap:wrap;">
           <select id="award-template" class="admin-input" style="flex:1; min-width:180px;">
@@ -132,10 +132,20 @@
             <option value="3">Диплом — 3 место</option>
           </select>
           <select id="award-font" class="admin-input" style="flex:1; min-width:180px;">
-            <option value="sans">Шрифт: Sans</option>
-            <option value="serif">Шрифт: Serif</option>
+            <option value="dejavu_sans" style="font-family:'DejaVu Sans', sans-serif;">DejaVu Sans</option>
+            <option value="dejavu_serif" style="font-family:'DejaVu Serif', serif;">DejaVu Serif</option>
+            <option value="dejavu_sans_condensed" style="font-family:'DejaVu Sans Condensed','DejaVu Sans', sans-serif;">DejaVu Sans Condensed</option>
+            <option value="dejavu_serif_condensed" style="font-family:'DejaVu Serif Condensed','DejaVu Serif', serif;">DejaVu Serif Condensed</option>
+            <option value="dejavu_sans_mono" style="font-family:'DejaVu Sans Mono', monospace;">DejaVu Sans Mono</option>
+            <option value="liberation_sans" style="font-family:'Liberation Sans', Arial, sans-serif;">Liberation Sans</option>
+            <option value="liberation_serif" style="font-family:'Liberation Serif', Georgia, serif;">Liberation Serif</option>
+            <option value="liberation_mono" style="font-family:'Liberation Mono', 'Courier New', monospace;">Liberation Mono</option>
+            <option value="noto_sans" style="font-family:'Noto Sans','DejaVu Sans', sans-serif;">Noto Sans</option>
+            <option value="noto_serif" style="font-family:'Noto Serif','DejaVu Serif', serif;">Noto Serif</option>
+            <option value="ubuntu" style="font-family:'Ubuntu','DejaVu Sans', sans-serif;">Ubuntu</option>
+            <option value="free_serif" style="font-family:'FreeSerif','DejaVu Serif', serif;">FreeSerif</option>
           </select>
-          <input id="award-user" type="number" placeholder="Telegram ID (выбери ниже)" class="admin-input" style="flex:1; min-width:180px;" />
+          <input id="award-user" type="hidden" />
         </div>
 
         <div class="admin-row" style="gap:10px; flex-wrap:wrap; margin-top:10px;">
@@ -150,7 +160,7 @@
         </div>
 
         <div class="level-stats" style="margin-top:10px;">
-          <div class="muted">Выбор пользователя (первые 200, есть поиск):</div>
+          <div class="muted">Выбор пользователя (видно 5, есть поиск):</div>
           <div class="admin-row" style="margin-top:10px;">
             <input id="awards-search" type="text" placeholder="Поиск: имя или фамилия" class="admin-input" />
           </div>
@@ -160,7 +170,7 @@
 
         <div class="level-stats" style="margin-top:10px;">
           <div class="muted">Превью шаблонов:</div>
-          <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:8px; justify-content:center; width:100%;">
+          <div class="admin-templates" style="margin-top:8px;">
             <img src="assets/cert_templates/sertificat.png" alt="Сертификат" style="width:120px; border-radius:10px;" />
             <img src="assets/cert_templates/1mesto.png" alt="1 место" style="width:120px; border-radius:10px;" />
             <img src="assets/cert_templates/2mesto.png" alt="2 место" style="width:120px; border-radius:10px;" />
