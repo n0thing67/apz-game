@@ -378,7 +378,6 @@ def create_app() -> web.Application:
             await app_["bot"].session.close()
         except Exception:
             pass
-
     app.on_cleanup.append(_close_bot)
 
     # API
