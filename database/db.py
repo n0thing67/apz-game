@@ -271,6 +271,16 @@ if not _using_postgres:
             pass
         db = await get_db()
         await db.execute("DELETE FROM users WHERE telegram_id = ?", (int(tg_id),))
+        # ВАЖНО: делаем так же, как при «Сбросить всю статистику» в админке —
+        # чтобы WebApp гарантированно очистил localStorage при следующем входе.
+        # (Telegram/WebView иногда держит страницу в памяти и иначе «оживляет» очки/рекомендации.)
+        try:
+            await db.execute(
+                "UPDATE app_meta SET value = ? WHERE key = 'stats_reset_token'",
+                (str(int(time.time() * 1000)),),
+            )
+        except Exception:
+            pass
         await db.commit()
 
     async def get_levels():
@@ -583,6 +593,21 @@ else:
         pool = await get_db()
         async with pool.acquire() as conn:
             await conn.execute("DELETE FROM users WHERE telegram_id = $1", int(tg_id))
+            # ВАЖНО: делаем так же, как при «Сбросить всю статистику» в админке —
+            # чтобы WebApp гарантированно очистил localStorage при следующем входе.
+            try:
+                await conn.execute(
+                    "CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY, value TEXT);"
+                )
+                await conn.execute(
+                    "INSERT INTO app_meta(key, value) VALUES('stats_reset_token', '0') ON CONFLICT (key) DO NOTHING"
+                )
+                await conn.execute(
+                    "UPDATE app_meta SET value = $1 WHERE key = 'stats_reset_token'",
+                    str(int(time.time() * 1000)),
+                )
+            except Exception:
+                pass
 
     async def get_levels():
         pool = await get_db()
