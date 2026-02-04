@@ -195,7 +195,11 @@ if not _using_postgres:
         # Иначе после сброса статистики в админке у пользователя может оставаться aptitude_top.
         await db.execute("UPDATE users SET score = 0, aptitude_top = NULL")
         # обновляем глобальную метку сброса
-        await db.execute("UPDATE app_meta SET value = ? WHERE key = 'stats_reset_token'", (str(int(time.time() * 1000)),))
+        # Важно: используем миллисекунды, чтобы токен менялся даже при быстрых кликах/проверках.
+        await db.execute(
+            "UPDATE app_meta SET value = ? WHERE key = 'stats_reset_token'",
+            (str(int(time.time() * 1000)),),
+        )
         await db.commit()
 
     async def delete_all_users():
