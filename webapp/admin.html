@@ -131,12 +131,16 @@
             <option value="2">Диплом — 2 место</option>
             <option value="3">Диплом — 3 место</option>
           </select>
+          <select id="award-font" class="admin-input" style="flex:1; min-width:180px;">
+            <option value="sans">Шрифт: Sans</option>
+            <option value="serif">Шрифт: Serif</option>
+          </select>
           <input id="award-user" type="number" placeholder="Telegram ID (выбери ниже)" class="admin-input" style="flex:1; min-width:180px;" />
         </div>
 
         <div class="admin-row" style="gap:10px; flex-wrap:wrap; margin-top:10px;">
           <input id="award-event" type="text" placeholder="Название мероприятия" class="admin-input" style="flex:2; min-width:240px;" />
-          <input id="award-date" type="text" placeholder="Дата (например, 19.02.2026)" class="admin-input" style="flex:1; min-width:200px;" />
+          <input id="award-date" type="date" class="admin-input" style="flex:1; min-width:200px;" />
         </div>
 
         <div class="admin-actions" style="margin-top:12px;">
@@ -156,7 +160,7 @@
 
         <div class="level-stats" style="margin-top:10px;">
           <div class="muted">Превью шаблонов:</div>
-          <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:8px;">
+          <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:8px; justify-content:center; width:100%;">
             <img src="assets/cert_templates/sertificat.png" alt="Сертификат" style="width:120px; border-radius:10px;" />
             <img src="assets/cert_templates/1mesto.png" alt="1 место" style="width:120px; border-radius:10px;" />
             <img src="assets/cert_templates/2mesto.png" alt="2 место" style="width:120px; border-radius:10px;" />
