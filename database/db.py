@@ -438,7 +438,7 @@ else:
             )
             # Если пользователя ранее удаляли — убираем метку удаления.
             try:
-                await conn.execute(\"DELETE FROM user_deletions WHERE telegram_id = $1\", int(tg_id))
+                await conn.execute("DELETE FROM user_deletions WHERE telegram_id = $1", int(tg_id))
             except Exception:
                 pass
 
