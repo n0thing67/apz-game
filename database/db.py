@@ -1,5 +1,6 @@
 import os
 import time
+import asyncio
 from pathlib import Path
 
 # Поддерживаем ДВА режима:
@@ -369,12 +370,21 @@ else:
         global _pool
         if _pool is None:
             ssl_ctx = _make_ssl_ctx(DATABASE_URL)
-            _pool = await asyncpg.create_pool(
-                dsn=DATABASE_URL,
-                ssl=ssl_ctx,
-                min_size=1,
-                max_size=5,
-            )
+
+            # На некоторых хостингах/сетях соединение с пулером Postgres может "зависать" надолго.
+            # Чтобы админка/бот не висели бесконечно, ограничиваем время создания пула.
+            try:
+                _pool = await asyncio.wait_for(
+                    asyncpg.create_pool(
+                        dsn=DATABASE_URL,
+                        ssl=ssl_ctx,
+                        min_size=1,
+                        max_size=5,
+                    ),
+                    timeout=12,
+                )
+            except asyncio.TimeoutError as e:
+                raise RuntimeError("Timeout connecting to PostgreSQL (create_pool)") from e
         return _pool
 
     async def close_db() -> None:
