@@ -42,6 +42,26 @@ def _font_path_bold() -> str:
     return "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
 
+def _font_path_serif() -> str:
+    return "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf"
+
+
+def _font_path_serif_bold() -> str:
+    return "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf"
+
+
+def _resolve_font_paths(font_key):
+    """
+    Возвращает (regular_path, bold_path) с безопасным фолбэком.
+    Поддержка: "sans" (по умолчанию), "serif".
+    """
+    key = str(font_key or "sans").lower()
+    if key == "serif" and os.path.exists(_font_path_serif()) and os.path.exists(_font_path_serif_bold()):
+        return (_font_path_serif(), _font_path_serif_bold())
+    # default: sans
+    return (_font_path(), _font_path_bold())
+
+
 def _fit_font(draw: ImageDraw.ImageDraw, text: str, font_path: str, max_width: int, start_size: int, min_size: int = 18):
     size = start_size
     while size >= min_size:
@@ -54,11 +74,13 @@ def _fit_font(draw: ImageDraw.ImageDraw, text: str, font_path: str, max_width: i
     return ImageFont.truetype(font_path, min_size)
 
 
-def _render_award_png(template_filename: str, full_name: str, event_name: str, event_date: str) -> bytes:
+def _render_award_png(template_filename: str, full_name: str, event_name: str, event_date: str, font_key: str = "sans") -> bytes:
     template_path = os.path.join(CERT_TEMPLATES_DIR, template_filename)
     img = Image.open(template_path).convert("RGBA")
     w, h = img.size
     draw = ImageDraw.Draw(img)
+
+    regular_font_path, bold_font_path = _resolve_font_paths(font_key)
 
     # Блоки текста (относительно размера шаблона)
     # По запросу: название мероприятия — над ФИО, дату — чуть ниже.
@@ -68,21 +90,21 @@ def _render_award_png(template_filename: str, full_name: str, event_name: str, e
     max_text_width = int(w * 0.78)
 
     # Имя участника — самое крупное
-    name_font = _fit_font(draw, full_name, _font_path_bold(), max_text_width, start_size=int(h * 0.05), min_size=28)
+    name_font = _fit_font(draw, full_name, bold_font_path, max_text_width, start_size=int(h * 0.05), min_size=28)
     name_bbox = draw.textbbox((0, 0), full_name, font=name_font)
     name_w = name_bbox[2] - name_bbox[0]
     draw.text(((w - name_w) / 2, name_y), full_name, font=name_font, fill=(20, 30, 45, 255))
 
     # Мероприятие (без префикса "Мероприятие:")
     event_text = (event_name or "").strip()
-    event_font = _fit_font(draw, event_text, _font_path(), max_text_width, start_size=int(h * 0.03), min_size=18)
+    event_font = _fit_font(draw, event_text, regular_font_path, max_text_width, start_size=int(h * 0.03), min_size=18)
     event_bbox = draw.textbbox((0, 0), event_text, font=event_font)
     event_w = event_bbox[2] - event_bbox[0]
     draw.text(((w - event_w) / 2, event_y), event_text, font=event_font, fill=(25, 45, 70, 255))
 
     # Дата
     date_text = f"Дата: {event_date}".strip()
-    date_font = _fit_font(draw, date_text, _font_path(), max_text_width, start_size=int(h * 0.03), min_size=18)
+    date_font = _fit_font(draw, date_text, regular_font_path, max_text_width, start_size=int(h * 0.03), min_size=18)
     date_bbox = draw.textbbox((0, 0), date_text, font=date_font)
     date_w = date_bbox[2] - date_bbox[0]
     draw.text(((w - date_w) / 2, date_y), date_text, font=date_font, fill=(25, 45, 70, 255))
@@ -339,6 +361,7 @@ async def admin_send_award(request: web.Request) -> web.Response:
     template_key = str(payload.get("template_key") or "participation")
     event_name = str(payload.get("event_name") or "").strip()
     event_date = str(payload.get("event_date") or "").strip()
+    font_key = str(payload.get("font_key") or "sans").strip()
 
     if not tg_id:
         raise web.HTTPBadRequest(text="telegram_id required")
@@ -368,6 +391,7 @@ async def admin_send_award(request: web.Request) -> web.Response:
         full_name=full_name,
         event_name=event_name,
         event_date=event_date,
+        font_key=font_key,
     )
 
     bot: Bot = request.app["bot"]
