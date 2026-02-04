@@ -128,6 +128,18 @@ if not _using_postgres:
             "INSERT OR IGNORE INTO app_meta(key, value) VALUES('stats_reset_token', '0')"
         )
 
+
+        # Таблица меток удаления пользователей (нужна, чтобы WebApp мог понять,
+        # что конкретного пользователя удалили в админке, и очистить localStorage при следующем входе).
+        await db.execute(
+            '''
+            CREATE TABLE IF NOT EXISTS user_deletions (
+                telegram_id INTEGER PRIMARY KEY,
+                token TEXT
+            )
+            '''
+        )
+
         await db.commit()
 
     async def register_user(tg_id, f_name, l_name, age):
@@ -139,6 +151,11 @@ if not _using_postgres:
             ''',
             (tg_id, f_name, l_name, age),
         )
+        # Если пользователя ранее удаляли — убираем метку удаления.
+        try:
+            await _clear_user_deleted(int(tg_id))
+        except Exception:
+            pass
         await db.commit()
 
     async def update_score(tg_id, new_score):
@@ -189,6 +206,36 @@ if not _using_postgres:
 
 
 
+
+    async def get_user_deleted_token(tg_id: int) -> str:
+        db = await get_db()
+        try:
+            async with db.execute(
+                "SELECT token FROM user_deletions WHERE telegram_id = ?",
+                (int(tg_id),),
+            ) as cur:
+                row = await cur.fetchone()
+            return str(row[0]) if row and row[0] is not None else "0"
+        except Exception:
+            return "0"
+
+    async def _mark_user_deleted(tg_id: int) -> str:
+        """Записывает метку удаления пользователя и возвращает token."""
+        db = await get_db()
+        token = str(int(time.time() * 1000))
+        await db.execute(
+            "INSERT INTO user_deletions (telegram_id, token) VALUES (?, ?) "
+            "ON CONFLICT(telegram_id) DO UPDATE SET token = excluded.token",
+            (int(tg_id), token),
+        )
+        await db.commit()
+        return token
+
+    async def _clear_user_deleted(tg_id: int) -> None:
+        db = await get_db()
+        await db.execute("DELETE FROM user_deletions WHERE telegram_id = ?", (int(tg_id),))
+        await db.commit()
+
     async def reset_all_scores():
         db = await get_db()
         # Сбрасываем общие очки и результат профтеста (игра "Что тебе больше подходит").
@@ -217,8 +264,13 @@ if not _using_postgres:
             return await cursor.fetchall()
 
     async def delete_user(tg_id: int) -> None:
+        # Сначала ставим метку удаления (для WebApp), затем удаляем запись.
+        try:
+            await _mark_user_deleted(int(tg_id))
+        except Exception:
+            pass
         db = await get_db()
-        await db.execute("DELETE FROM users WHERE telegram_id = ?", (tg_id,))
+        await db.execute("DELETE FROM users WHERE telegram_id = ?", (int(tg_id),))
         await db.commit()
 
     async def get_levels():
@@ -384,6 +436,12 @@ else:
                 ''',
                 int(tg_id), f_name, l_name, age,
             )
+            # Если пользователя ранее удаляли — убираем метку удаления.
+            try:
+                await conn.execute(\"DELETE FROM user_deletions WHERE telegram_id = $1\", int(tg_id))
+            except Exception:
+                pass
+
 
     async def update_score(tg_id, new_score):
         pool = await get_db()
@@ -449,6 +507,42 @@ else:
         return str(row["value"]) if row and row["value"] is not None else "0"
 
 
+
+    async def get_user_deleted_token(tg_id: int) -> str:
+        pool = await get_db()
+        async with pool.acquire() as conn:
+            try:
+                row = await conn.fetchrow(
+                    "SELECT token FROM user_deletions WHERE telegram_id = $1",
+                    int(tg_id),
+                )
+            except Exception:
+                # Если таблицы ещё нет (старые БД) — создадим на лету.
+                await conn.execute(
+                    "CREATE TABLE IF NOT EXISTS user_deletions (telegram_id BIGINT PRIMARY KEY, token TEXT);"
+                )
+                row = await conn.fetchrow(
+                    "SELECT token FROM user_deletions WHERE telegram_id = $1",
+                    int(tg_id),
+                )
+        return str(row["token"]) if row and row["token"] is not None else "0"
+
+    async def _mark_user_deleted(tg_id: int) -> str:
+        pool = await get_db()
+        token = str(int(time.time() * 1000))
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "INSERT INTO user_deletions(telegram_id, token) VALUES($1, $2) "
+                "ON CONFLICT (telegram_id) DO UPDATE SET token = EXCLUDED.token",
+                int(tg_id), token,
+            )
+        return token
+
+    async def _clear_user_deleted(tg_id: int) -> None:
+        pool = await get_db()
+        async with pool.acquire() as conn:
+            await conn.execute("DELETE FROM user_deletions WHERE telegram_id = $1", int(tg_id))
+
     async def reset_all_scores():
         pool = await get_db()
         async with pool.acquire() as conn:
@@ -481,6 +575,11 @@ else:
         return [(r["telegram_id"], r["first_name"], r["last_name"], r["age"], r["score"]) for r in rows]
 
     async def delete_user(tg_id: int) -> None:
+        # Сначала ставим метку удаления (для WebApp), затем удаляем запись.
+        try:
+            await _mark_user_deleted(int(tg_id))
+        except Exception:
+            pass
         pool = await get_db()
         async with pool.acquire() as conn:
             await conn.execute("DELETE FROM users WHERE telegram_id = $1", int(tg_id))
