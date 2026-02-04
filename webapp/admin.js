@@ -225,11 +225,31 @@ async function init() {
     const initData = getInitData();
     if (!initData) throw new Error("Bad initData: открой админку внутри Telegram через /admin → кнопку.");
 
-    const headers = Object.assign({ "X-Telegram-InitData": initData }, opts.headers || {});
-    const method = (opts.method || "GET").toUpperCase();
+    const { timeoutMs: _timeoutMs, ...fetchOpts } = opts;
+    const headers = Object.assign({ "X-Telegram-InitData": initData }, fetchOpts.headers || {});
+    const method = (fetchOpts.method || "GET").toUpperCase();
     if (method !== "GET" && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
 
-    const res = await fetch(path, { ...opts, headers });
+        const url = new URL(path, window.location.href).toString();
+
+    // В Telegram WebView иногда бывают "вечные" подвисания запросов при плохой сети/прокси.
+    // Чтобы не было бесконечной «Проверки доступа…», ставим таймаут.
+    const controller = new AbortController();
+    const timeoutMs = typeof _timeoutMs === "number" ? _timeoutMs : 12000;
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+    let res;
+    try {
+      res = await fetch(url, { ...fetchOpts, headers, signal: controller.signal });
+    } catch (err) {
+      if (err?.name === "AbortError") {
+        throw new Error("Таймаут запроса. Проверь интернет или попробуй ещё раз.");
+      }
+      throw err;
+    } finally {
+      clearTimeout(timer);
+    }
+
     if (!res.ok) {
       const t = await res.text().catch(() => "");
       throw new Error(`${res.status} ${t || res.statusText}`);
