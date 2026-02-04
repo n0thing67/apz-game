@@ -33,33 +33,76 @@ WEBAPP_DIR = os.path.join(os.path.dirname(__file__), "webapp")
 CERT_TEMPLATES_DIR = os.path.join(WEBAPP_DIR, "assets", "cert_templates")
 
 
-def _font_path() -> str:
-    # В контейнере обычно есть DejaVu с кириллицей.
-    return "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+def _pick_font_path(candidates: list[str], fallback: str) -> str:
+    for p in candidates:
+        if p and os.path.exists(p):
+            return p
+    return fallback
 
 
-def _font_path_bold() -> str:
-    return "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+def _font_paths(font_key: str) -> tuple[str, str]:
+    """Возвращает (regular, bold) пути к ttf.
 
-
-def _font_path_serif() -> str:
-    return "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf"
-
-
-def _font_path_serif_bold() -> str:
-    return "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf"
-
-
-def _resolve_font_paths(font_key):
+    Важно: на разных хостингах набор шрифтов может отличаться, поэтому используем
+    список кандидатов + безопасный fallback на DejaVu.
     """
-    Возвращает (regular_path, bold_path) с безопасным фолбэком.
-    Поддержка: "sans" (по умолчанию), "serif".
-    """
-    key = str(font_key or "sans").lower()
-    if key == "serif" and os.path.exists(_font_path_serif()) and os.path.exists(_font_path_serif_bold()):
-        return (_font_path_serif(), _font_path_serif_bold())
-    # default: sans
-    return (_font_path(), _font_path_bold())
+    fk = (font_key or "").strip().lower()
+
+    dejavu_reg = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+    dejavu_bold = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+
+    candidates: dict[str, tuple[list[str], list[str]]] = {
+        "dejavu_sans": ([dejavu_reg], [dejavu_bold]),
+        "dejavu_serif": (
+            ["/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf", dejavu_reg],
+            ["/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf", dejavu_bold],
+        ),
+        "dejavu_sans_condensed": (
+            ["/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed.ttf", dejavu_reg],
+            ["/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed-Bold.ttf", dejavu_bold],
+        ),
+        "dejavu_serif_condensed": (
+            ["/usr/share/fonts/truetype/dejavu/DejaVuSerifCondensed.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf", dejavu_reg],
+            ["/usr/share/fonts/truetype/dejavu/DejaVuSerifCondensed-Bold.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf", dejavu_bold],
+        ),
+        "dejavu_sans_mono": (
+            ["/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", dejavu_reg],
+            ["/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf", dejavu_bold],
+        ),
+        "liberation_sans": (
+            ["/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf", "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf", dejavu_reg],
+            ["/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf", "/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf", dejavu_bold],
+        ),
+        "liberation_serif": (
+            ["/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf", "/usr/share/fonts/truetype/liberation2/LiberationSerif-Regular.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf", dejavu_reg],
+            ["/usr/share/fonts/truetype/liberation/LiberationSerif-Bold.ttf", "/usr/share/fonts/truetype/liberation2/LiberationSerif-Bold.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf", dejavu_bold],
+        ),
+        "liberation_mono": (
+            ["/usr/share/fonts/truetype/liberation/LiberationMono-Regular.ttf", "/usr/share/fonts/truetype/liberation2/LiberationMono-Regular.ttf", dejavu_reg],
+            ["/usr/share/fonts/truetype/liberation/LiberationMono-Bold.ttf", "/usr/share/fonts/truetype/liberation2/LiberationMono-Bold.ttf", dejavu_bold],
+        ),
+        "noto_sans": (
+            ["/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf", "/usr/share/fonts/truetype/noto/NotoSans.ttf", dejavu_reg],
+            ["/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf", "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf", dejavu_bold],
+        ),
+        "noto_serif": (
+            ["/usr/share/fonts/truetype/noto/NotoSerif-Regular.ttf", "/usr/share/fonts/truetype/noto/NotoSerif.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf", dejavu_reg],
+            ["/usr/share/fonts/truetype/noto/NotoSerif-Bold.ttf", "/usr/share/fonts/truetype/noto/NotoSerif-Bold.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf", dejavu_bold],
+        ),
+        "ubuntu": (
+            ["/usr/share/fonts/truetype/ubuntu/Ubuntu-R.ttf", "/usr/share/fonts/truetype/ubuntu/Ubuntu-Regular.ttf", dejavu_reg],
+            ["/usr/share/fonts/truetype/ubuntu/Ubuntu-B.ttf", "/usr/share/fonts/truetype/ubuntu/Ubuntu-Bold.ttf", dejavu_bold],
+        ),
+        "free_serif": (
+            ["/usr/share/fonts/truetype/freefont/FreeSerif.ttf", "/usr/share/fonts/truetype/freefont/FreeSerif.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf", dejavu_reg],
+            ["/usr/share/fonts/truetype/freefont/FreeSerifBold.ttf", "/usr/share/fonts/truetype/freefont/FreeSerifBold.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf", dejavu_bold],
+        ),
+    }
+
+    reg_list, bold_list = candidates.get(fk, candidates["dejavu_sans"])
+    reg = _pick_font_path(reg_list, dejavu_reg)
+    bold = _pick_font_path(bold_list, dejavu_bold)
+    return reg, bold
 
 
 def _fit_font(draw: ImageDraw.ImageDraw, text: str, font_path: str, max_width: int, start_size: int, min_size: int = 18):
@@ -74,13 +117,11 @@ def _fit_font(draw: ImageDraw.ImageDraw, text: str, font_path: str, max_width: i
     return ImageFont.truetype(font_path, min_size)
 
 
-def _render_award_png(template_filename: str, full_name: str, event_name: str, event_date: str, font_key: str = "sans") -> bytes:
+def _render_award_png(template_filename: str, full_name: str, event_name: str, event_date: str, font_key: str = "dejavu_sans") -> bytes:
     template_path = os.path.join(CERT_TEMPLATES_DIR, template_filename)
     img = Image.open(template_path).convert("RGBA")
     w, h = img.size
     draw = ImageDraw.Draw(img)
-
-    regular_font_path, bold_font_path = _resolve_font_paths(font_key)
 
     # Блоки текста (относительно размера шаблона)
     # По запросу: название мероприятия — над ФИО, дату — чуть ниже.
@@ -90,21 +131,23 @@ def _render_award_png(template_filename: str, full_name: str, event_name: str, e
     max_text_width = int(w * 0.78)
 
     # Имя участника — самое крупное
-    name_font = _fit_font(draw, full_name, bold_font_path, max_text_width, start_size=int(h * 0.05), min_size=28)
+    font_reg, font_bold = _font_paths(font_key)
+
+    name_font = _fit_font(draw, full_name, font_bold, max_text_width, start_size=int(h * 0.05), min_size=28)
     name_bbox = draw.textbbox((0, 0), full_name, font=name_font)
     name_w = name_bbox[2] - name_bbox[0]
     draw.text(((w - name_w) / 2, name_y), full_name, font=name_font, fill=(20, 30, 45, 255))
 
     # Мероприятие (без префикса "Мероприятие:")
     event_text = (event_name or "").strip()
-    event_font = _fit_font(draw, event_text, regular_font_path, max_text_width, start_size=int(h * 0.03), min_size=18)
+    event_font = _fit_font(draw, event_text, font_reg, max_text_width, start_size=int(h * 0.03), min_size=18)
     event_bbox = draw.textbbox((0, 0), event_text, font=event_font)
     event_w = event_bbox[2] - event_bbox[0]
     draw.text(((w - event_w) / 2, event_y), event_text, font=event_font, fill=(25, 45, 70, 255))
 
     # Дата
     date_text = f"Дата: {event_date}".strip()
-    date_font = _fit_font(draw, date_text, regular_font_path, max_text_width, start_size=int(h * 0.03), min_size=18)
+    date_font = _fit_font(draw, date_text, font_reg, max_text_width, start_size=int(h * 0.03), min_size=18)
     date_bbox = draw.textbbox((0, 0), date_text, font=date_font)
     date_w = date_bbox[2] - date_bbox[0]
     draw.text(((w - date_w) / 2, date_y), date_text, font=date_font, fill=(25, 45, 70, 255))
@@ -359,9 +402,9 @@ async def admin_send_award(request: web.Request) -> web.Response:
 
     tg_id = int(payload.get("telegram_id"))
     template_key = str(payload.get("template_key") or "participation")
+    font_key = str(payload.get("font_key") or "dejavu_sans")
     event_name = str(payload.get("event_name") or "").strip()
     event_date = str(payload.get("event_date") or "").strip()
-    font_key = str(payload.get("font_key") or "sans").strip()
 
     if not tg_id:
         raise web.HTTPBadRequest(text="telegram_id required")
