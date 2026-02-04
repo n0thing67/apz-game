@@ -2,12 +2,45 @@
 
 const tg = window.Telegram?.WebApp;
 
+// Только шрифты с кириллицей (и на фронте, и на сервере).
+// В мобильных WebView стилизация <option> часто игнорируется, поэтому на телефоне
+// показываем кастомный пикер с превью.
+const AWARD_FONTS = [
+  { key: "dejavu_sans", label: "DejaVu Sans", css: "'DejaVu Sans', Arial, sans-serif" },
+  { key: "dejavu_serif", label: "DejaVu Serif", css: "'DejaVu Serif', 'Times New Roman', serif" },
+  { key: "dejavu_sans_cond", label: "DejaVu Sans Condensed", css: "'DejaVu Sans Condensed', Arial, sans-serif" },
+  { key: "dejavu_serif_cond", label: "DejaVu Serif Condensed", css: "'DejaVu Serif Condensed', 'Times New Roman', serif" },
+  { key: "liberation_sans", label: "Liberation Sans", css: "'Liberation Sans', Arial, sans-serif" },
+  { key: "liberation_serif", label: "Liberation Serif", css: "'Liberation Serif', 'Times New Roman', serif" },
+  { key: "noto_sans", label: "Noto Sans", css: "'Noto Sans', Roboto, Arial, sans-serif" },
+  { key: "noto_serif", label: "Noto Serif", css: "'Noto Serif', 'Times New Roman', serif" },
+  { key: "roboto", label: "Roboto", css: "Roboto, 'Noto Sans', Arial, sans-serif" },
+  { key: "open_sans", label: "Open Sans", css: "'Open Sans', Roboto, Arial, sans-serif" },
+  { key: "lato", label: "Lato", css: "Lato, 'Open Sans', Arial, sans-serif" },
+  { key: "comfortaa", label: "Comfortaa", css: "Comfortaa, 'Open Sans', Arial, sans-serif" },
+];
+
 function byId(id) {
   return document.getElementById(id);
 }
 
 function esc(s) {
   return String(s ?? "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+}
+
+function todayISO() {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function isoToRu(iso) {
+  // iso: YYYY-MM-DD -> DD.MM.YYYY
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || "").trim());
+  if (!m) return String(iso || "").trim();
+  return `${m[3]}.${m[2]}.${m[1]}`;
 }
 
 function fmtUser(u) {
@@ -34,6 +67,10 @@ async function init() {
   const $awardsSearch = byId("awards-search");
   const $awardsList = byId("awards-list");
   const $awardsSelected = byId("awards-selected");
+  const $awardFontSelect = byId("award-font");
+  const $awardFontMobile = byId("award-font-mobile");
+  const $awardFontSelect = byId("award-font");
+  const $awardFontMobile = byId("award-font-mobile");
 
   const screens = {
     home: byId("screen-admin-home"),
@@ -56,6 +93,110 @@ async function init() {
     } catch (_) {
       window.scrollTo(0, 0);
     }
+  }
+
+  function isMobileUi() {
+    return window.matchMedia && window.matchMedia("(max-width: 640px)").matches;
+  }
+
+  function setAwardFontValue(fontKey) {
+    const key = String(fontKey || "dejavu_sans");
+    if ($awardFontSelect) $awardFontSelect.value = key;
+    // синхронизируем мобильную кнопку
+    const btn = byId("award-font-mobile-btn");
+    const sample = byId("award-font-mobile-sample");
+    const chosen = AWARD_FONTS.find((f) => f.key === key) || AWARD_FONTS[0];
+    if (btn) btn.textContent = chosen.label;
+    if (sample) {
+      sample.style.fontFamily = chosen.css;
+      sample.textContent = "Пример: Абвгд Ёжик 123";
+    }
+  }
+
+  function setupAwardFontPicker() {
+    // Заполняем desktop select (и как источник значения для API)
+    if ($awardFontSelect) {
+      $awardFontSelect.innerHTML = "";
+      AWARD_FONTS.forEach((f) => {
+        const opt = document.createElement("option");
+        opt.value = f.key;
+        opt.textContent = f.label;
+        // На десктопе браузер обычно применяет стиль к option; на мобилках — нет.
+        opt.style.fontFamily = f.css;
+        $awardFontSelect.appendChild(opt);
+      });
+      // Не даём iOS зумить на фокусе инпута
+      $awardFontSelect.style.fontSize = "16px";
+      $awardFontSelect.addEventListener("change", () => setAwardFontValue($awardFontSelect.value));
+    }
+
+    // Mobile: кастомная кнопка + модалка со списком
+    if ($awardFontMobile) {
+      $awardFontMobile.innerHTML = `
+        <button type="button" class="btn admin-font-mobile-btn" id="award-font-mobile-open">
+          Выбрать шрифт
+        </button>
+        <div class="admin-font-mobile-preview">
+          <div class="admin-font-mobile-label" id="award-font-mobile-btn"></div>
+          <div class="admin-font-mobile-sample" id="award-font-mobile-sample"></div>
+        </div>
+      `;
+
+      let overlay = document.getElementById("award-font-modal");
+      if (!overlay) {
+        overlay = document.createElement("div");
+        overlay.className = "admin-font-modal";
+        overlay.id = "award-font-modal";
+        overlay.innerHTML = `
+        <div class="admin-font-modal-sheet" role="dialog" aria-modal="true">
+          <div class="admin-font-modal-head">
+            <div class="admin-font-modal-title">Выбор шрифта</div>
+            <button type="button" class="btn btn-secondary admin-font-modal-close" id="award-font-modal-close">Закрыть</button>
+          </div>
+          <div class="admin-font-modal-list" id="award-font-modal-list"></div>
+        </div>
+      `;
+        document.body.appendChild(overlay);
+
+        const list = overlay.querySelector("#award-font-modal-list");
+        AWARD_FONTS.forEach((f) => {
+          const b = document.createElement("button");
+          b.type = "button";
+          b.className = "admin-font-item";
+          b.style.fontFamily = f.css;
+          b.innerHTML = `
+            <div class="admin-font-item-name">${esc(f.label)}</div>
+            <div class="admin-font-item-sample">Абвгд Ёжик 123</div>
+          `;
+          b.addEventListener("click", () => {
+            setAwardFontValue(f.key);
+            overlay.classList.remove("open");
+          });
+          list.appendChild(b);
+        });
+
+        const closeBtn = overlay.querySelector("#award-font-modal-close");
+        closeBtn?.addEventListener("click", () => overlay.classList.remove("open"));
+        overlay.addEventListener("click", (e) => {
+          if (e.target === overlay) overlay.classList.remove("open");
+        });
+      }
+
+      const openBtn = byId("award-font-mobile-open");
+      openBtn?.addEventListener("click", () => overlay.classList.add("open"));
+    }
+
+    // Покажем нужный вариант в зависимости от ширины
+    const apply = () => {
+      const mobile = isMobileUi();
+      if ($awardFontSelect) $awardFontSelect.style.display = mobile ? "none" : "";
+      if ($awardFontMobile) $awardFontMobile.style.display = mobile ? "" : "none";
+    };
+    apply();
+    window.addEventListener("resize", apply);
+
+    // Значение по умолчанию
+    setAwardFontValue($awardFontSelect?.value || "dejavu_sans");
   }
 
   function exit() {
@@ -149,33 +290,11 @@ async function init() {
       row.className = "admin-useritem" + (id === selectedId ? " selected" : "");
       row.innerHTML = `
         <div class="admin-useritem-name">${esc(userTitle(u))}</div>
-        <div class="admin-useritem-meta">Telegram ID: ${esc(id)}</div>
-        <div class="admin-useritem-meta2">Очки: ${esc(u.score ?? 0)}</div>
+        <div class="admin-useritem-meta">ID: ${esc(id)} • Очки: ${esc(u.score ?? 0)}</div>
       `;
       row.addEventListener("click", () => onSelect?.(u));
       container.appendChild(row);
     });
-  }
-
-  function todayISO() {
-    const d = new Date();
-    const yyyy = d.getFullYear();
-    const mm = String(d.getMonth() + 1).padStart(2, "0");
-    const dd = String(d.getDate()).padStart(2, "0");
-    return `${yyyy}-${mm}-${dd}`;
-  }
-
-  function isoToRu(iso) {
-    // iso: YYYY-MM-DD -> DD.MM.YYYY
-    const m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
-    if (!m) return String(iso || "").trim();
-    return `${m[3]}.${m[2]}.${m[1]}`;
-  }
-
-  function setAwardsDateTodayIfEmpty(force = false) {
-    const el = byId("award-date");
-    if (!el) return;
-    if (force || !String(el.value || "").trim()) el.value = todayISO();
   }
 
   function renderDeleteListFromCache() {
@@ -398,7 +517,9 @@ async function init() {
     try {
       if (!(await checkAccess())) return;
       showScreen("awards");
-      setAwardsDateTodayIfEmpty(true);
+      const $date = byId("award-date");
+      if ($date && !$date.value) $date.value = todayISO();
+      setupAwardFontPicker();
       await loadAwardsUsers();
     } catch (e) {
       alert(e.message);
@@ -464,8 +585,8 @@ async function init() {
   byId("btn-award-clear").addEventListener("click", () => {
     byId("award-user").value = "";
     byId("award-event").value = "";
-    byId("award-date").value = "";
-    setAwardsDateTodayIfEmpty(true);
+    const $date = byId("award-date");
+    if ($date) $date.value = todayISO();
 
     selectedAwardId = null;
     if ($awardsSelected) $awardsSelected.textContent = "Не выбран";
@@ -474,13 +595,13 @@ async function init() {
   byId("btn-award-send").addEventListener("click", async () => {
     const tgId = Number((byId("award-user").value || "").trim());
     const templateKey = String(byId("award-template").value || "participation");
-    const fontKey = String(byId("award-font")?.value || "dejavu_sans");
     const eventName = String((byId("award-event").value || "").trim());
-    const eventDateIso = String((byId("award-date").value || "").trim());
-    const eventDate = isoToRu(eventDateIso);
+    const rawDate = String((byId("award-date").value || "").trim());
+    const eventDate = isoToRu(rawDate);
+    const fontKey = String(byId("award-font")?.value || AWARD_FONTS[0].key);
 
     if (!tgId) {
-      alert("Выбери пользователя из списка ниже");
+      alert("Укажи Telegram ID пользователя");
       return;
     }
     if (!eventName) {
@@ -503,9 +624,9 @@ async function init() {
         body: JSON.stringify({
           telegram_id: tgId,
           template_key: templateKey,
-          font_key: fontKey,
           event_name: eventName,
           event_date: eventDate,
+          font_key: fontKey,
         }),
       });
       alert("Отправлено ✅");
