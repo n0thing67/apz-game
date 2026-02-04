@@ -1,5 +1,6 @@
 import json
 import os
+import re
 
 from aiogram import Router, F, types
 from aiogram.filters import Command
@@ -72,7 +73,7 @@ def admin_inline_keyboard() -> InlineKeyboardMarkup:
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="🛠 Админ-панель",
+                    text="Админ-панель",
                     web_app=WebAppInfo(url=f"{ADMIN_URL}/admin.html"),
                 )
             ]
@@ -118,6 +119,19 @@ async def process_fullname(message: types.Message, state: FSMContext):
     first_name = parts[0]
     last_name = " ".join(parts[1:])
 
+    # Валидация: имя/фамилия только на русском.
+    # Разрешаем буквы (в т.ч. Ё/ё) и дефис. Фамилия может быть из нескольких слов.
+    ru_token = re.compile(r"^[А-ЯЁа-яё]+(?:-[А-ЯЁа-яё]+)*$")
+    if not ru_token.fullmatch(first_name) or any(
+        not ru_token.fullmatch(p) for p in parts[1:]
+    ):
+        await message.answer(
+            "❌ Имя и фамилия должны быть написаны только русскими буквами.\n"
+            "Можно использовать дефис.\n"
+            "Пример: Иван Иванов / Анна-Мария Петрова",
+        )
+        return
+
     await state.update_data(first_name=first_name, last_name=last_name)
     await message.answer("Сколько вам лет?")
     await state.set_state(RegState.waiting_for_age)
@@ -125,15 +139,21 @@ async def process_fullname(message: types.Message, state: FSMContext):
 
 @router.message(RegState.waiting_for_age)
 async def process_age(message: types.Message, state: FSMContext):
-    if not (message.text or "").isdigit():
-        await message.answer("Возраст должен быть числом. Попробуйте еще раз.")
+    raw = (message.text or "").strip()
+    try:
+        age = int(raw)
+    except Exception:
+        await message.answer("Возраст должен быть числом. Попробуйте ещё раз.")
+        return
+
+    if age < 0 or age > 100:
+        await message.answer("Возраст должен быть от 0 до 100. Попробуйте ещё раз.")
         return
 
     data = await state.get_data()
     user_id = message.from_user.id
     name = data["first_name"]
     surname = data["last_name"]
-    age = int(message.text)
 
     await register_user(user_id, name, surname, age)
     await state.clear()
@@ -207,19 +227,11 @@ async def handle_web_app_data(message: types.Message):
 @router.message(Command("admin"))
 async def cmd_admin(message: types.Message):
     if not is_admin(message.from_user.id):
-        await message.answer("⛔️ Нет доступа.")
-        return
-
-    if not ADMIN_URL:
-        await message.answer(
-            "⚠️ Админка не настроена.\n"
-            "В Render добавь переменную окружения ADMIN_URL (домен Render)."
-        )
+        await message.answer("Нет доступа")
         return
 
     await message.answer(
-        "🛠 Открываю админ-панель.\n"
-        "Там можно смотреть статистику, удалять пользователей и включать/выключать уровни.",
+        "Админ-панель",
         reply_markup=admin_inline_keyboard(),
     )
 
@@ -228,6 +240,14 @@ async def cmd_admin(message: types.Message):
 async def cmd_stats(message: types.Message):
     # Пользователь должен видеть ТОЛЬКО свою статистику.
     tg_id = message.from_user.id
+
+    # Берём расширенный профиль (в т.ч. результат профтеста), чтобы не лезть в БД вручную.
+    profile = None
+    try:
+        from database.db import get_user_profile
+        profile = await get_user_profile(tg_id)
+    except Exception:
+        profile = None
 
     user = await get_user(tg_id)
     if not user:
@@ -239,47 +259,26 @@ async def cmd_stats(message: types.Message):
 
     _tid, fname, lname, _age, score = user
 
-    # aptitude_top не входит в get_user (сохранён старый формат), поэтому аккуратно читаем отдельно.
     aptitude_top = None
-    rank = None
-    total = None
-    try:
-        db = await get_db()
-        async with db.execute(
-            'SELECT aptitude_top FROM users WHERE telegram_id = ?',
-            (tg_id,),
-        ) as cur:
-            row = await cur.fetchone()
-            aptitude_top = row[0] if row else None
+    if profile and len(profile) >= 6:
+        aptitude_top = profile[5]
 
-        # Место в общем рейтинге (не показываем других пользователей, только позицию)
-        async with db.execute(
-            'SELECT COUNT(*) FROM users WHERE score > ?',
-            (score,),
-        ) as cur:
-            higher = (await cur.fetchone() or (0,))[0]
-        rank = int(higher) + 1
-
-        async with db.execute('SELECT COUNT(*) FROM users') as cur:
-            total = (await cur.fetchone() or (0,))[0]
-    except Exception:
-        # Не ломаем бота, если что-то с БД/миграцией.
-        pass
-
+    # Формат вывода (как просили)
     APT_LABEL = {
-        "TECH": "🔧 Техническое мышление",
-        "LOGIC": "🧩 Логическое мышление",
-        "CREATIVE": "🎨 Творческое мышление",
-        "HUMAN": "📖 Гуманитарное мышление",
-        "SOCIAL": "🤝 Командное мышление",
+        "TECH": ("🔧", "Техническое мышление"),
+        "LOGIC": ("🧩", "Логическое мышление"),
+        "CREATIVE": ("🎨", "Творческое мышление"),
+        "HUMAN": ("📖", "Гуманитарное мышление"),
+        "SOCIAL": ("🤝", "Командное мышление"),
     }
 
-    lines = ["📊 **Твоя статистика:**"]
-    lines.append(f"👤 {fname} {lname}")
-    lines.append(f"⭐ Очки: **{score}**")
-    if rank is not None and total is not None and total:
-        lines.append(f"🏁 Место в рейтинге: **{rank}** из **{total}**")
+    lines = [
+        "📊 Твоя статистика:",
+        f"👤 {fname} {lname}",
+        f"⭐️ Очки: {score}",
+    ]
     if aptitude_top:
-        lines.append(f"🧠 Ведущее направление: **{APT_LABEL.get(aptitude_top, aptitude_top)}**")
+        emoji, label = APT_LABEL.get(aptitude_top, ("🧠", str(aptitude_top)))
+        lines.append(f'"{emoji}": {label}')
 
-    await message.answer("\n".join(lines), parse_mode="Markdown")
+    await message.answer("\n".join(lines))
