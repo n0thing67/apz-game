@@ -106,6 +106,8 @@ if not _using_postgres:
             "jumper",
             "factory-2048",
             "quiz",
+            # Профориентационный тест "что тебе подходит?" (кнопка в меню)
+            "aptitude",
         ]
         for key in default_levels:
             await db.execute(
@@ -427,6 +429,8 @@ else:
                 "jumper",
                 "factory-2048",
                 "quiz",
+                # Профориентационный тест "что тебе подходит?" (кнопка в меню)
+                "aptitude",
             ]
             for key in default_levels:
                 await conn.execute(
