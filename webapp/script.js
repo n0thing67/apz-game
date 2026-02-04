@@ -832,6 +832,21 @@ async function syncAptitudeWithServer() {
             try { clearAptitudeMenuRecommendations(); } catch (e) {}
         }
 
+        // Если админ удалил пользователя: при следующем открытии WebApp нужно очистить localStorage.
+        // Делаем это по тем же правилам, как и подхват отключённых уровней (через /api/levels без initData).
+        try {
+            const serverExists = data?.user_exists;
+            const serverDeleted = String(data?.user_deleted_token ?? '0');
+            const localDeleted = String(localStorage.getItem(USER_DELETED_TOKEN_KEY) ?? '0');
+            if (serverExists === false && (serverDeleted !== localDeleted)) {
+                try { localStorage.removeItem(STATS_KEY); } catch (e) {}
+                try { localStorage.removeItem(APTITUDE_STORAGE_KEY); } catch (e) {}
+                try { localStorage.setItem(USER_DELETED_TOKEN_KEY, serverDeleted); } catch (e) {}
+                try { stats = {}; } catch (e) {}
+                try { clearAptitudeMenuRecommendations(); } catch (e) {}
+            }
+        } catch (e) {}
+
         // 2) Частный случай: если пользователя удалили/сбросили и на сервере нет результата профтеста —
         // локальный localStorage может «сохранить» старый результат и показывать его после повторной регистрации.
         const serverTop = data?.user?.aptitude_top;
@@ -877,7 +892,9 @@ function syncResetAndRefreshUIThrottled() {
 
 async function loadLevelAvailability() {
     try {
-        const res = await fetch(apiUrl('/api/levels'), { cache: 'no-store' });
+        const uid = tg?.initDataUnsafe?.user?.id;
+        const levelsPath = uid ? `/api/levels?uid=${encodeURIComponent(String(uid))}` : '/api/levels';
+        const res = await fetch(apiUrl(levelsPath), { cache: 'no-store' });
         const data = await res.json();
         // Сброс статистики в админке должен подхватываться в WebApp так же,
         // как и отключение уровней (и без зависимости от initData / CORS-preflight).
@@ -934,6 +951,7 @@ function applyLevelAvailabilityToMenu() {
 
 const STATS_KEY = 'apzQuestStatsV1';
 const RESET_TOKEN_KEY = 'apzStatsResetTokenV1';
+const USER_DELETED_TOKEN_KEY = 'apzUserDeletedTokenV1';
 
 // Локальная статистика хранится в localStorage и должна сохраняться между запусками WebApp.
 // Сброс выполняется только по явному действию пользователя (кнопка "Сбросить статистику").
