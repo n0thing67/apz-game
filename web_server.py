@@ -156,8 +156,12 @@ async def cors_middleware(request: web.Request, handler):
 
 
 async def handle_levels(request: web.Request) -> web.Response:
+    # ВАЖНО: сброс статистики в WebApp должен работать так же надёжно,
+    # как и отключение уровней. /api/levels вызывается без кастомных заголовков
+    # (значит, без CORS-preflight), поэтому сюда также добавляем reset_token.
     levels = await get_levels()
-    return web.json_response({"ok": True, "levels": levels})
+    reset_token = await get_stats_reset_token()
+    return web.json_response({"ok": True, "levels": levels, "reset_token": reset_token})
 
 
 async def handle_me(request: web.Request) -> web.Response:
