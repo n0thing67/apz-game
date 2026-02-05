@@ -1409,6 +1409,12 @@ function hideAfterLevel() {
         const qc = document.getElementById('quiz-container');
         if (qc) qc.style.display = '';
 
+        // Квиз: заголовок и статус прогресса
+        const qH = document.querySelector('#screen-level4 h2');
+        const qProg = document.getElementById('quiz-progress');
+        if (qH) qH.style.display = '';
+        if (qProg) qProg.style.display = '';
+
         const dc = document.getElementById('doodle-container');
         const du = document.getElementById('doodle-ui');
         const sm = document.getElementById('doodle-start-msg');
@@ -1469,6 +1475,11 @@ function showAfterLevel(levelId) {
             const grid = document.getElementById('grid-container');
             if (grid) grid.style.display = 'none';
         } else if (levelId === 'quiz') {
+            // На экране "после уровня" для квиза не показываем заголовок и статус прогресса
+            const qH = document.querySelector('#screen-level4 h2');
+            const qProg = document.getElementById('quiz-progress');
+            if (qH) qH.style.display = 'none';
+            if (qProg) qProg.style.display = 'none';
             const qc = document.getElementById('quiz-container');
             if (qc) qc.style.display = 'none';
         } else if (levelId === 'jumper') {
