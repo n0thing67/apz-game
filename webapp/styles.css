@@ -294,25 +294,55 @@ body.admin-body {
 }
 
 /* --- Awards: дата (календарь) --- */
-#award-date {
-    font-size: 16px; /* чтобы iOS не делал zoom */
+ .admin-date-field {
+    position: relative;
+    display: flex;
+    align-items: center;
+    width: 100%;
 }
 
-#award-date::-webkit-calendar-picker-indicator {
+.admin-date-input {
+    width: 100%;
+    font-size: 16px; /* чтобы iOS не делал zoom */
+    padding-right: 44px; /* место под иконку */
+}
+
+.admin-date-btn {
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    border: 0;
+    background: transparent;
+    color: rgba(255,255,255,0.92);
+    padding: 6px;
+    border-radius: 10px;
     cursor: pointer;
-    opacity: 0.9;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.admin-date-btn:active {
+    transform: translateY(-50%) scale(0.98);
+}
+
+/* прячем нативную "стрелку"/индикатор, оставляем наш значок */
+#award-date::-webkit-calendar-picker-indicator {
+    opacity: 0;
+    display: none;
 }
 
 @media (max-width: 640px) {
-    #award-date {
+    .admin-date-input {
         padding: 12px 12px;
         min-height: 48px;
         width: 100%;
     }
 
-    #award-date::-webkit-calendar-picker-indicator {
-        width: 28px;
-        height: 28px;
+    .admin-date-btn {
+        right: 8px;
+        padding: 8px;
     }
 
     .admin-actions-bottom .btn {
