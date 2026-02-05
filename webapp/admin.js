@@ -2,22 +2,11 @@
 
 const tg = window.Telegram?.WebApp;
 
-// Только шрифты с кириллицей (и на фронте, и на сервере).
-// В мобильных WebView стилизация <option> часто игнорируется, поэтому на телефоне
-// показываем кастомный пикер с превью.
+// В админке оставляем только два шрифта.
+// (Сервер тоже принимает только эти ключи; всё остальное фолбэкается в DejaVu Sans.)
 const AWARD_FONTS = [
   { key: "dejavu_sans", label: "DejaVu Sans", css: "'DejaVu Sans', Arial, sans-serif" },
   { key: "dejavu_serif", label: "DejaVu Serif", css: "'DejaVu Serif', 'Times New Roman', serif" },
-  { key: "dejavu_sans_cond", label: "DejaVu Sans Condensed", css: "'DejaVu Sans Condensed', Arial, sans-serif" },
-  { key: "dejavu_serif_cond", label: "DejaVu Serif Condensed", css: "'DejaVu Serif Condensed', 'Times New Roman', serif" },
-  { key: "liberation_sans", label: "Liberation Sans", css: "'Liberation Sans', Arial, sans-serif" },
-  { key: "liberation_serif", label: "Liberation Serif", css: "'Liberation Serif', 'Times New Roman', serif" },
-  { key: "noto_sans", label: "Noto Sans", css: "'Noto Sans', Roboto, Arial, sans-serif" },
-  { key: "noto_serif", label: "Noto Serif", css: "'Noto Serif', 'Times New Roman', serif" },
-  { key: "roboto", label: "Roboto", css: "Roboto, 'Noto Sans', Arial, sans-serif" },
-  { key: "open_sans", label: "Open Sans", css: "'Open Sans', Roboto, Arial, sans-serif" },
-  { key: "lato", label: "Lato", css: "Lato, 'Open Sans', Arial, sans-serif" },
-  { key: "comfortaa", label: "Comfortaa", css: "Comfortaa, 'Open Sans', Arial, sans-serif" },
 ];
 
 function byId(id) {
@@ -66,9 +55,10 @@ async function init() {
   // AWARDS UI
   const $awardsSearch = byId("awards-search");
   const $awardsList = byId("awards-list");
-  const $awardsSelected = byId("awards-selected");
   const $awardFontSelect = byId("award-font");
   const $awardFontMobile = byId("award-font-mobile");
+  const $awardDate = byId("award-date");
+  const $awardDateBtn = byId("award-date-btn");
 
   const screens = {
     home: byId("screen-admin-home"),
@@ -95,6 +85,23 @@ async function init() {
 
   function isMobileUi() {
     return window.matchMedia && window.matchMedia("(max-width: 640px)").matches;
+  }
+
+  // Кнопка календаря (внутри поля даты)
+  if ($awardDateBtn && $awardDate) {
+    $awardDateBtn.addEventListener("click", () => {
+      try {
+        // Chromium/WebView
+        if (typeof $awardDate.showPicker === "function") {
+          $awardDate.showPicker();
+        } else {
+          $awardDate.focus();
+          $awardDate.click();
+        }
+      } catch (_) {
+        $awardDate.focus();
+      }
+    });
   }
 
   function setAwardFontValue(fontKey) {
@@ -353,15 +360,9 @@ async function init() {
       selectedId: selectedAwardId,
       onSelect: (u) => {
         selectedAwardId = Number(u.telegram_id);
-        byId("award-user").value = String(selectedAwardId);
-        if ($awardsSelected) $awardsSelected.textContent = `${userTitle(u)} (ID: ${selectedAwardId})`;
         renderAwardsListFromCache();
       },
     });
-
-    if (!selectedAwardId) {
-      if ($awardsSelected) $awardsSelected.textContent = "Не выбран";
-    }
   }
 
   // --- Data loaders ---
@@ -661,17 +662,15 @@ async function init() {
   });
 
   byId("btn-award-clear").addEventListener("click", () => {
-    byId("award-user").value = "";
     byId("award-event").value = "";
     const $date = byId("award-date");
     if ($date) $date.value = todayISO();
 
     selectedAwardId = null;
-    if ($awardsSelected) $awardsSelected.textContent = "Не выбран";
     renderAwardsListFromCache();
   });
   byId("btn-award-send").addEventListener("click", async () => {
-    const tgId = Number((byId("award-user").value || "").trim());
+    const tgId = Number(selectedAwardId);
     const templateKey = String(byId("award-template").value || "participation");
     const eventName = String((byId("award-event").value || "").trim());
     const rawDate = String((byId("award-date").value || "").trim());
@@ -679,7 +678,7 @@ async function init() {
     const fontKey = String(byId("award-font")?.value || AWARD_FONTS[0].key);
 
     if (!tgId) {
-      alert("Укажи Telegram ID пользователя");
+      alert("Выбери пользователя из списка");
       return;
     }
     if (!eventName) {
