@@ -1387,16 +1387,27 @@ function hideAfterLevel() {
         if (board) board.style.display = '';
         if (status) status.style.display = '';
 
+        // Пазл: заголовок и подсказка
+        const pzH = document.querySelector('#screen-level1 h2');
+        const pzP = document.querySelector('#screen-level1 > p');
+        if (pzH) pzH.style.display = '';
+        if (pzP) pzP.style.display = '';
+
         const grid = document.getElementById('grid-container');
         if (grid) grid.style.display = '';
 
+        // 2048: заголовок, подсказки, счет и кнопка перезапуска
+        const fH = document.querySelector('#screen-level3 h2');
+        const fP = document.querySelector('#screen-level3 > p');
+        const fHeader = document.querySelector('#screen-level3 .game-2048-header');
+        const fSwipe = document.querySelector('#screen-level3 p.instruction');
+        if (fH) fH.style.display = '';
+        if (fP) fP.style.display = '';
+        if (fHeader) fHeader.style.display = '';
+        if (fSwipe) fSwipe.style.display = '';
+
         const qc = document.getElementById('quiz-container');
         if (qc) qc.style.display = '';
-
-        const qp = document.getElementById('quiz-progress');
-        const qh = document.querySelector('#screen-level4 h2');
-        if (qp) qp.style.display = '';
-        if (qh) qh.style.display = '';
 
         const dc = document.getElementById('doodle-container');
         const du = document.getElementById('doodle-ui');
@@ -1434,20 +1445,32 @@ function showAfterLevel(levelId) {
     // Спрячем игровые элементы текущего уровня, чтобы не перекрывались
     try {
         if (levelId.startsWith('puzzle')) {
+            // На экране "после уровня" не показываем заголовок и подсказку пазла
+            const pzH = document.querySelector('#screen-level1 h2');
+            const pzP = document.querySelector('#screen-level1 > p');
+            if (pzH) pzH.style.display = 'none';
+            if (pzP) pzP.style.display = 'none';
+
             const board = document.getElementById('puzzle-board');
             const status = document.getElementById('puzzle-status');
             if (board) board.style.display = 'none';
             if (status) status.style.display = 'none';
         } else if (levelId === 'factory-2048') {
+            // На экране "после уровня" убираем подсказки, счет и кнопку перезапуска
+            const fH = document.querySelector('#screen-level3 h2');
+            const fP = document.querySelector('#screen-level3 > p');
+            const fHeader = document.querySelector('#screen-level3 .game-2048-header');
+            const fSwipe = document.querySelector('#screen-level3 p.instruction');
+            if (fH) fH.style.display = 'none';
+            if (fP) fP.style.display = 'none';
+            if (fHeader) fHeader.style.display = 'none';
+            if (fSwipe) fSwipe.style.display = 'none';
+
             const grid = document.getElementById('grid-container');
             if (grid) grid.style.display = 'none';
         } else if (levelId === 'quiz') {
             const qc = document.getElementById('quiz-container');
-            const qp = document.getElementById('quiz-progress');
-            const qh = document.querySelector('#screen-level4 h2');
             if (qc) qc.style.display = 'none';
-            if (qp) qp.style.display = 'none';
-            if (qh) qh.style.display = 'none';
         } else if (levelId === 'jumper') {
             const dc = document.getElementById('doodle-container');
             const du = document.getElementById('doodle-ui');
@@ -2707,7 +2730,23 @@ function prepareQuizQuestions(sourceQuestions) {
 let currentQuestionIndex = 0;
 let questionStartTime = 0;
 
+// Флаг блокировки повторных нажатий во время анимации ответа.
+// Должен быть объявлен ДО initQuiz(), т.к. при перепрохождении квиза
+// мы сбрасываем его в initQuiz().
+let isAnswering = false;
+
 function initQuiz() {
+    // Важно: при повторном прохождении квиза без перезагрузки приложения
+    // контейнер мог остаться в состоянии .quiz-hidden (pointer-events: none)
+    // после анимации последнего ответа. Это делает кнопки ответов «не нажимаемыми».
+    // Сбрасываем это состояние перед запуском.
+    try {
+        const qc = document.getElementById('quiz-container');
+        if (qc) qc.classList.remove('quiz-hidden');
+    } catch (e) {}
+
+    isAnswering = false;
+
     // Each run: randomize question order + answer order
     quizQuestions = prepareQuizQuestions(questions);
     currentQuestionIndex = 0;
@@ -2732,8 +2771,6 @@ function renderQuestion() {
         container.appendChild(btn);
     });
 }
-
-let isAnswering = false;
 
 function handleAnswerClick(btn, index, correctIndex) {
     if (isAnswering) return;
