@@ -43,8 +43,9 @@ def _resolve_font_paths(font_key: str):
 
     base = "/usr/share/fonts/truetype"
 
+    # В проекте оставляем только DejaVu Sans / DejaVu Serif.
+    # Все остальные ключи безопасно фолбэкаются в DejaVu Sans.
     font_map = {
-        # DejaVu (есть почти всегда)
         "dejavu_sans": (
             f"{base}/dejavu/DejaVuSans.ttf",
             f"{base}/dejavu/DejaVuSans-Bold.ttf",
@@ -52,49 +53,6 @@ def _resolve_font_paths(font_key: str):
         "dejavu_serif": (
             f"{base}/dejavu/DejaVuSerif.ttf",
             f"{base}/dejavu/DejaVuSerif-Bold.ttf",
-        ),
-        "dejavu_sans_cond": (
-            f"{base}/dejavu/DejaVuSansCondensed.ttf",
-            f"{base}/dejavu/DejaVuSansCondensed-Bold.ttf",
-        ),
-        "dejavu_serif_cond": (
-            f"{base}/dejavu/DejaVuSerifCondensed.ttf",
-            f"{base}/dejavu/DejaVuSerifCondensed-Bold.ttf",
-        ),
-        # Liberation
-        "liberation_sans": (
-            f"{base}/liberation/LiberationSans-Regular.ttf",
-            f"{base}/liberation/LiberationSans-Bold.ttf",
-        ),
-        "liberation_serif": (
-            f"{base}/liberation/LiberationSerif-Regular.ttf",
-            f"{base}/liberation/LiberationSerif-Bold.ttf",
-        ),
-        # Noto (если установлен)
-        "noto_sans": (
-            f"{base}/noto/NotoSans-Regular.ttf",
-            f"{base}/noto/NotoSans-Bold.ttf",
-        ),
-        "noto_serif": (
-            f"{base}/noto/NotoSerif-Regular.ttf",
-            f"{base}/noto/NotoSerif-Bold.ttf",
-        ),
-        # Roboto / Open Sans / Lato / Comfortaa (в некоторых окружениях есть)
-        "roboto": (
-            f"{base}/roboto/Roboto-Regular.ttf",
-            f"{base}/roboto/Roboto-Bold.ttf",
-        ),
-        "open_sans": (
-            f"{base}/open-sans/OpenSans-Regular.ttf",
-            f"{base}/open-sans/OpenSans-Bold.ttf",
-        ),
-        "lato": (
-            f"{base}/lato/Lato-Regular.ttf",
-            f"{base}/lato/Lato-Bold.ttf",
-        ),
-        "comfortaa": (
-            f"{base}/comfortaa/Comfortaa-Regular.ttf",
-            f"{base}/comfortaa/Comfortaa-Bold.ttf",
         ),
         # Совместимость со старым ключом
         "sans": (
