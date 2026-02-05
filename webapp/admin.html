@@ -134,22 +134,26 @@
           <!-- Desktop: обычный select. Mobile: кастомный пикер (ниже), потому что мобильные WebView не стилизуют <option>. -->
           <select id="award-font" class="admin-input admin-font-select" style="flex:1; min-width:180px;"></select>
           <div id="award-font-mobile" class="admin-font-mobile" style="flex:1; min-width:180px; display:none;"></div>
-          <input id="award-user" type="number" placeholder="Telegram ID (выбери ниже)" class="admin-input" style="flex:1; min-width:180px;" />
         </div>
 
         <div class="admin-row" style="gap:10px; flex-wrap:wrap; margin-top:10px;">
           <input id="award-event" type="text" placeholder="Название мероприятия" class="admin-input" style="flex:2; min-width:240px;" />
-          <input id="award-date" type="date" class="admin-input" style="flex:1; min-width:200px;" />
+          <div class="admin-date-field" style="flex:1; min-width:200px;">
+            <input id="award-date" type="date" class="admin-input admin-date-input" />
+            <button type="button" class="admin-date-btn" id="award-date-btn" aria-label="Открыть календарь">
+              <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">
+                <path fill="currentColor" d="M7 2a1 1 0 0 1 1 1v1h8V3a1 1 0 1 1 2 0v1h1.5A2.5 2.5 0 0 1 22 6.5v13A2.5 2.5 0 0 1 19.5 22h-15A2.5 2.5 0 0 1 2 19.5v-13A2.5 2.5 0 0 1 4.5 4H6V3a1 1 0 0 1 1-1Zm12.5 6H4.5a.5.5 0 0 0-.5.5v11a.5.5 0 0 0 .5.5h15a.5.5 0 0 0 .5-.5v-11a.5.5 0 0 0-.5-.5ZM6 10h3v3H6v-3Zm0 5h3v3H6v-3Zm5-5h3v3h-3v-3Zm0 5h3v3h-3v-3Zm5-5h3v3h-3v-3Z"/>
+              </svg>
+            </button>
+          </div>
         </div>
 
         <!-- Кнопки действий унесены вниз страницы (перед кнопкой "Назад") -->
 
         <div class="level-stats" style="margin-top:10px;">
-          <div class="muted">Выбор пользователя (первые 200, есть поиск):</div>
           <div class="admin-row" style="margin-top:10px;">
             <input id="awards-search" type="text" placeholder="Поиск: имя или фамилия" class="admin-input" />
           </div>
-          <div class="admin-selected" id="awards-selected">Не выбран</div>
           <div id="awards-list" class="admin-userlist" aria-label="Список пользователей для награждения"></div>
         </div>
 
