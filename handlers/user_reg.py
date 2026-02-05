@@ -205,13 +205,13 @@ async def handle_web_app_data(message: types.Message):
 
     if score_raw is not None and aptitude_top is not None:
         await message.answer(
-            f"🚀 Результат получен! Твой счёт: {score}.\n"
+            f"🚀 Результат получен! Твой счёт: {score}⭐️.\n"
             f"🧠 Профиль сохранён: {APT_LABEL.get(aptitude_top, aptitude_top)}.\n"
             f"Используй /stats, чтобы посмотреть таблицу лидеров."
         )
     elif score_raw is not None:
         await message.answer(
-            f"🚀 Результат получен! Твой счёт: {score}.\n"
+            f"🚀 Результат получен! Твой счёт: {score}⭐️.\n"
             f"Используй /stats, чтобы посмотреть таблицу лидеров."
         )
     elif aptitude_top is not None:
