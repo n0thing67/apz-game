@@ -1214,15 +1214,21 @@ hr {
     overscroll-behavior: contain;
     touch-action: pan-y;
 
-    /*
-      Заголовок теста не должен перекрываться верхними кнопками Telegram WebView.
-      Кнопки держим максимально высоко, а контент экрана опускаем ниже.
-    */
-    padding-top: calc(env(safe-area-inset-top, 0px) + 128px);
     padding-bottom: 96px; /* место под нижние элементы на результатах */
     padding-left: 10px;
     padding-right: 10px;
 }
+
+/* Во время прохождения теста опускаем контент ниже (чтобы не перекрывался верхними кнопками WebView) */
+#screen-aptitude{
+    padding-top: calc(env(safe-area-inset-top, 0px) + 128px);
+}
+
+/* На экране результата не нужна большая "пустая шапка" */
+#screen-aptitude-result{
+    padding-top: calc(env(safe-area-inset-top, 0px) + 24px);
+}
+
 
 @media (max-width: 420px){
     #screen-aptitude,
