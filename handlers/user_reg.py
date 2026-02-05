@@ -279,6 +279,6 @@ async def cmd_stats(message: types.Message):
     ]
     if aptitude_top:
         emoji, label = APT_LABEL.get(aptitude_top, ("🧠", str(aptitude_top)))
-        lines.append(f'"{emoji}": {label}')
+        lines.append(f'{emoji}: {label}')
 
     await message.answer("\n".join(lines))
