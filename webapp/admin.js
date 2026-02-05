@@ -69,8 +69,6 @@ async function init() {
   const $awardsSelected = byId("awards-selected");
   const $awardFontSelect = byId("award-font");
   const $awardFontMobile = byId("award-font-mobile");
-  const $awardFontSelect = byId("award-font");
-  const $awardFontMobile = byId("award-font-mobile");
 
   const screens = {
     home: byId("screen-admin-home"),
@@ -231,23 +229,32 @@ async function init() {
     if (method !== "GET" && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
 
         const url = new URL(path, window.location.href).toString();
-
     // В Telegram WebView иногда бывают "вечные" подвисания запросов при плохой сети/прокси.
-    // Чтобы не было бесконечной «Проверки доступа…», ставим таймаут.
-    const controller = new AbortController();
+    // AbortController может не сработать в некоторых WebView, поэтому делаем "жёсткий" таймаут через Promise.race.
+    const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
     const timeoutMs = typeof _timeoutMs === "number" ? _timeoutMs : 12000;
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+    let timer = null;
+    const timeoutPromise = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+    try {
+    controller?.abort?.();
+    } catch (_) {}
+    reject(new Error("Таймаут запроса. Проверь интернет или попробуй ещё раз."));
+    }, timeoutMs);
+    });
 
     let res;
     try {
-      res = await fetch(url, { ...fetchOpts, headers, signal: controller.signal });
+    const fetchPromise = fetch(url, { ...fetchOpts, headers, signal: controller?.signal });
+    res = await Promise.race([fetchPromise, timeoutPromise]);
     } catch (err) {
-      if (err?.name === "AbortError") {
-        throw new Error("Таймаут запроса. Проверь интернет или попробуй ещё раз.");
-      }
-      throw err;
+    if (err?.name === "AbortError") {
+    throw new Error("Таймаут запроса. Проверь интернет или попробуй ещё раз.");
+    }
+    throw err;
     } finally {
-      clearTimeout(timer);
+    if (timer) clearTimeout(timer);
     }
 
     if (!res.ok) {
@@ -358,23 +365,65 @@ async function init() {
   }
 
   // --- Data loaders ---
+  const ADMIN_ACCESS_CACHE_KEY = "apz_admin_access_cache_v1";
+  const ADMIN_ACCESS_CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 часов: достаточно для кратких падений Supabase
+
+  function getCurrentTelegramId() {
+    // initDataUnsafe доступен только внутри Telegram WebApp
+    const id = tg?.initDataUnsafe?.user?.id;
+    const n = Number(id);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  function readAdminAccessCache() {
+    try {
+      const raw = localStorage.getItem(ADMIN_ACCESS_CACHE_KEY);
+      if (!raw) return null;
+      const obj = JSON.parse(raw);
+      if (!obj || typeof obj !== "object") return null;
+      return obj;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function writeAdminAccessCache(ok) {
+    try {
+      const telegramId = getCurrentTelegramId();
+      if (!telegramId) return;
+      localStorage.setItem(
+        ADMIN_ACCESS_CACHE_KEY,
+        JSON.stringify({ telegram_id: telegramId, ok: Boolean(ok), ts: Date.now() })
+      );
+    } catch (_) {
+      // ignore
+    }
+  }
+
+  function canUseCachedAccess() {
+    const telegramId = getCurrentTelegramId();
+    if (!telegramId) return false;
+    const c = readAdminAccessCache();
+    if (!c || c.ok !== true) return false;
+    if (Number(c.telegram_id) !== telegramId) return false;
+    const age = Date.now() - Number(c.ts || 0);
+    return age >= 0 && age <= ADMIN_ACCESS_CACHE_TTL_MS;
+  }
+
   async function checkAccess() {
     $who.textContent = "Проверка доступа…";
     try {
-      // Доп. страховка: если WebView/браузер подвисает и AbortController не срабатывает,
-      // Promise.race гарантирует, что мы выйдем из проверки с понятным сообщением.
-      const data = await Promise.race([
-        api("/api/admin/stats", { method: "GET" }),
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error("Таймаут проверки доступа. Проверь интернет и попробуй ещё раз.")), 14000)
-        ),
-      ]);
-
-      if (data && data.ok === false) throw new Error("Нет доступа");
+      await api("/api/admin/stats", { method: "GET" });
+      writeAdminAccessCache(true);
       $who.textContent = "Доступ подтвержден";
       return true;
     } catch (e) {
-      $who.textContent = "Нет доступа: " + (e?.message || e);
+      // Если Supabase/сеть кратковременно легли — дадим админке открыться по кэшу.
+      if (canUseCachedAccess()) {
+        $who.textContent = "Доступ подтвержден (офлайн по кэшу)";
+        return true;
+      }
+      $who.textContent = "Нет доступа: " + e.message;
       return false;
     }
   }
