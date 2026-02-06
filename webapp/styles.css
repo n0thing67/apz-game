@@ -1,6 +1,7 @@
 html, body {
     height: 100%;
 }
+
 body {
     font-family: Arial, sans-serif;
     background-color: #2c3e50;
@@ -204,6 +205,10 @@ body.admin-body {
 
 .admin-font-mobile-btn {
     width: 100%;
+    /* .btn по умолчанию имеет margin-top:20px, из-за этого между
+       выбором шаблона и кнопкой "Выбрать шрифт" появляется большой зазор.
+       Для кнопки выбора шрифта в админке убираем этот отступ. */
+    margin-top: 0;
 }
 
 .admin-font-mobile-preview {
@@ -401,7 +406,7 @@ body.admin-body {
     background: rgba(0,0,0,0.12);
     color: #fff;
     border-radius: 12px;
-    padding: 12px 14px;
+    padding: 10px 12px;
     cursor: pointer;
     margin: 6px 0;
 }
@@ -411,31 +416,8 @@ body.admin-body {
 }
 
 .admin-useritem.selected {
-    /* outline часто "обрезается" контейнером со скроллом (особенно в Telegram WebView),
-       поэтому используем inset-shadow + контрастный фон */
-    box-shadow: inset 0 0 0 3px rgba(255,255,255,0.55);
-    border-color: rgba(255,255,255,0.35);
-    background: rgba(255,255,255,0.08);
-}
-
-/* Грамоты: более заметное выделение выбранного пользователя (без внешнего outline, который режется скроллом) */
-#screen-admin-awards #awards-list .admin-useritem.selected {
-    box-shadow: inset 0 0 0 3px rgba(255,255,255,0.70);
-    background: rgba(255,255,255,0.10);
-    border-left: 4px solid rgba(255,255,255,0.75);
-}
-
-/* Грамоты: верхний ряд (шаблон + выбор шрифта) на мобильных — компактно, без лишних переносов/пустот */
-#screen-admin-awards .award-top-row {
-    justify-content: flex-start;
-    align-items: stretch;
-}
-
-@media (max-width: 520px) {
-    #screen-admin-awards .award-top-row {
-        flex-direction: column;
-        gap: 8px;
-    }
+    outline: 2px solid rgba(255,255,255,0.35);
+    border-color: rgba(255,255,255,0.25);
 }
 
 .admin-useritem-name {
