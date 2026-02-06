@@ -1687,7 +1687,7 @@ hr {
 }
 
 #screen-admin-awards select{
-  margin-bottom: 7px;        /* регулируй 0..12px как нравится */
+  margin-bottom: 4x;        /* регулируй 0..12px как нравится */
   width: 100%;
   box-sizing: border-box;
 }
