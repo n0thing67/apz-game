@@ -98,43 +98,53 @@ def _render_award_png(template_filename: str, full_name: str, event_name: str, e
     regular_font_path, bold_font_path = _resolve_font_paths(font_key)
 
     # Блоки текста (относительно размера шаблона)
-    # По запросу: название мероприятия — над ФИО, дату — чуть ниже.
-    event_y = int(h * 0.46)
-    name_y = int(h * 0.54)
-    date_y = int(h * 0.66)
+    # Требования:
+    # 1) название мероприятия — чуть ниже "Сертификат за участие" и крупное (как ФИО)
+    # 2) ФИО сразу под мероприятием
+    # 3) Очки сразу под ФИО
+    # 4) Дата на уровне "верхушки кубка" (примерно 70% высоты, с защитой от наложения)
     max_text_width = int(w * 0.78)
+    gap = max(10, int(h * 0.02))
 
-    # Имя участника — самое крупное
+    # Мероприятие (крупно, как ФИО)
+    event_text = (event_name or "").strip()
+    event_font = _fit_font(draw, event_text, bold_font_path, max_text_width, start_size=int(h * 0.05), min_size=26)
+    event_bbox = draw.textbbox((0, 0), event_text, font=event_font)
+    event_w = event_bbox[2] - event_bbox[0]
+    event_h = event_bbox[3] - event_bbox[1]
+    event_y = int(h * 0.30)
+    draw.text(((w - event_w) / 2, event_y), event_text, font=event_font, fill=(20, 30, 45, 255))
+
+    # Имя участника — крупно, сразу под мероприятием
     name_font = _fit_font(draw, full_name, bold_font_path, max_text_width, start_size=int(h * 0.05), min_size=28)
     name_bbox = draw.textbbox((0, 0), full_name, font=name_font)
     name_w = name_bbox[2] - name_bbox[0]
+    name_h = name_bbox[3] - name_bbox[1]
+    name_y = event_y + event_h + gap
     draw.text(((w - name_w) / 2, name_y), full_name, font=name_font, fill=(20, 30, 45, 255))
 
-    # Мероприятие (без префикса "Мероприятие:")
-    event_text = (event_name or "").strip()
-    event_font = _fit_font(draw, event_text, regular_font_path, max_text_width, start_size=int(h * 0.03), min_size=18)
-    event_bbox = draw.textbbox((0, 0), event_text, font=event_font)
-    event_w = event_bbox[2] - event_bbox[0]
-    draw.text(((w - event_w) / 2, event_y), event_text, font=event_font, fill=(25, 45, 70, 255))
-
-    # Дата
-    date_text = f"Дата: {event_date}".strip()
-    date_font = _fit_font(draw, date_text, regular_font_path, max_text_width, start_size=int(h * 0.03), min_size=18)
-    date_bbox = draw.textbbox((0, 0), date_text, font=date_font)
-    date_w = date_bbox[2] - date_bbox[0]
-    draw.text(((w - date_w) / 2, date_y), date_text, font=date_font, fill=(25, 45, 70, 255))
-
-    # Очки участника (ниже даты)
+    # Очки участника — сразу под ФИО
     try:
         score_val = int(score) if score is not None else 0
     except Exception:
         score_val = 0
     score_text = f"Очки: {score_val}"
-    score_y = int(h * 0.72)
-    score_font = _fit_font(draw, score_text, regular_font_path, max_text_width, start_size=int(h * 0.03), min_size=18)
+    score_font = _fit_font(draw, score_text, regular_font_path, max_text_width, start_size=int(h * 0.035), min_size=18)
     score_bbox = draw.textbbox((0, 0), score_text, font=score_font)
     score_w = score_bbox[2] - score_bbox[0]
+    score_h = score_bbox[3] - score_bbox[1]
+    score_y = name_y + name_h + gap
     draw.text(((w - score_w) / 2, score_y), score_text, font=score_font, fill=(25, 45, 70, 255))
+
+    # Дата — на уровне верхушки кубка слева (примерно), ниже очков если нужно
+    date_text = f"Дата: {event_date}".strip()
+    date_font = _fit_font(draw, date_text, regular_font_path, max_text_width, start_size=int(h * 0.03), min_size=18)
+    date_bbox = draw.textbbox((0, 0), date_text, font=date_font)
+    date_w = date_bbox[2] - date_bbox[0]
+    date_h = date_bbox[3] - date_bbox[1]
+    date_y_target = int(h * 0.70)
+    date_y = max(date_y_target, score_y + score_h + gap)
+    draw.text(((w - date_w) / 2, date_y), date_text, font=date_font, fill=(25, 45, 70, 255))
 
 
     out = BytesIO()
