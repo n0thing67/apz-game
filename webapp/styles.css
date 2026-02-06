@@ -1682,21 +1682,14 @@ hr {
     display: none;
 }
 
-/* === Грамоты/дипломы: селект в одну ширину с кнопкой + без зазора === */
+#screen-admin-awards .btn{
+  margin-top: 0 !important;   /* перебиваем .btn { margin-top: 20px } */
+}
 
-/* Селект растягиваем на всю ширину */
-select {
+#screen-admin-awards select{
+  margin-bottom: 10px;        /* регулируй 0..12px как нравится */
   width: 100%;
   box-sizing: border-box;
 }
 
-/* Убираем лишний отступ у кнопки (часто он и делает дырку) */
-select + .btn {
-  margin-top: 0 !important;
-}
-
-/* Если всё равно есть маленький зазор — управляй тут */
-select {
-  margin-bottom: 8px; /* поставь 0..8px как нравится */
-}
 
