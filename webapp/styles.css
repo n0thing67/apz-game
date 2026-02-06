@@ -373,30 +373,29 @@ body.admin-body {
     padding: 6px;
 }
 
-/* Грамоты: выравниваем список пользователей по левому краю как остальные поля.
-   Раньше контейнер имел внутренний padding, из-за чего карточки списка начинались правее инпутов. */
+/* Грамоты: список выбора пользователя — делаем карточки шире и выделение заметнее.
+   Важно: не ломаем логику, только визуал. */
 #screen-admin-awards #awards-list.admin-userlist {
-    padding: 0;
+    padding: 6px;
 }
 
 #screen-admin-awards #awards-list .admin-useritem {
-    margin: 0;
-    border-radius: 0;
-    border-left: none;
-    border-right: none;
-    border-top: none;
-    border-bottom: 1px solid rgba(255,255,255,0.10);
+    margin: 6px 0;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.14);
+    background: rgba(0,0,0,0.12);
+    padding: 12px 14px;
 }
 
-#screen-admin-awards #awards-list .admin-useritem:first-child {
-    border-top-left-radius: 14px;
-    border-top-right-radius: 14px;
+#screen-admin-awards #awards-list .admin-useritem:hover {
+    border-color: rgba(255,255,255,0.28);
 }
 
-#screen-admin-awards #awards-list .admin-useritem:last-child {
-    border-bottom: none;
-    border-bottom-left-radius: 14px;
-    border-bottom-right-radius: 14px;
+#screen-admin-awards #awards-list .admin-useritem.selected {
+    border-color: rgba(255,255,255,0.55);
+    background: rgba(255,255,255,0.10);
+    box-shadow: 0 0 0 2px rgba(255,255,255,0.35) inset;
+    outline: none;
 }
 
 .admin-useritem {
