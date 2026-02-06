@@ -89,7 +89,7 @@ def _fit_font(draw: ImageDraw.ImageDraw, text: str, font_path: str, max_width: i
     return ImageFont.truetype(font_path, min_size)
 
 
-def _render_award_png(template_filename: str, full_name: str, event_name: str, event_date: str, font_key: str = "sans") -> bytes:
+def _render_award_png(template_filename: str, full_name: str, event_name: str, event_date: str, score: int | None = None, font_key: str = "sans") -> bytes:
     template_path = os.path.join(CERT_TEMPLATES_DIR, template_filename)
     img = Image.open(template_path).convert("RGBA")
     w, h = img.size
@@ -123,6 +123,19 @@ def _render_award_png(template_filename: str, full_name: str, event_name: str, e
     date_bbox = draw.textbbox((0, 0), date_text, font=date_font)
     date_w = date_bbox[2] - date_bbox[0]
     draw.text(((w - date_w) / 2, date_y), date_text, font=date_font, fill=(25, 45, 70, 255))
+
+    # Очки участника (ниже даты)
+    try:
+        score_val = int(score) if score is not None else 0
+    except Exception:
+        score_val = 0
+    score_text = f"Очки: {score_val}"
+    score_y = int(h * 0.72)
+    score_font = _fit_font(draw, score_text, regular_font_path, max_text_width, start_size=int(h * 0.03), min_size=18)
+    score_bbox = draw.textbbox((0, 0), score_text, font=score_font)
+    score_w = score_bbox[2] - score_bbox[0]
+    draw.text(((w - score_w) / 2, score_y), score_text, font=score_font, fill=(25, 45, 70, 255))
+
 
     out = BytesIO()
     img.convert("RGB").save(out, format="PNG", optimize=True)
@@ -389,7 +402,7 @@ async def admin_send_award(request: web.Request) -> web.Response:
     user = await get_user(tg_id)
     if not user:
         raise web.HTTPNotFound(text="User not found")
-    _, first_name, last_name, _, _ = user
+    _, first_name, last_name, _, score = user
     full_name = f"{first_name or ''} {last_name or ''}".strip() or str(tg_id)
 
     template_map = {
@@ -406,6 +419,7 @@ async def admin_send_award(request: web.Request) -> web.Response:
         full_name=full_name,
         event_name=event_name,
         event_date=event_date,
+        score=score,
         font_key=font_key,
     )
 
@@ -416,7 +430,7 @@ async def admin_send_award(request: web.Request) -> web.Response:
     caption = (
         "Сертификат за участие" if template_key == "participation" else f"Диплом за {template_key} место"
     )
-    caption = f"{caption}\n{event_name} — {event_date}"
+    caption = f"{caption}\n{event_name} — {event_date}\nОчки: {score if score is not None else 0}"
 
     try:
         await bot.send_document(chat_id=tg_id, document=file, caption=caption)
