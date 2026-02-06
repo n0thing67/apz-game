@@ -105,14 +105,18 @@ def _render_award_png(template_filename: str, full_name: str, event_name: str, e
     # 4) Дата на уровне "верхушки кубка" (примерно 70% высоты, с защитой от наложения)
     max_text_width = int(w * 0.78)
     gap = max(10, int(h * 0.02))
+    top_shift = 100  # сдвиг верхнего блока текста вниз (в пикселях)
 
     # Мероприятие (крупно, как ФИО)
     event_text = (event_name or "").strip()
+    # Мероприятие всегда в кавычках «...»
+    if event_text and not (event_text.startswith("«") and event_text.endswith("»")):
+        event_text = f"«{event_text}»"
     event_font = _fit_font(draw, event_text, bold_font_path, max_text_width, start_size=int(h * 0.05), min_size=26)
     event_bbox = draw.textbbox((0, 0), event_text, font=event_font)
     event_w = event_bbox[2] - event_bbox[0]
     event_h = event_bbox[3] - event_bbox[1]
-    event_y = int(h * 0.30)
+    event_y = int(h * 0.30) + top_shift
     draw.text(((w - event_w) / 2, event_y), event_text, font=event_font, fill=(20, 30, 45, 255))
 
     # Имя участника — крупно, сразу под мероприятием
