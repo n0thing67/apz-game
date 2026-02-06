@@ -698,6 +698,9 @@ async function init() {
     try {
       await api("/api/admin/send_award", {
         method: "POST",
+        // Дипломы (особенно с дублированием в админ-канал) могут генерироваться/отправляться дольше,
+        // чем дефолтные 12 секунд. Увеличиваем таймаут только для этой операции.
+        timeoutMs: 60000,
         body: JSON.stringify({
           telegram_id: tgId,
           template_key: templateKey,
