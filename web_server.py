@@ -469,9 +469,9 @@ async def admin_send_award(request: web.Request) -> web.Response:
             try:
                 admin_channel_id = int(admin_channel_id_raw)
                 admin_caption = (
-                    f"🗂 Копия грамоты"
-                    f"Пользователь: {full_name}"
-                    f"Telegram ID: {tg_id}"
+                    f"🗂 Копия грамоты\n"
+                    f"Пользователь: {full_name}\n"
+                    f"Telegram ID: {tg_id}\n"
                     f"{caption}"
                 )
                 admin_file = BufferedInputFile(png_bytes, filename=filename)
