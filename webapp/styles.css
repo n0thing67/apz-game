@@ -402,7 +402,7 @@ body.admin-body {
     background: rgba(0,0,0,0.12);
     color: #fff;
     border-radius: 12px;
-    padding: 10px 12px;
+    padding: 12px 14px;
     cursor: pointer;
     margin: 6px 0;
 }
@@ -412,8 +412,31 @@ body.admin-body {
 }
 
 .admin-useritem.selected {
-    outline: 2px solid rgba(255,255,255,0.35);
-    border-color: rgba(255,255,255,0.25);
+    /* outline часто "обрезается" контейнером со скроллом (особенно в Telegram WebView),
+       поэтому используем inset-shadow + контрастный фон */
+    box-shadow: inset 0 0 0 3px rgba(255,255,255,0.55);
+    border-color: rgba(255,255,255,0.35);
+    background: rgba(255,255,255,0.08);
+}
+
+/* Грамоты: более заметное выделение выбранного пользователя (без внешнего outline, который режется скроллом) */
+#screen-admin-awards #awards-list .admin-useritem.selected {
+    box-shadow: inset 0 0 0 3px rgba(255,255,255,0.70);
+    background: rgba(255,255,255,0.10);
+    border-left: 4px solid rgba(255,255,255,0.75);
+}
+
+/* Грамоты: верхний ряд (шаблон + выбор шрифта) на мобильных — компактно, без лишних переносов/пустот */
+#screen-admin-awards .award-top-row {
+    justify-content: flex-start;
+    align-items: stretch;
+}
+
+@media (max-width: 520px) {
+    #screen-admin-awards .award-top-row {
+        flex-direction: column;
+        gap: 8px;
+    }
 }
 
 .admin-useritem-name {
