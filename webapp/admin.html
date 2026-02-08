@@ -40,25 +40,6 @@
         <button class="btn btn-secondary" id="btn-reset-scores-stats">Сбросить всю статистику</button>
       </div>
 
-      <div class="level-card" style="margin:0; margin-top:12px;">
-        <div class="level-title">🧹 Очистить статистику одного пользователя</div>
-        <div class="level-stats muted">Выбери пользователя из списка ниже (можно искать по имени/фамилии).</div>
-
-        <div class="admin-row" style="margin-top:10px;">
-          <input id="stats-user-search" type="text" placeholder="Поиск: имя или фамилия" class="admin-input" />
-        </div>
-
-        <div class="level-stats" style="margin-top:10px;">
-          <div class="admin-selected" id="stats-user-selected">Не выбран</div>
-          <div id="stats-user-list" class="admin-userlist" aria-label="Список пользователей для очистки статистики"></div>
-          <input id="stats-reset-id" type="hidden" />
-        </div>
-
-        <div class="admin-actions" style="margin-top:12px;">
-          <button class="btn" id="btn-reset-user-stats" disabled>Очистить статистику выбранного</button>
-        </div>
-      </div>
-
       <div class="level-card" style="margin:0;">
         <div class="level-title">🏆 Все участники</div>
         <div class="level-stats">
@@ -100,41 +81,10 @@
 
       <div class="admin-actions" style="margin-top:12px;">
         <button class="btn" id="btn-refresh-users">Обновить</button>
-        <button class="btn btn-secondary" id="btn-open-users-view">Просмотр всех пользователей</button>
       </div>
 
       <div class="admin-actions" style="margin-top:14px;">
         <button class="btn btn-secondary" id="back-from-users">← Назад</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- USERS VIEW PAGE -->
-  <div id="screen-admin-users-view" class="screen admin-screen" aria-hidden="true">
-    <div class="admin-wrap">
-      <div class="admin-page-head">
-        <div class="admin-page-title">👥 Все пользователи</div>
-      </div>
-
-      <div class="level-card" style="margin:0;">
-        <div class="level-title">Список пользователей</div>
-        <div class="level-stats muted">Поиск по имени/фамилии.</div>
-
-        <div class="admin-row" style="margin-top:10px;">
-          <input id="users-view-search" type="text" placeholder="Поиск: имя или фамилия" class="admin-input" />
-        </div>
-
-        <div class="level-stats" style="margin-top:10px;">
-          <div id="users-view-list" class="admin-userlist" aria-label="Список всех пользователей"></div>
-        </div>
-      </div>
-
-      <div class="admin-actions" style="margin-top:12px;">
-        <button class="btn" id="btn-refresh-users-view">Обновить</button>
-      </div>
-
-      <div class="admin-actions" style="margin-top:14px;">
-        <button class="btn btn-secondary" id="back-from-users-view">← Назад</button>
       </div>
     </div>
   </div>
@@ -204,6 +154,7 @@
           <div class="admin-row" style="margin-top:10px;">
             <input id="awards-search" type="text" placeholder="Поиск: имя или фамилия" class="admin-input" />
           </div>
+          <div class="admin-selected" id="awards-selected">Не выбран</div>
           <div id="awards-list" class="admin-userlist" aria-label="Список пользователей для награждения"></div>
         </div>
 
