@@ -146,7 +146,7 @@ async def process_age(message: types.Message, state: FSMContext):
         await message.answer("Возраст должен быть числом. Попробуйте ещё раз.")
         return
 
-    if age < 0 or age > 100:
+    if age < 3 or age > 100:
         await message.answer("Возраст должен быть от 0 до 100. Попробуйте ещё раз.")
         return
 
