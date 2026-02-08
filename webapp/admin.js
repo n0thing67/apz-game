@@ -760,6 +760,7 @@ function renderAwardsListFromCache() {
       selectedDeleteId = null;
       $deleteId.value = "";
       await loadUsers();
+      alert("Пользователь был удалён");
     } catch (e) {
       alert("Ошибка: " + e.message);
     }
