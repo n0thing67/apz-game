@@ -22,8 +22,10 @@ from database.db import (
     get_user_profile,
     delete_user,
     reset_all_scores,
+    reset_user_scores,
     get_stats_reset_token,
     get_user_deleted_token,
+    get_user_reset_token,
 )
 
 
@@ -105,18 +107,14 @@ def _render_award_png(template_filename: str, full_name: str, event_name: str, e
     # 4) Дата на уровне "верхушки кубка" (примерно 70% высоты, с защитой от наложения)
     max_text_width = int(w * 0.78)
     gap = max(10, int(h * 0.02))
-    top_shift = 100  # сдвиг верхнего блока текста вниз (в пикселях)
 
     # Мероприятие (крупно, как ФИО)
     event_text = (event_name or "").strip()
-    # Мероприятие всегда в кавычках «...»
-    if event_text and not (event_text.startswith("«") and event_text.endswith("»")):
-        event_text = f"«{event_text}»"
     event_font = _fit_font(draw, event_text, bold_font_path, max_text_width, start_size=int(h * 0.05), min_size=26)
     event_bbox = draw.textbbox((0, 0), event_text, font=event_font)
     event_w = event_bbox[2] - event_bbox[0]
     event_h = event_bbox[3] - event_bbox[1]
-    event_y = int(h * 0.30) + top_shift
+    event_y = int(h * 0.30)
     draw.text(((w - event_w) / 2, event_y), event_text, font=event_font, fill=(20, 30, 45, 255))
 
     # Имя участника — крупно, сразу под мероприятием
@@ -234,6 +232,7 @@ async def handle_levels(request: web.Request) -> web.Response:
     uid_raw = request.query.get("uid")
     user_exists = None
     user_deleted_token = "0"
+    user_reset_token = "0"
     if uid_raw:
         try:
             uid = int(uid_raw)
@@ -241,9 +240,12 @@ async def handle_levels(request: web.Request) -> web.Response:
             user_exists = bool(user)
             if not user_exists:
                 user_deleted_token = await get_user_deleted_token(uid)
+            else:
+                user_reset_token = await get_user_reset_token(uid)
         except Exception:
             user_exists = None
             user_deleted_token = "0"
+            user_reset_token = "0"
 
     return web.json_response(
         {
@@ -252,6 +254,7 @@ async def handle_levels(request: web.Request) -> web.Response:
             "reset_token": reset_token,
             "user_exists": user_exists,
             "user_deleted_token": str(user_deleted_token or "0"),
+            "user_reset_token": str(user_reset_token or "0"),
         }
     )
 
@@ -283,6 +286,7 @@ async def handle_me(request: web.Request) -> web.Response:
                 "user": None,
                 "reset_token": reset_token,
                 "user_deleted_token": "0",
+                "user_reset_token": "0",
             }
         )
 
@@ -294,6 +298,8 @@ async def handle_me(request: web.Request) -> web.Response:
 
     # Метка удаления пользователя (если админ удалил его в панели) — нужна, чтобы очистить localStorage в WebApp.
     user_deleted_token = await get_user_deleted_token(tg_id)
+    # Метка сброса статистики пользователя (если админ очистил только его).
+    user_reset_token = await get_user_reset_token(tg_id)
 
     row = await get_user_profile(tg_id)
     if not row:
@@ -305,6 +311,7 @@ async def handle_me(request: web.Request) -> web.Response:
                 "user": None,
                 "reset_token": reset_token,
                 "user_deleted_token": user_deleted_token,
+                "user_reset_token": user_reset_token,
             }
         )
 
@@ -316,6 +323,7 @@ async def handle_me(request: web.Request) -> web.Response:
             "exists": True,
             "user_exists": True,
             "user_deleted_token": user_deleted_token,
+            "user_reset_token": user_reset_token,
             "user": {
                 "telegram_id": telegram_id,
                 "first_name": first_name,
@@ -376,6 +384,15 @@ async def admin_reset_scores(request: web.Request) -> web.Response:
     await _require_admin(request)
     await reset_all_scores()
     return web.json_response({"ok": True})
+
+
+async def admin_reset_user_scores(request: web.Request) -> web.Response:
+    """Сброс статистики одного пользователя (очки + профтест)."""
+    await _require_admin(request)
+    payload = await request.json()
+    tg_id = int(payload.get("telegram_id"))
+    await reset_user_scores(tg_id)
+    return web.json_response({"ok": True, "telegram_id": tg_id})
 
 
 async def admin_delete_user(request: web.Request) -> web.Response:
@@ -493,6 +510,7 @@ def create_app() -> web.Application:
 
     app.router.add_get("/api/admin/stats", admin_get_stats)
     app.router.add_post("/api/admin/reset_scores", admin_reset_scores)
+    app.router.add_post("/api/admin/reset_user_scores", admin_reset_user_scores)
     app.router.add_post("/api/admin/delete_user", admin_delete_user)
     app.router.add_post("/api/admin/set_level", admin_set_level)
     app.router.add_post("/api/admin/send_award", admin_send_award)
