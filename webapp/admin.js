@@ -51,7 +51,6 @@ async function init() {
   const $usersSelected = byId("users-selected");
   const $deleteId = byId("delete-id");
   const $btnDeleteUser = byId("btn-delete-user");
-  const $btnDeleteAllUsers = byId("btn-delete-all-users");
 
   // RESET USER STATS UI
   const $resetUserSearch = byId("reset-user-search");
@@ -761,27 +760,6 @@ function renderAwardsListFromCache() {
       selectedDeleteId = null;
       $deleteId.value = "";
       await loadUsers();
-    } catch (e) {
-      alert("Ошибка: " + e.message);
-    }
-  });
-
-  $btnDeleteAllUsers?.addEventListener("click", async () => {
-    const ok = confirm(
-      "⚠️ Это удалит ВСЕХ пользователей и их статистику. Действие необратимо. Продолжить?"
-    );
-    if (!ok) return;
-    try {
-      await api("/api/admin/delete_all_users", {
-        method: "POST",
-        body: JSON.stringify({}),
-      });
-      selectedDeleteId = null;
-      if ($deleteId) $deleteId.value = "";
-      if ($usersSelected) $usersSelected.textContent = "Не выбран";
-      if ($btnDeleteUser) $btnDeleteUser.disabled = true;
-      await loadUsers();
-      alert("Готово! Все пользователи удалены.");
     } catch (e) {
       alert("Ошибка: " + e.message);
     }
