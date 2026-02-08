@@ -222,6 +222,39 @@ if not _using_postgres:
         except Exception:
             return "0"
 
+    async def get_user_reset_token(tg_id: int) -> str:
+        """Метка сброса статистики конкретного пользователя.
+
+        Нужна, чтобы WebApp мог очистить localStorage только у одного пользователя,
+        не затрагивая остальных (в отличие от глобального stats_reset_token).
+        """
+        db = await get_db()
+        try:
+            async with db.execute(
+                "SELECT token FROM user_resets WHERE telegram_id = ?",
+                (int(tg_id),),
+            ) as cur:
+                row = await cur.fetchone()
+            return str(row[0]) if row and row[0] is not None else "0"
+        except Exception:
+            return "0"
+
+    async def _mark_user_reset(tg_id: int) -> str:
+        """Записывает метку сброса статистики пользователя и возвращает token."""
+        db = await get_db()
+        token = str(int(time.time() * 1000))
+        # Таблица может отсутствовать в старых БД — создаём лениво.
+        await db.execute(
+            "CREATE TABLE IF NOT EXISTS user_resets (telegram_id INTEGER PRIMARY KEY, token TEXT)",
+        )
+        await db.execute(
+            "INSERT INTO user_resets (telegram_id, token) VALUES (?, ?) "
+            "ON CONFLICT(telegram_id) DO UPDATE SET token = excluded.token",
+            (int(tg_id), token),
+        )
+        await db.commit()
+        return token
+
     async def _mark_user_deleted(tg_id: int) -> str:
         """Записывает метку удаления пользователя и возвращает token."""
         db = await get_db()
@@ -250,6 +283,20 @@ if not _using_postgres:
             "UPDATE app_meta SET value = ? WHERE key = 'stats_reset_token'",
             (str(int(time.time() * 1000)),),
         )
+        await db.commit()
+
+    async def reset_user_scores(tg_id: int) -> None:
+        """Сбросить очки и результат профтеста только у одного пользователя."""
+        db = await get_db()
+        await db.execute(
+            "UPDATE users SET score = 0, aptitude_top = NULL WHERE telegram_id = ?",
+            (int(tg_id),),
+        )
+        # Отмечаем сброс для WebApp (очистка localStorage только у этого пользователя)
+        try:
+            await _mark_user_reset(int(tg_id))
+        except Exception:
+            pass
         await db.commit()
 
     async def delete_all_users():
@@ -551,6 +598,41 @@ else:
                 )
         return str(row["token"]) if row and row["token"] is not None else "0"
 
+    async def get_user_reset_token(tg_id: int) -> str:
+        """Метка сброса статистики конкретного пользователя (PostgreSQL)."""
+        pool = await get_db()
+        async with pool.acquire() as conn:
+            try:
+                row = await conn.fetchrow(
+                    "SELECT token FROM user_resets WHERE telegram_id = $1",
+                    int(tg_id),
+                )
+            except Exception:
+                # Старые БД: таблицы ещё может не быть.
+                await conn.execute(
+                    "CREATE TABLE IF NOT EXISTS user_resets (telegram_id BIGINT PRIMARY KEY, token TEXT);"
+                )
+                row = await conn.fetchrow(
+                    "SELECT token FROM user_resets WHERE telegram_id = $1",
+                    int(tg_id),
+                )
+        return str(row["token"]) if row and row["token"] is not None else "0"
+
+    async def _mark_user_reset(tg_id: int) -> str:
+        """Записывает метку сброса статистики пользователя и возвращает token."""
+        pool = await get_db()
+        token = str(int(time.time() * 1000))
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "CREATE TABLE IF NOT EXISTS user_resets (telegram_id BIGINT PRIMARY KEY, token TEXT);"
+            )
+            await conn.execute(
+                "INSERT INTO user_resets(telegram_id, token) VALUES($1, $2) "
+                "ON CONFLICT (telegram_id) DO UPDATE SET token = EXCLUDED.token",
+                int(tg_id), token,
+            )
+        return token
+
     async def _mark_user_deleted(tg_id: int) -> str:
         pool = await get_db()
         token = str(int(time.time() * 1000))
@@ -582,6 +664,20 @@ else:
                 "UPDATE app_meta SET value = $1 WHERE key = 'stats_reset_token'",
                 str(int(time.time() * 1000)),
             )
+
+    async def reset_user_scores(tg_id: int) -> None:
+        """Сбросить очки и результат профтеста только у одного пользователя."""
+        pool = await get_db()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE users SET score = 0, aptitude_top = NULL WHERE telegram_id = $1",
+                int(tg_id),
+            )
+        # Отмечаем сброс для WebApp (очистка localStorage только у этого пользователя)
+        try:
+            await _mark_user_reset(int(tg_id))
+        except Exception:
+            pass
 
     async def delete_all_users():
         pool = await get_db()
