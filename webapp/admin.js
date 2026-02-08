@@ -45,13 +45,6 @@ async function init() {
   const $statsAll = byId("stats-all");
   const $levels = byId("levels");
 
-  // STATS (reset single user) UI
-  const $statsUserSearch = byId("stats-user-search");
-  const $statsUserList = byId("stats-user-list");
-  const $statsUserSelected = byId("stats-user-selected");
-  const $statsResetId = byId("stats-reset-id");
-  const $btnResetUserStats = byId("btn-reset-user-stats");
-
   // USERS (delete) UI
   const $usersSearch = byId("users-search");
   const $usersList = byId("users-list");
@@ -59,13 +52,10 @@ async function init() {
   const $deleteId = byId("delete-id");
   const $btnDeleteUser = byId("btn-delete-user");
 
-  // USERS VIEW UI
-  const $usersViewSearch = byId("users-view-search");
-  const $usersViewList = byId("users-view-list");
-
   // AWARDS UI
   const $awardsSearch = byId("awards-search");
   const $awardsList = byId("awards-list");
+  const $awardsSelected = byId("awards-selected");
   const $awardFontSelect = byId("award-font");
   const $awardFontMobile = byId("award-font-mobile");
   const $awardDate = byId("award-date");
@@ -75,7 +65,6 @@ async function init() {
     home: byId("screen-admin-home"),
     stats: byId("screen-admin-stats"),
     users: byId("screen-admin-users"),
-    usersView: byId("screen-admin-users-view"),
     levels: byId("screen-admin-levels"),
     awards: byId("screen-admin-awards"),
   };
@@ -290,7 +279,6 @@ async function init() {
   let usersCache = [];
   let selectedDeleteId = null;
   let selectedAwardId = null;
-  let selectedResetId = null;
 
   function norm(s) {
     return String(s || "")
@@ -365,38 +353,6 @@ async function init() {
     }
   }
 
-  function renderResetListFromCache() {
-    const filtered = filterUsers($statsUserSearch?.value, usersCache);
-    renderUsersList({
-      container: $statsUserList,
-      list: filtered,
-      selectedId: selectedResetId,
-      onSelect: (u) => {
-        selectedResetId = Number(u.telegram_id);
-        if ($statsResetId) $statsResetId.value = String(selectedResetId);
-        if ($statsUserSelected) $statsUserSelected.textContent = `${userTitle(u)} (ID: ${selectedResetId})`;
-        if ($btnResetUserStats) $btnResetUserStats.disabled = false;
-        renderResetListFromCache();
-      },
-    });
-
-    if (!selectedResetId) {
-      if ($statsUserSelected) $statsUserSelected.textContent = "Не выбран";
-      if ($btnResetUserStats) $btnResetUserStats.disabled = true;
-    }
-  }
-
-  function renderUsersViewListFromCache() {
-    const filtered = filterUsers($usersViewSearch?.value, usersCache);
-    // Рендерим тем же компонентом, но без выбора.
-    renderUsersList({
-      container: $usersViewList,
-      list: filtered,
-      selectedId: null,
-      onSelect: null,
-    });
-  }
-
   function renderAwardsListFromCache() {
     const filtered = filterUsers($awardsSearch?.value, usersCache);
     renderUsersList({
@@ -405,9 +361,14 @@ async function init() {
       selectedId: selectedAwardId,
       onSelect: (u) => {
         selectedAwardId = Number(u.telegram_id);
+        if ($awardsSelected) $awardsSelected.textContent = `${userTitle(u)} (ID: ${selectedAwardId})`;
         renderAwardsListFromCache();
       },
     });
+
+    if (!selectedAwardId) {
+      if ($awardsSelected) $awardsSelected.textContent = "Не выбран";
+    }
   }
 
   // --- Data loaders ---
@@ -478,16 +439,6 @@ async function init() {
     $statsAll.textContent = "…";
     const data = await api("/api/admin/stats");
 
-    // Используем единый кэш пользователей для выбора в разных экранах.
-    usersCache = (data.users || []).slice(0, 500);
-    // Если выбранного уже нет — сбросим
-    if (selectedResetId && !usersCache.some((u) => Number(u.telegram_id) === selectedResetId)) {
-      selectedResetId = null;
-      if ($statsResetId) $statsResetId.value = "";
-    }
-    renderResetListFromCache();
-    renderUsersViewListFromCache();
-
     const users = (data.users || []).slice();
     if (!users.length) {
       $statsAll.textContent = "Пока пусто";
@@ -514,7 +465,7 @@ async function init() {
 
   async function loadUsers() {
     const data = await api("/api/admin/stats");
-    usersCache = (data.users || []).slice(0, 500);
+    usersCache = (data.users || []).slice(0, 200);
 
     // если выбранного уже нет — сбросим
     if (selectedDeleteId && !usersCache.some((u) => Number(u.telegram_id) === selectedDeleteId)) {
@@ -523,19 +474,17 @@ async function init() {
     }
 
     renderDeleteListFromCache();
-    renderUsersViewListFromCache();
   }
 
   async function loadAwardsUsers() {
     const data = await api("/api/admin/stats");
-    usersCache = (data.users || []).slice(0, 500);
+    usersCache = (data.users || []).slice(0, 200);
 
     if (selectedAwardId && !usersCache.some((u) => Number(u.telegram_id) === selectedAwardId)) {
       selectedAwardId = null;
     }
 
     renderAwardsListFromCache();
-    renderUsersViewListFromCache();
   }
 
   async function loadLevels() {
@@ -668,27 +617,6 @@ async function init() {
   // --- STATS page actions ---
   byId("back-from-stats").addEventListener("click", () => showScreen("home"));
   byId("btn-refresh-stats").addEventListener("click", () => loadStats().catch((e) => alert(e.message)));
-  $statsUserSearch?.addEventListener("input", () => {
-    renderResetListFromCache();
-  });
-
-  $btnResetUserStats?.addEventListener("click", async () => {
-    const val = Number(($statsResetId?.value || "").trim());
-    if (!val) return;
-    const ok = confirm(`Очистить статистику только у выбранного пользователя (ID: ${val})?`);
-    if (!ok) return;
-    try {
-      await api("/api/admin/reset_user_scores", {
-        method: "POST",
-        body: JSON.stringify({ telegram_id: val }),
-      });
-      selectedResetId = null;
-      if ($statsResetId) $statsResetId.value = "";
-      await loadStats();
-    } catch (e) {
-      alert("Ошибка: " + e.message);
-    }
-  });
   byId("btn-reset-scores-stats").addEventListener("click", async () => {
     const ok = confirm("Точно сбросить всю статистику?");
     if (!ok) return;
@@ -703,12 +631,6 @@ async function init() {
   // --- USERS page actions ---
   byId("back-from-users").addEventListener("click", () => showScreen("home"));
   byId("btn-refresh-users").addEventListener("click", () => loadUsers().catch((e) => alert(e.message)));
-  byId("btn-open-users-view")?.addEventListener("click", () => {
-    showScreen("usersView");
-    // при открытии подгружаем актуальный список
-    loadUsers().catch(() => {});
-    renderUsersViewListFromCache();
-  });
 
   $usersSearch?.addEventListener("input", () => {
     // фильтрация без запроса на сервер
@@ -731,13 +653,6 @@ async function init() {
     } catch (e) {
       alert("Ошибка: " + e.message);
     }
-  });
-
-  // --- USERS VIEW page actions ---
-  byId("back-from-users-view")?.addEventListener("click", () => showScreen("users"));
-  byId("btn-refresh-users-view")?.addEventListener("click", () => loadUsers().catch((e) => alert(e.message)));
-  $usersViewSearch?.addEventListener("input", () => {
-    renderUsersViewListFromCache();
   });
 
   // --- LEVELS page actions ---
