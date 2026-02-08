@@ -21,6 +21,7 @@ from database.db import (
     get_user,
     get_user_profile,
     delete_user,
+    delete_all_users,
     reset_all_scores,
     reset_user_scores,
     get_stats_reset_token,
@@ -403,6 +404,13 @@ async def admin_delete_user(request: web.Request) -> web.Response:
     return web.json_response({"ok": True})
 
 
+async def admin_delete_all_users(request: web.Request) -> web.Response:
+    """Полная очистка таблицы users (все пользователи + их статистика)."""
+    await _require_admin(request)
+    await delete_all_users()
+    return web.json_response({"ok": True})
+
+
 async def admin_set_level(request: web.Request) -> web.Response:
     await _require_admin(request)
     payload = await request.json()
@@ -512,6 +520,7 @@ def create_app() -> web.Application:
     app.router.add_post("/api/admin/reset_scores", admin_reset_scores)
     app.router.add_post("/api/admin/reset_user_scores", admin_reset_user_scores)
     app.router.add_post("/api/admin/delete_user", admin_delete_user)
+    app.router.add_post("/api/admin/delete_all_users", admin_delete_all_users)
     app.router.add_post("/api/admin/set_level", admin_set_level)
     app.router.add_post("/api/admin/send_award", admin_send_award)
 
