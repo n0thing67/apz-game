@@ -387,14 +387,12 @@ const APTITUDE_QUESTIONS = [
       { t: 'Стараешься сделать красиво', s: 'CREATIVE' },
       { t: 'Делаешь вместе с кем‑то', s: 'SOCIAL' },
     ]},
-  // Формулировки без «…» и без местоимений — чтобы не было непонимания,
-  // когда порядок вопросов/ответов перемешивается.
-  { q: 'Что тебе интереснее?',
+  { q: 'Тебе интереснее…',
     a: [
-      { t: 'Разобраться, как всё устроено внутри', s: 'TECH' },
-      { t: 'Понять, почему и по каким правилам это работает', s: 'LOGIC' },
-      { t: 'Придумать, как это изменить и улучшить', s: 'CREATIVE' },
-      { t: 'Посмотреть, как люди этим пользуются и общаются', s: 'HUMAN' },
+      { t: 'Как устроены вещи внутри', s: 'TECH' },
+      { t: 'Почему и по каким правилам они работают', s: 'LOGIC' },
+      { t: 'Как их можно изменить и улучшить', s: 'CREATIVE' },
+      { t: 'Как люди ими пользуются и общаются', s: 'HUMAN' },
     ]},
   { q: 'В играх тебе нравится…',
     a: [
@@ -849,6 +847,36 @@ async function syncAptitudeWithServer() {
             }
         } catch (e) {}
 
+        // Локальный сброс только одного пользователя (через админку):
+        // токен приходит из /api/levels без initData, поэтому работает так же надёжно,
+        // как и отключение уровней.
+        try {
+            const serverUserReset = String(data?.user_reset_token ?? '0');
+            const localUserReset = String(localStorage.getItem(USER_RESET_TOKEN_KEY) ?? '0');
+            if (serverUserReset && serverUserReset !== localUserReset) {
+                try { localStorage.removeItem(STATS_KEY); } catch (e) {}
+                try { localStorage.removeItem(APTITUDE_STORAGE_KEY); } catch (e) {}
+                try { localStorage.setItem(USER_RESET_TOKEN_KEY, serverUserReset); } catch (e) {}
+                try { stats = {}; } catch (e) {}
+                try { clearAptitudeMenuRecommendations(); } catch (e) {}
+                try { renderLevelMenuStats(); } catch (e) {}
+            }
+        } catch (e) {}
+
+        // Если админ сбросил статистику ТОЛЬКО у этого пользователя —
+        // очищаем localStorage, не затрагивая остальных.
+        try {
+            const serverUserReset = String(data?.user_reset_token ?? '0');
+            const localUserReset = String(localStorage.getItem(USER_RESET_TOKEN_KEY) ?? '0');
+            if (serverUserReset && serverUserReset !== localUserReset) {
+                try { localStorage.removeItem(STATS_KEY); } catch (e) {}
+                try { localStorage.removeItem(APTITUDE_STORAGE_KEY); } catch (e) {}
+                try { localStorage.setItem(USER_RESET_TOKEN_KEY, serverUserReset); } catch (e) {}
+                try { stats = {}; } catch (e) {}
+                try { clearAptitudeMenuRecommendations(); } catch (e) {}
+            }
+        } catch (e) {}
+
         // 2) Частный случай: если пользователя удалили/сбросили и на сервере нет результата профтеста —
         // локальный localStorage может «сохранить» старый результат и показывать его после повторной регистрации.
         const serverTop = data?.user?.aptitude_top;
@@ -930,6 +958,21 @@ async function loadLevelAvailability() {
                 try { renderLevelMenuStats(); } catch (e) {}
             }
         } catch (e) {}
+
+        // Локальный сброс только одного пользователя (через админку).
+        try {
+            const serverUserReset = String(data?.user_reset_token ?? '0');
+            const localUserReset = String(localStorage.getItem(USER_RESET_TOKEN_KEY) ?? '0');
+            if (serverUserReset && serverUserReset !== localUserReset) {
+                try { localStorage.removeItem(STATS_KEY); } catch (e) {}
+                try { localStorage.removeItem(APTITUDE_STORAGE_KEY); } catch (e) {}
+                try { localStorage.setItem(USER_RESET_TOKEN_KEY, serverUserReset); } catch (e) {}
+                // сбрасываем in-memory, чтобы UI обновился сразу
+                try { stats = {}; } catch (e) {}
+                try { clearAptitudeMenuRecommendations(); } catch (e) {}
+                try { renderLevelMenuStats(); } catch (e) {}
+            }
+        } catch (e) {}
         LEVEL_AVAIL = data && data.levels ? data.levels : null;
     } catch (e) {
         LEVEL_AVAIL = null;
@@ -970,6 +1013,7 @@ function applyLevelAvailabilityToMenu() {
 const STATS_KEY = 'apzQuestStatsV1';
 const RESET_TOKEN_KEY = 'apzStatsResetTokenV1';
 const USER_DELETED_TOKEN_KEY = 'apzUserDeletedTokenV1';
+const USER_RESET_TOKEN_KEY = 'apzUserResetTokenV1';
 
 // Локальная статистика хранится в localStorage и должна сохраняться между запусками WebApp.
 // Сброс выполняется только по явному действию пользователя (кнопка "Сбросить статистику").
