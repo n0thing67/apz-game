@@ -109,10 +109,6 @@ def _render_award_png(template_filename: str, full_name: str, event_name: str, e
     max_text_width = int(w * 0.78)
     gap = max(10, int(h * 0.02))
 
-    # Для дипломов за 1–3 места опускаем ФИО и очки ниже на 50px (шаблон сертификата не трогаем)
-    extra_y = 50 if str(template_filename).lower() in {"1mesto.png", "2mesto.png", "3mesto.png"} else 0
-
-
     # Мероприятие (крупно, как ФИО)
     event_text = (event_name or "").strip()
     event_font = _fit_font(draw, event_text, bold_font_path, max_text_width, start_size=int(h * 0.05), min_size=26)
@@ -122,12 +118,16 @@ def _render_award_png(template_filename: str, full_name: str, event_name: str, e
     event_y = int(h * 0.30)
     draw.text(((w - event_w) / 2, event_y), event_text, font=event_font, fill=(20, 30, 45, 255))
 
+    # Для дипломов (1/2/3 место) по макету нужно опустить ФИО и очки ниже.
+    # Сертификат за участие (sertificat.png) оставляем неизменным.
+    y_offset = 100 if template_filename in {"1mesto.png", "2mesto.png", "3mesto.png"} else 0
+
     # Имя участника — крупно, сразу под мероприятием
     name_font = _fit_font(draw, full_name, bold_font_path, max_text_width, start_size=int(h * 0.05), min_size=28)
     name_bbox = draw.textbbox((0, 0), full_name, font=name_font)
     name_w = name_bbox[2] - name_bbox[0]
     name_h = name_bbox[3] - name_bbox[1]
-    name_y = event_y + event_h + gap + extra_y
+    name_y = event_y + event_h + gap + y_offset
     draw.text(((w - name_w) / 2, name_y), full_name, font=name_font, fill=(20, 30, 45, 255))
 
     # Очки участника — сразу под ФИО
