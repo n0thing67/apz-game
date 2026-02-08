@@ -3,6 +3,30 @@ import time
 import asyncio
 from pathlib import Path
 
+
+def _format_person_name(value: str | None) -> str | None:
+    """Нормализует имя/фамилию для отображения.
+
+    Пример: "иванов" -> "Иванов", "иванова-петрова" -> "Иванова-Петрова".
+    """
+    if value is None:
+        return None
+
+    s = str(value).strip()
+    if not s:
+        return s
+
+    # Убираем лишние пробелы/табуляции.
+    parts = [p for p in s.replace("\t", " ").split(" ") if p]
+
+    def _cap_token(tok: str) -> str:
+        # Поддержка двойных фамилий через дефис.
+        sub = [t for t in tok.split("-")]
+        sub = [t[:1].upper() + t[1:].lower() if t else "" for t in sub]
+        return "-".join(sub)
+
+    return " ".join(_cap_token(p) for p in parts)
+
 # Поддерживаем ДВА режима:
 # 1) PostgreSQL (рекомендуется) — если задана переменная окружения DATABASE_URL.
 #    Это даёт сохранность данных между полными перезапусками (в т.ч. на хостинге с эфемерной FS).
@@ -146,6 +170,8 @@ if not _using_postgres:
         await db.commit()
 
     async def register_user(tg_id, f_name, l_name, age):
+        f_name = _format_person_name(f_name)
+        l_name = _format_person_name(l_name)
         db = await get_db()
         await db.execute(
             '''
@@ -528,6 +554,8 @@ else:
                 )
 
     async def register_user(tg_id, f_name, l_name, age):
+        f_name = _format_person_name(f_name)
+        l_name = _format_person_name(l_name)
         pool = await get_db()
         async with pool.acquire() as conn:
             await conn.execute(
