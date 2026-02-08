@@ -764,6 +764,23 @@ function renderAwardsListFromCache() {
       alert("Ошибка: " + e.message);
     }
   });
+  byId("btn-delete-all-users")?.addEventListener("click", async () => {
+    const ok = confirm("Точно удалить ВСЕХ пользователей? Это действие необратимо.");
+    if (!ok) return;
+    const ok2 = confirm("Последнее предупреждение: будут удалены все пользователи и их статистика. Продолжить?");
+    if (!ok2) return;
+    try {
+      await api("/api/admin/delete_all_users", { method: "POST", body: "{}" });
+      selectedDeleteId = null;
+      if ($deleteId) $deleteId.value = "";
+      // Обновим списки и статистику
+      await Promise.all([loadUsers(), loadStats()]);
+      alert("Готово! Все пользователи удалены.");
+    } catch (e) {
+      alert("Ошибка: " + e.message);
+    }
+  });
+
 
   // --- LEVELS page actions ---
   byId("back-from-levels").addEventListener("click", () => showScreen("home"));
