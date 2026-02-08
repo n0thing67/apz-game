@@ -639,6 +639,8 @@ function renderAwardsListFromCache() {
       if (!(await checkAccess())) return;
       showScreen("stats");
       await loadStats();
+      // В окне "Статистика" теперь также есть блок очистки статистики пользователя.
+      await loadResetUsers();
     } catch (e) {
       alert(e.message);
     }
@@ -693,14 +695,8 @@ function renderAwardsListFromCache() {
 
   // --- STATS page actions ---
   byId("back-from-stats").addEventListener("click", () => showScreen("home"));
-  byId("btn-refresh-stats").addEventListener("click", () => loadStats().catch((e) => alert(e.message)));
-  byId("btn-reset-user-stats-open")?.addEventListener("click", async () => {
-    try {
-      showScreen("resetUserStats");
-      await loadResetUsers();
-    } catch (e) {
-      alert(e.message);
-    }
+  byId("btn-refresh-stats").addEventListener("click", () => {
+    Promise.all([loadStats(), loadResetUsers()]).catch((e) => alert(e.message));
   });
 
   byId("btn-reset-scores-stats").addEventListener("click", async () => {
