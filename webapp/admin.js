@@ -52,6 +52,18 @@ async function init() {
   const $deleteId = byId("delete-id");
   const $btnDeleteUser = byId("btn-delete-user");
 
+  // RESET USER STATS UI
+  const $resetUserSearch = byId("reset-user-search");
+  const $resetUserList = byId("reset-user-list");
+  const $resetUserSelected = byId("reset-user-selected");
+  const $resetUserId = byId("reset-user-id");
+  const $btnResetUserScores = byId("btn-reset-user-scores");
+
+  // USERS VIEW UI
+  const $usersViewSearch = byId("users-view-search");
+  const $usersViewList = byId("users-view-list");
+
+
   // AWARDS UI
   const $awardsSearch = byId("awards-search");
   const $awardsList = byId("awards-list");
@@ -67,6 +79,8 @@ async function init() {
     users: byId("screen-admin-users"),
     levels: byId("screen-admin-levels"),
     awards: byId("screen-admin-awards"),
+    resetUserStats: byId("screen-admin-reset-user-stats"),
+    usersView: byId("screen-admin-users-view"),
   };
 
   function showScreen(key) {
@@ -278,6 +292,7 @@ async function init() {
   // --- Users list helpers ---
   let usersCache = [];
   let selectedDeleteId = null;
+  let selectedResetId = null;
   let selectedAwardId = null;
 
   function norm(s) {
@@ -353,7 +368,39 @@ async function init() {
     }
   }
 
-  function renderAwardsListFromCache() {
+  
+  function renderResetUserListFromCache() {
+    const filtered = filterUsers($resetUserSearch?.value, usersCache);
+    renderUsersList({
+      container: $resetUserList,
+      list: filtered,
+      selectedId: selectedResetId,
+      onSelect: (u) => {
+        selectedResetId = Number(u.telegram_id);
+        if ($resetUserId) $resetUserId.value = String(selectedResetId);
+        if ($resetUserSelected) $resetUserSelected.textContent = `${userTitle(u)} (ID: ${selectedResetId})`;
+        if ($btnResetUserScores) $btnResetUserScores.disabled = false;
+        renderResetUserListFromCache();
+      },
+    });
+
+    if (!selectedResetId) {
+      if ($resetUserSelected) $resetUserSelected.textContent = "Не выбран";
+      if ($btnResetUserScores) $btnResetUserScores.disabled = true;
+    }
+  }
+
+  function renderUsersViewListFromCache() {
+    const filtered = filterUsers($usersViewSearch?.value, usersCache);
+    renderUsersList({
+      container: $usersViewList,
+      list: filtered,
+      selectedId: null,
+      onSelect: null,
+    });
+  }
+
+function renderAwardsListFromCache() {
     const filtered = filterUsers($awardsSearch?.value, usersCache);
     renderUsersList({
       container: $awardsList,
@@ -487,6 +534,25 @@ async function init() {
     renderAwardsListFromCache();
   }
 
+  async function loadResetUsers() {
+    const data = await api("/api/admin/stats");
+    usersCache = (data.users || []).slice(0, 500);
+
+    if (selectedResetId && !usersCache.some((u) => Number(u.telegram_id) === selectedResetId)) {
+      selectedResetId = null;
+      if ($resetUserId) $resetUserId.value = "";
+    }
+
+    renderResetUserListFromCache();
+  }
+
+  async function loadUsersView() {
+    const data = await api("/api/admin/stats");
+    usersCache = (data.users || []).slice(0, 500);
+    renderUsersViewListFromCache();
+  }
+
+
   async function loadLevels() {
     const levelsResp = await api("/api/levels");
     const levels = levelsResp.levels || {};
@@ -588,6 +654,17 @@ async function init() {
     }
   });
 
+  byId("go-users-view")?.addEventListener("click", async () => {
+    try {
+      if (!(await checkAccess())) return;
+      showScreen("usersView");
+      await loadUsersView();
+    } catch (e) {
+      alert(e.message);
+    }
+  });
+
+
   byId("go-levels").addEventListener("click", async () => {
     try {
       if (!(await checkAccess())) return;
@@ -617,6 +694,15 @@ async function init() {
   // --- STATS page actions ---
   byId("back-from-stats").addEventListener("click", () => showScreen("home"));
   byId("btn-refresh-stats").addEventListener("click", () => loadStats().catch((e) => alert(e.message)));
+  byId("btn-reset-user-stats-open")?.addEventListener("click", async () => {
+    try {
+      showScreen("resetUserStats");
+      await loadResetUsers();
+    } catch (e) {
+      alert(e.message);
+    }
+  });
+
   byId("btn-reset-scores-stats").addEventListener("click", async () => {
     const ok = confirm("Точно сбросить всю статистику?");
     if (!ok) return;
@@ -627,6 +713,34 @@ async function init() {
       alert("Ошибка: " + e.message);
     }
   });
+
+  // --- RESET USER STATS page actions ---
+  byId("back-from-reset-user-stats")?.addEventListener("click", () => showScreen("stats"));
+  byId("btn-refresh-reset-user")?.addEventListener("click", () => loadResetUsers().catch((e) => alert(e.message)));
+  $resetUserSearch?.addEventListener("input", () => renderResetUserListFromCache());
+
+  byId("btn-reset-user-scores")?.addEventListener("click", async () => {
+    if (!selectedResetId) return;
+    const u = usersCache.find((x) => Number(x.telegram_id) === selectedResetId);
+    const title = u ? userTitle(u) : String(selectedResetId);
+    const ok = confirm(`Точно очистить статистику у пользователя ${title}?`);
+    if (!ok) return;
+    try {
+      await api("/api/admin/reset_user_scores", {
+        method: "POST",
+        body: JSON.stringify({ telegram_id: selectedResetId }),
+      });
+      // обновим список/выбор
+      selectedResetId = null;
+      if ($resetUserId) $resetUserId.value = "";
+      renderResetUserListFromCache();
+      await loadStats();
+      alert("Готово! Статистика очищена.");
+    } catch (e) {
+      alert("Ошибка: " + e.message);
+    }
+  });
+
 
   // --- USERS page actions ---
   byId("back-from-users").addEventListener("click", () => showScreen("home"));
@@ -722,6 +836,12 @@ async function init() {
       btn.disabled = false;
     }
   });
+
+
+  // --- USERS VIEW page actions ---
+  byId("back-from-users-view")?.addEventListener("click", () => showScreen("home"));
+  byId("btn-refresh-users-view")?.addEventListener("click", () => loadUsersView().catch((e) => alert(e.message)));
+  $usersViewSearch?.addEventListener("input", () => renderUsersViewListFromCache());
 
   // Start: stay on home, verify access once
   showScreen("home");
