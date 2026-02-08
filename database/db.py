@@ -286,12 +286,30 @@ if not _using_postgres:
         await db.commit()
 
     async def reset_user_scores(tg_id: int) -> None:
-        """Сбросить очки и результат профтеста только у одного пользователя."""
+        """Сбросить статистику только у одного пользователя.
+
+        Помимо сброса score/aptitude_top ставим метку user_resets —
+        она используется WebApp для гарантированной очистки localStorage
+        (результаты игр, рекомендации, результат профтеста).
+
+        Дополнительно обновляем глобальную метку stats_reset_token.
+        Это делает поведение *максимально* совместимым со старым WebApp,
+        который мог слушать только общий reset_token.
+        """
         db = await get_db()
         await db.execute(
             "UPDATE users SET score = 0, aptitude_top = NULL WHERE telegram_id = ?",
             (int(tg_id),),
         )
+        # На всякий случай обновим глобальную метку сброса (как в reset_all_scores)
+        # чтобы любые клиенты с устаревшей логикой тоже очистили localStorage.
+        try:
+            await db.execute(
+                "UPDATE app_meta SET value = ? WHERE key = 'stats_reset_token'",
+                (str(int(time.time() * 1000)),),
+            )
+        except Exception:
+            pass
         # Отмечаем сброс для WebApp (очистка localStorage только у этого пользователя)
         try:
             await _mark_user_reset(int(tg_id))
@@ -302,24 +320,6 @@ if not _using_postgres:
     async def delete_all_users():
         db = await get_db()
         await db.execute("DELETE FROM users")
-        # Чистим служебные метки (иначе таблицы будут расти, а при полном удалении они уже не нужны)
-        try:
-            await db.execute("DELETE FROM user_resets")
-        except Exception:
-            pass
-        try:
-            await db.execute("DELETE FROM user_deletions")
-        except Exception:
-            pass
-        # Как и при общем сбросе статистики, меняем глобальную метку,
-        # чтобы WebApp гарантированно очистил localStorage у пользователей.
-        try:
-            await db.execute(
-                "UPDATE app_meta SET value = ? WHERE key = 'stats_reset_token'",
-                (str(int(time.time() * 1000)),),
-            )
-        except Exception:
-            pass
         await db.commit()
 
     # Admin helpers
@@ -684,33 +684,22 @@ else:
             )
 
     async def reset_user_scores(tg_id: int) -> None:
-        """Сбросить очки и результат профтеста только у одного пользователя."""
+        """Сбросить статистику только у одного пользователя (PostgreSQL).
+
+        Помимо сброса score/aptitude_top ставим метку user_resets —
+        она используется WebApp для гарантированной очистки localStorage
+        (результаты игр, рекомендации, результат профтеста).
+
+        Дополнительно обновляем stats_reset_token в app_meta для совместимости
+        со старыми клиентами, которые могли слушать только общий reset_token.
+        """
         pool = await get_db()
         async with pool.acquire() as conn:
             await conn.execute(
                 "UPDATE users SET score = 0, aptitude_top = NULL WHERE telegram_id = $1",
                 int(tg_id),
             )
-        # Отмечаем сброс для WebApp (очистка localStorage только у этого пользователя)
-        try:
-            await _mark_user_reset(int(tg_id))
-        except Exception:
-            pass
-
-    async def delete_all_users():
-        pool = await get_db()
-        async with pool.acquire() as conn:
-            await conn.execute("DELETE FROM users")
-            # Чистим служебные таблицы, если они есть
-            try:
-                await conn.execute("DELETE FROM user_resets")
-            except Exception:
-                pass
-            try:
-                await conn.execute("DELETE FROM user_deletions")
-            except Exception:
-                pass
-            # Обновляем глобальную метку сброса — как при «Сбросить всю статистику».
+            # Совместимость: обновим глобальную метку сброса так же, как в reset_all_scores.
             try:
                 await conn.execute(
                     "CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY, value TEXT);"
@@ -724,6 +713,16 @@ else:
                 )
             except Exception:
                 pass
+        # Отмечаем сброс для WebApp (очистка localStorage только у этого пользователя)
+        try:
+            await _mark_user_reset(int(tg_id))
+        except Exception:
+            pass
+
+    async def delete_all_users():
+        pool = await get_db()
+        async with pool.acquire() as conn:
+            await conn.execute("DELETE FROM users")
 
     async def get_all_users(limit: int = 200):
         pool = await get_db()
