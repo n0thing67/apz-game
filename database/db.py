@@ -302,6 +302,24 @@ if not _using_postgres:
     async def delete_all_users():
         db = await get_db()
         await db.execute("DELETE FROM users")
+        # Чистим служебные метки (иначе таблицы будут расти, а при полном удалении они уже не нужны)
+        try:
+            await db.execute("DELETE FROM user_resets")
+        except Exception:
+            pass
+        try:
+            await db.execute("DELETE FROM user_deletions")
+        except Exception:
+            pass
+        # Как и при общем сбросе статистики, меняем глобальную метку,
+        # чтобы WebApp гарантированно очистил localStorage у пользователей.
+        try:
+            await db.execute(
+                "UPDATE app_meta SET value = ? WHERE key = 'stats_reset_token'",
+                (str(int(time.time() * 1000)),),
+            )
+        except Exception:
+            pass
         await db.commit()
 
     # Admin helpers
@@ -683,6 +701,29 @@ else:
         pool = await get_db()
         async with pool.acquire() as conn:
             await conn.execute("DELETE FROM users")
+            # Чистим служебные таблицы, если они есть
+            try:
+                await conn.execute("DELETE FROM user_resets")
+            except Exception:
+                pass
+            try:
+                await conn.execute("DELETE FROM user_deletions")
+            except Exception:
+                pass
+            # Обновляем глобальную метку сброса — как при «Сбросить всю статистику».
+            try:
+                await conn.execute(
+                    "CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY, value TEXT);"
+                )
+                await conn.execute(
+                    "INSERT INTO app_meta(key, value) VALUES('stats_reset_token', '0') ON CONFLICT (key) DO NOTHING"
+                )
+                await conn.execute(
+                    "UPDATE app_meta SET value = $1 WHERE key = 'stats_reset_token'",
+                    str(int(time.time() * 1000)),
+                )
+            except Exception:
+                pass
 
     async def get_all_users(limit: int = 200):
         pool = await get_db()
