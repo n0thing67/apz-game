@@ -1357,7 +1357,8 @@ function showScreen(screenId) {
     // Кнопка звука показывается только на экранах меню (приветствие + выбор уровней + тест)
     const soundBtn = document.getElementById('btn-sound-toggle');
     if (soundBtn) {
-        const showSound = (screenId === 'screen-welcome' || screenId === 'screen-levels' || isAptitudeTest || isAptitudeResult);
+        const isLevelScreen = /^screen-level[1-4]$/.test(screenId);
+        const showSound = (screenId === 'screen-welcome' || screenId === 'screen-levels' || isAptitudeTest || isAptitudeResult || isLevelScreen);
         soundBtn.classList.toggle('hidden', !showSound);
     }
 }
@@ -2501,62 +2502,7 @@ const SIZE = 4;
 // Предвычисляем позиции для ускорения (чтобы не считать в цикле)
 const TILE_OFFSET = 10;
 const TILE_STEP = 72.5;
-// Позиции в px строкой (для CSS переменных)
 const TILE_POS = Array.from({ length: SIZE }, (_, i) => (TILE_OFFSET + i * TILE_STEP) + 'px');
-
-// PERF: адаптивное качество (включаем только если реально проседает FPS)
-let lowPerf2048 = false;
-let perf2048Bad = 0;
-let perf2048Good = 0;
-let perf2048Sampling = false;
-
-function setLowPerf2048(v) {
-    v = !!v;
-    if (lowPerf2048 === v) return;
-    lowPerf2048 = v;
-    // Визуально на сильных устройствах ничего не меняется — этот режим не включится.
-    document.body.classList.toggle('low-perf', lowPerf2048);
-}
-
-function samplePerf2048() {
-    if (perf2048Sampling) return;
-    perf2048Sampling = true;
-
-    // Сэмплим короткое окно (несколько кадров) прямо во время/сразу после анимации.
-    // Если кадры тяжёлые — включаем low-perf (убираем тяжёлые тени и т.п.).
-    const FRAMES = 12;
-    let framesLeft = FRAMES;
-    let last = performance.now();
-    let worst = 0;
-
-    function step(now) {
-        const dt = now - last;
-        last = now;
-        if (dt > worst) worst = dt;
-
-        framesLeft--;
-        if (framesLeft > 0) {
-            requestAnimationFrame(step);
-            return;
-        }
-
-        // Грубые пороги + гистерезис, чтобы режим не "мигал"
-        if (worst > 34) { // ~<29fps
-            perf2048Bad++;
-            perf2048Good = Math.max(0, perf2048Good - 1);
-        } else if (worst < 22) { // ~>45fps
-            perf2048Good++;
-            perf2048Bad = Math.max(0, perf2048Bad - 1);
-        }
-
-        if (!lowPerf2048 && perf2048Bad >= 2) setLowPerf2048(true);
-        if (lowPerf2048 && perf2048Good >= 8) setLowPerf2048(false);
-
-        perf2048Sampling = false;
-    }
-
-    requestAnimationFrame(step);
-}
 
 // Кэшируем DOM элементы, чтобы не искать их каждый раз
 const gridContainer = document.getElementById('grid-container');
@@ -2587,9 +2533,6 @@ function init2048() {
     overlay2048Victory.classList.remove('visible');
 
     gridContainer.innerHTML = '';
-    // Сбрасываем режим качества при новом старте, дальше он сам подстроится
-    perf2048Bad = 0; perf2048Good = 0;
-    setLowPerf2048(false);
 
     // Создаем фоновые клетки один раз
     const fragment = document.createDocumentFragment();
@@ -2621,19 +2564,16 @@ function addRandomTile() {
     // Очищаем массив без создания нового
     emptyCells.length = 0;
 
-    // PERF: вместо объектов используем целочисленный индекс (меньше мусора для GC)
     for(let r=0; r<SIZE; r++) {
         for(let c=0; c<SIZE; c++) {
-            if(board2048[r][c] === null) emptyCells.push((r << 2) | c);
+            if(board2048[r][c] === null) emptyCells.push({r, c});
         }
     }
 
     if(emptyCells.length > 0) {
         const rand = emptyCells[Math.floor(Math.random() * emptyCells.length)];
-        const rr = rand >> 2;
-        const cc = rand & 3;
         const val = Math.random() < 0.9 ? 2 : 4;
-        createTile(rr, cc, val);
+        createTile(rand.r, rand.c, val);
         playSfx('2048-plastic');
     }
 }
@@ -2641,9 +2581,9 @@ function addRandomTile() {
 function createTile(r, c, val) {
     const tileDom = document.createElement('div');
     tileDom.className = `tile tile-${val} tile-new`;
-    // PERF: позиционируем плитки только через transform (CSS vars), без top/left
-    tileDom.style.setProperty('--ty', TILE_POS[r]);
-    tileDom.style.setProperty('--tx', TILE_POS[c]);
+    // Используем предвычисленные позиции
+    tileDom.style.top = TILE_POS[r];
+    tileDom.style.left = TILE_POS[c];
 
     gridContainer.appendChild(tileDom);
     board2048[r][c] = { val: val, dom: tileDom, merged: false };
@@ -2726,20 +2666,12 @@ function moveTiles(dr, dc) {
     }
 
     if (moved) {
-        // PERF: включаем will-change только на время анимации
-        gridContainer.classList.add('animating');
-
         // Звук хода (сначала скольжение, затем при наличии — pop за объединение)
         playSfx('2048-slide');
         if (mergedThisMove) playSfx('2048-pop');
-
-        // PERF: замеряем, есть ли просадки. На сильных устройствах low-mode не включится.
-        samplePerf2048();
-
         setTimeout(() => {
             addRandomTile();
             check2048Status();
-            gridContainer.classList.remove('animating');
         }, 150);
     } else {
         check2048Status();
@@ -2747,9 +2679,9 @@ function moveTiles(dr, dc) {
 }
 
 function updateTilePosition(tile, r, c) {
-    // PERF: только CSS переменные, без top/left (не триггерим layout)
-    tile.dom.style.setProperty('--ty', TILE_POS[r]);
-    tile.dom.style.setProperty('--tx', TILE_POS[c]);
+    // Используем кэшированные значения координат
+    tile.dom.style.top = TILE_POS[r];
+    tile.dom.style.left = TILE_POS[c];
 }
 
 function check2048Status() {
