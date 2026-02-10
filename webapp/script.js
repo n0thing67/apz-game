@@ -1080,6 +1080,45 @@ try { localStorage.removeItem(APTITUDE_STORAGE_KEY); } catch (e) {}
     renderLevelMenuStats();
 }
 
+// Подтверждение очистки статистики из меню уровней.
+// Требование: перед сбросом показываем окно подтверждения.
+function confirmResetStats() {
+    const msg =
+        'Очистить статистику?\n\n' +
+        'Будут удалены результаты игр и данные теста «Что тебе подходит?» на этом устройстве.';
+
+    // Telegram WebApp: показываем системный popup с подтверждением.
+    if (tg?.showPopup) {
+        try {
+            tg.showPopup(
+                {
+                    message: msg,
+                    buttons: [
+                        { id: 'reset', type: 'default', text: 'Очистить' },
+                        { id: 'cancel', type: 'cancel', text: 'Отмена' }
+                    ]
+                },
+                (btnId) => {
+                    if (btnId === 'reset') resetAllStats();
+                }
+            );
+            return;
+        } catch (e) {}
+    }
+
+    // Фолбэк (браузер/не Telegram): стандартный confirm.
+    try {
+        if (typeof confirm === 'function') {
+            const ok = confirm('Очистить статистику?\n\nЭто действие удалит результаты игр и теста на этом устройстве.');
+            if (ok) resetAllStats();
+            return;
+        }
+    } catch (e) {}
+
+    // Если ни confirm ни popup недоступны — просто выполняем действие.
+    resetAllStats();
+}
+
 function notify(msg) {
     try {
         if (tg?.showPopup) {
@@ -3133,7 +3172,7 @@ window.addEventListener('DOMContentLoaded', () => {
         } else if (action === 'show-levels') {
             exitToLevels();
         } else if (action === 'reset-stats') {
-            resetAllStats();
+            confirmResetStats();
         } else if (action === 'save-stats') {
             exportStats();
         } else if (action === 'final-send-stats') {
