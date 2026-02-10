@@ -957,6 +957,8 @@ body.admin-body {
     padding: 10px;
     box-sizing: border-box;
     touch-action: manipulation;
+    /* PERF: изоляция области, чтобы перерисовка не затрагивала всю страницу */
+    contain: layout paint style;
 }
 
 .grid-cell {
@@ -984,8 +986,11 @@ body.admin-body {
     color: transparent;
     font-size: 0;
 
-    /* Анимация движения */
-    transition: left 0.15s ease-in-out, top 0.15s ease-in-out, transform 0.1s;
+    /* PERF: движение плиток только через transform (без top/left), дешевле на мобилках */
+    top: 0;
+    left: 0;
+    transform: translate3d(var(--tx, 0px), var(--ty, 0px), 0);
+    transition: transform 0.15s ease-in-out;
 }
 
 /* Анимации появления и слияния */
@@ -993,13 +998,26 @@ body.admin-body {
 .tile-merged { animation: pop 0.2s ease; z-index: 20; }
 
 @keyframes appear {
-    0% { opacity: 0; transform: scale(0); }
-    100% { opacity: 1; transform: scale(1); }
+    0% { opacity: 0; transform: translate3d(var(--tx, 0px), var(--ty, 0px), 0) scale(0); }
+    100% { opacity: 1; transform: translate3d(var(--tx, 0px), var(--ty, 0px), 0) scale(1); }
 }
 @keyframes pop {
-    0% { transform: scale(0.8); }
-    50% { transform: scale(1.1); }
-    100% { transform: scale(1); }
+    0% { transform: translate3d(var(--tx, 0px), var(--ty, 0px), 0) scale(0.8); }
+    50% { transform: translate3d(var(--tx, 0px), var(--ty, 0px), 0) scale(1.1); }
+    100% { transform: translate3d(var(--tx, 0px), var(--ty, 0px), 0) scale(1); }
+}
+
+/* PERF: will-change включаем только на время анимации */
+#grid-container.animating .tile { will-change: transform; }
+
+/* PERF: адаптивное упрощение эффектов на слабых устройствах */
+body.low-perf #grid-container { border-radius: 8px; }
+body.low-perf .tile {
+    box-shadow: none;
+    border: 1px solid rgba(0,0,0,0.12);
+}
+body.low-perf .tile-256 {
+    box-shadow: none;
 }
 
 /* === ПРИВЯЗКА КАРТИНОК И ЦВЕТОВ (NEON & BRIGHT) === */
