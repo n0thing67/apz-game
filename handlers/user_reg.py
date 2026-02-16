@@ -30,9 +30,82 @@ router = Router()
 raw_admins = os.getenv("ADMIN_IDS", "")
 ADMIN_IDS = {int(x.strip()) for x in raw_admins.split(",") if x.strip().isdigit()}
 
+# Канал/чат для уведомлений администратора (например, канал, где бот — админ)
+raw_admin_channel = os.getenv("ADMIN_CHANNEL_ID", os.getenv("ADMIN_CHAT_ID", "")).strip()
+ADMIN_CHANNEL_ID = int(raw_admin_channel) if raw_admin_channel.lstrip('-').isdigit() else None
+
+
 
 def is_admin(user_id: int) -> bool:
     return user_id in ADMIN_IDS
+
+
+def _is_technical_aptitude(value: str | None) -> bool:
+    if not value:
+        return False
+    v = str(value).strip()
+    if not v:
+        return False
+    v_low = v.lower()
+    return (
+        v == "TECH"
+        or v_low in {
+            "техническое направление",
+            "техническое мышление",
+            "technical",
+            "tech",
+        }
+    )
+
+
+async def _notify_admins_about_technical(message: types.Message, user_id: int) -> None:
+    """Отправляет в админ-канал (или админам в ЛС) ник и зарегистрированное имя пользователя.
+
+    Вызывается ТОЛЬКО когда ведущий профиль стал техническим.
+    """
+    try:
+        user = await get_user(user_id)
+    except Exception:
+        user = None
+
+    reg_name = ""
+    if user:
+        _tid, fname, lname, _age, _score = user
+        reg_name = f"{fname} {lname}".strip()
+
+    tg_username = getattr(message.from_user, "username", None)
+    if tg_username:
+        tg_part = f"@{tg_username}"
+    else:
+        # если нет username — даём удобную ссылку по id
+        tg_part = f"tg://user?id={user_id}"
+
+    name_part = reg_name or (getattr(message.from_user, "full_name", "") or "").strip() or "(имя не указано)"
+
+    text = (
+        "🧠 Профориентация: *техническое направление*\n"
+        f"👤 {name_part}\n"
+        f"🔗 {tg_part}\n"
+        f"🆔 {user_id}"
+    )
+
+    bot = message.bot
+
+    # 1) если задан канал/чат — шлём туда
+    if ADMIN_CHANNEL_ID is not None:
+        try:
+            await bot.send_message(ADMIN_CHANNEL_ID, text, parse_mode="Markdown")
+            return
+        except Exception:
+            # если не получилось (бот не админ/не добавлен) — упадём на ЛС админам
+            pass
+
+    # 2) fallback: ЛС всем админам
+    for admin_id in ADMIN_IDS:
+        try:
+            await bot.send_message(admin_id, text, parse_mode="Markdown")
+        except Exception:
+            continue
 
 
 # --- FSM регистрация ---
@@ -188,8 +261,20 @@ async def handle_web_app_data(message: types.Message):
     if isinstance(aptitude_top, str):
         aptitude_top = aptitude_top.strip() or None
 
+    prev_aptitude = None
+    try:
+        from database.db import get_user_profile
+        prof = await get_user_profile(user_id)
+        if prof:
+            prev_aptitude = prof[5]  # aptitude_top
+    except Exception:
+        prev_aptitude = None
+
     if aptitude_top is not None:
         await update_aptitude_top(user_id, aptitude_top)
+        # Уведомляем админов только при переходе в техническое направление
+        if _is_technical_aptitude(aptitude_top) and not _is_technical_aptitude(prev_aptitude):
+            await _notify_admins_about_technical(message, user_id)
 
     if score_raw is not None:
         await update_score(user_id, score)
