@@ -84,12 +84,9 @@ async def _notify_admins_about_technical(message: types.Message, user_id: int) -
     name_part = reg_name or (getattr(message.from_user, "full_name", "") or "").strip() or "(имя не указано)"
 
     text = (
-        "🧠 Профориентация: <b>техническое направление</b>
-"
-        f"👤 <b>{html.escape(name_part)}</b>
-"
-        f"🔗 <b>{html.escape(tg_part)}</b>
-"
+        "🧠 Профориентация: <b>техническое направление</b>"
+        f"👤 <b>{html.escape(name_part)}</b>"
+        f"🔗 <b>{html.escape(tg_part)}</b>"
         f"🆔 <code>{user_id}</code>"
     )
 
