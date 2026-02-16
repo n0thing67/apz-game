@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import html
 
 from aiogram import Router, F, types
 from aiogram.filters import Command
@@ -83,10 +84,13 @@ async def _notify_admins_about_technical(message: types.Message, user_id: int) -
     name_part = reg_name or (getattr(message.from_user, "full_name", "") or "").strip() or "(имя не указано)"
 
     text = (
-        "🧠 Профориентация: *техническое направление*\n"
-        f"👤 {name_part}\n"
-        f"🔗 {tg_part}\n"
-        f"🆔 {user_id}"
+        "🧠 Профориентация: <b>техническое направление</b>
+"
+        f"👤 <b>{html.escape(name_part)}</b>
+"
+        f"🔗 <b>{html.escape(tg_part)}</b>
+"
+        f"🆔 <code>{user_id}</code>"
     )
 
     bot = message.bot
@@ -94,7 +98,7 @@ async def _notify_admins_about_technical(message: types.Message, user_id: int) -
     # 1) если задан канал/чат — шлём туда
     if ADMIN_CHANNEL_ID is not None:
         try:
-            await bot.send_message(ADMIN_CHANNEL_ID, text, parse_mode="Markdown")
+            await bot.send_message(ADMIN_CHANNEL_ID, text, parse_mode="HTML")
             return
         except Exception:
             # если не получилось (бот не админ/не добавлен) — упадём на ЛС админам
@@ -103,7 +107,7 @@ async def _notify_admins_about_technical(message: types.Message, user_id: int) -
     # 2) fallback: ЛС всем админам
     for admin_id in ADMIN_IDS:
         try:
-            await bot.send_message(admin_id, text, parse_mode="Markdown")
+            await bot.send_message(admin_id, text, parse_mode="HTML")
         except Exception:
             continue
 
@@ -171,7 +175,7 @@ async def cmd_start(message: types.Message, state: FSMContext):
         "Добро пожаловать на АПЗ! Для начала работы, пожалуйста, представьтесь.\n"
         "✍️ Введите *Имя и Фамилию* одним сообщением (через пробел).\n"
         "Пример: Иван Иванов",
-        parse_mode="Markdown",
+        parse_mode="HTML",
     )
     await state.set_state(RegState.waiting_for_fullname)
 
@@ -185,7 +189,7 @@ async def process_fullname(message: types.Message, state: FSMContext):
         await message.answer(
             "❌ Нужно ввести *Имя и Фамилию* через пробел.\n"
             "Пример: Иван Иванов",
-            parse_mode="Markdown",
+            parse_mode="HTML",
         )
         return
 
@@ -272,8 +276,8 @@ async def handle_web_app_data(message: types.Message):
 
     if aptitude_top is not None:
         await update_aptitude_top(user_id, aptitude_top)
-        # Уведомляем админов только при переходе в техническое направление
-        if _is_technical_aptitude(aptitude_top) and not _is_technical_aptitude(prev_aptitude):
+        # Уведомляем админов каждый раз, когда итог профтеста — техническое направление
+        if _is_technical_aptitude(aptitude_top):
             await _notify_admins_about_technical(message, user_id)
 
     if score_raw is not None:
