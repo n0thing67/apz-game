@@ -221,6 +221,42 @@ if not _using_postgres:
         ) as cursor:
             return await cursor.fetchone()
 
+    async def get_user_rank(tg_id: int):
+        """Возвращает место пользователя в рейтинге по очкам.
+
+        Ранг считается как 1 + число пользователей с очками строго больше.
+        При одинаковых очках пользователи делят одно и то же место.
+
+        Returns:
+            tuple(rank:int, total:int) или None, если пользователя нет.
+        """
+        db = await get_db()
+
+        # Очки текущего пользователя
+        async with db.execute(
+            "SELECT score FROM users WHERE telegram_id = ?",
+            (int(tg_id),),
+        ) as cur:
+            row = await cur.fetchone()
+        if not row:
+            return None
+        score = int(row[0] or 0)
+
+        # Общее число пользователей
+        async with db.execute("SELECT COUNT(*) FROM users") as cur:
+            total_row = await cur.fetchone()
+        total = int(total_row[0] or 0) if total_row else 0
+
+        # Место: 1 + количество пользователей с бОльшим счётом
+        async with db.execute(
+            "SELECT COUNT(*) FROM users WHERE score > ?",
+            (score,),
+        ) as cur:
+            higher_row = await cur.fetchone()
+        higher = int(higher_row[0] or 0) if higher_row else 0
+
+        return (higher + 1, total)
+
     async def get_stats_reset_token() -> str:
         db = await get_db()
         try:
@@ -618,6 +654,36 @@ else:
             row["score"],
             row.get("aptitude_top"),
         )
+
+    async def get_user_rank(tg_id: int):
+        """Возвращает место пользователя в рейтинге по очкам.
+
+        Ранг считается как 1 + число пользователей с очками строго больше.
+        При одинаковых очках пользователи делят одно и то же место.
+
+        Returns:
+            tuple(rank:int, total:int) или None, если пользователя нет.
+        """
+        pool = await get_db()
+        async with pool.acquire() as conn:
+            score_row = await conn.fetchrow(
+                "SELECT score FROM users WHERE telegram_id = $1",
+                int(tg_id),
+            )
+            if score_row is None:
+                return None
+            score = int(score_row["score"] or 0)
+
+            total_row = await conn.fetchrow("SELECT COUNT(*) AS cnt FROM users")
+            total = int(total_row["cnt"] or 0) if total_row else 0
+
+            higher_row = await conn.fetchrow(
+                "SELECT COUNT(*) AS cnt FROM users WHERE score > $1",
+                score,
+            )
+            higher = int(higher_row["cnt"] or 0) if higher_row else 0
+
+        return (higher + 1, total)
 
     async def get_stats_reset_token() -> str:
         pool = await get_db()
