@@ -259,6 +259,14 @@ async def cmd_stats(message: types.Message):
 
     _tid, fname, lname, _age, score = user
 
+    # Рейтинг (место среди всех пользователей по очкам)
+    rank_info = None
+    try:
+        from database.db import get_user_rank
+        rank_info = await get_user_rank(tg_id)
+    except Exception:
+        rank_info = None
+
     aptitude_top = None
     if profile and len(profile) >= 6:
         aptitude_top = profile[5]
@@ -277,6 +285,11 @@ async def cmd_stats(message: types.Message):
         f"👤 {fname} {lname}",
         f"⭐️ Очки: {score}",
     ]
+
+    if rank_info:
+        rank, total = rank_info
+        if total and total > 0:
+            lines.append(f"🏆 Рейтинг: {rank} из {total}")
     if aptitude_top:
         emoji, label = APT_LABEL.get(aptitude_top, ("🧠", str(aptitude_top)))
         lines.append(f'{emoji} {label}')
