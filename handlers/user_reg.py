@@ -265,6 +265,20 @@ async def handle_web_app_data(message: types.Message):
 
     user_id = message.from_user.id
 
+    # Если админ удалил пользователя из БД, у него всё равно могла остаться старая кнопка
+    # «Зайти на завод». В этом случае НЕ сохраняем результат и просим пройти /start.
+    # Логику игры/уровней не трогаем — просто блокируем запись в БД и не показываем кнопку статистики.
+    try:
+        user = await get_user(user_id)
+    except Exception:
+        user = None
+    if not user:
+        await message.answer(
+            "⚠️ Ваш профиль не найден (возможно, он был удалён администратором).\n"
+            "Нажмите /start, чтобы зарегистрироваться заново."
+        )
+        return
+
     # 1) Очки за игру (старый формат)
     score_raw = data.get("score", None)
     score = 0
