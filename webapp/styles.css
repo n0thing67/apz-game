@@ -1770,7 +1770,7 @@ hr {
     margin-left: auto;
     margin-right: auto;
 
-    transform: translateY(30px);
+    transform: translateY(0px);
 }
 
 /* ===== Персонажи ===== */
@@ -1861,7 +1861,7 @@ hr {
         gap: 12px;
         max-width: 380px;
         margin-top: 14px;
-        transform: translateY(70px);
+        transform: translateY(40px);
     }
 
     /* уменьшаем разнос персонажей, чтобы ничего не уезжало за края */
