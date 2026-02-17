@@ -363,12 +363,9 @@ async def _send_stats(message: types.Message, tg_id: int) -> None:
 
     user = await get_user(tg_id)
     if not user:
-        await message.answer(
-            "Похоже, ты ещё не зарегистрирован(а).\n"
-            "Нажми /start и пройди регистрацию, а потом нажми «Статистика»."
-            ,
-            reply_markup=stats_inline_keyboard(),
-        )
+        # Не показываем сообщения про регистрацию и не дублируем кнопку.
+        # Если данных ещё нет — просто сообщаем, что статистика недоступна.
+        await message.answer("📊 Статистика пока недоступна.")
         return
 
     _tid, fname, lname, _age, score = user
@@ -418,5 +415,11 @@ async def _send_stats(message: types.Message, tg_id: int) -> None:
 async def cb_stats(callback: types.CallbackQuery):
     # Статистика открывается по инлайн-кнопке.
     await callback.answer()
+
+    # Убираем кнопку с исходного сообщения (чтобы не появлялись «лишние» кнопки после нажатия)
     if callback.message:
+        try:
+            await callback.message.edit_reply_markup(reply_markup=None)
+        except Exception:
+            pass
         await _send_stats(callback.message, callback.from_user.id)
