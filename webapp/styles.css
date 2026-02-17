@@ -33,6 +33,13 @@ body {
         min-height: 100vh;
         min-height: 100dvh;
     }
+
+    /* На приветствии хотим "как на ПК": центр по вертикали.
+       Для проблемных экранов (финал/уровни) остаётся прижим к верху. */
+    #screen-welcome.screen.active{
+        margin-top: auto;
+        margin-bottom: auto;
+    }
 }
 
 /* PERF: blur/backdrop-filter очень дорогой на мобилках (особенно iOS).
@@ -1810,10 +1817,53 @@ hr {
 }
 
 
-/* Mobile tweaks */
+/* Mobile tweaks
+   На очень узких экранах предыдущие значения делали облака слишком большими.
+   Цель: выглядеть максимально похоже на десктоп (не перекрывать кнопку и заголовки).
+*/
+@media (max-width: 520px){
+    .welcome-characters{
+        gap: 12px;
+        max-width: 380px;
+        margin-top: 14px;
+    }
+
+    /* уменьшаем разнос персонажей, чтобы ничего не уезжало за края */
+    .welcome-characters .welcome-character:first-child{ transform: translateX(-20px); }
+    .welcome-characters .welcome-character:last-child{  transform: translateX(20px);  }
+
+    /* персонажи чуть компактнее */
+    .welcome-characters .welcome-character:first-child .character-img{
+        height: 112px;
+        max-width: 175px;
+    }
+    .welcome-characters .welcome-character:last-child .character-img{
+        height: 112px;
+        max-width: 160px;
+    }
+
+    /* облака ближе к "десктопному" виду: компактнее и ближе к головам */
+    .speech{
+        width: 140px;
+        height: 95px;
+        padding: 14px;
+    }
+    .speech-left{
+        left: 88%;
+        transform: translate(-60%, 2px);
+    }
+    .speech-right{
+        left: 10%;
+        transform: translate(-50%, 22px);
+        width: 240px;
+        height: 120px;
+        padding: 16px 20px 42px 34px;
+    }
+    .speech-text{ font-size: 12px; }
+}
+
+/* Extra small screens */
 @media (max-width: 380px){
-    .welcome-characters{gap: 10px; max-width: 360px;}
-    .character-img{max-width: 145px;}
-    .speech{width: 190px; height: 140px; padding: 24px 24px 32px 24px;}
-    .speech-text{font-size: 12px;}
+    .welcome-characters{ max-width: 360px; }
+    .speech-text{ font-size: 11px; }
 }
