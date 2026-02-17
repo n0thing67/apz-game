@@ -1756,6 +1756,7 @@ hr {
 /* Ася */
 .welcome-characters .welcome-character:last-child{
     transform: translateX(40px);
+
 }
 
 .welcome-characters .welcome-character:last-child .character-img{
@@ -1786,7 +1787,7 @@ hr {
 /* Левое облако */
 .speech-left{
     left: 90%;
-    transform: translate(-60%, 5px);
+    transform: translate(-60%,5px);
     background-image: url("assets/bubble_left.webp");
 }
 
@@ -1801,8 +1802,8 @@ hr {
 }
 
 .speech-text{
-    font-size: 11px;
-    line-height: 1.2;
+    font-size: 12px;
+    line-height: 1.4;
     color: #111;
     text-align: center;
     word-break: break-word;
