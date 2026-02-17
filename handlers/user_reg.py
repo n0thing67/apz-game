@@ -345,10 +345,13 @@ async def cmd_admin(message: types.Message):
     )
 
 
-@router.message(Command("stats"))
-async def cmd_stats(message: types.Message):
-    # Пользователь должен видеть ТОЛЬКО свою статистику.
-    tg_id = message.from_user.id
+async def _send_stats(message: types.Message, tg_id: int) -> None:
+    """Отправляет пользователю его статистику.
+
+    Важно: при вызове из callback_query нельзя использовать message.from_user,
+    потому что это *бот* (автор сообщения), а не пользователь.
+    Поэтому tg_id передаём явно.
+    """
 
     # Берём расширенный профиль (в т.ч. результат профтеста), чтобы не лезть в БД вручную.
     profile = None
@@ -408,9 +411,12 @@ async def cmd_stats(message: types.Message):
     await message.answer("\n".join(lines))
 
 
+# Команду /stats убрали совсем — статистика открывается только по инлайн-кнопке.
+
+
 @router.callback_query(F.data == "stats")
 async def cb_stats(callback: types.CallbackQuery):
-    # Даём пользователю кнопку вместо команды /stats, не меняя основную логику.
+    # Статистика открывается по инлайн-кнопке.
     await callback.answer()
     if callback.message:
-        await cmd_stats(callback.message)
+        await _send_stats(callback.message, callback.from_user.id)
