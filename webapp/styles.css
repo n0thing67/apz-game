@@ -1770,7 +1770,7 @@ hr {
     margin-left: auto;
     margin-right: auto;
 
-    transform: translateY(0px);
+    transform: translateY(-5px);
 }
 
 /* ===== Персонажи ===== */
