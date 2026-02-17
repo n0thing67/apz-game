@@ -63,6 +63,23 @@
         <p>Пройди испытания и собери призы!</p>
         <!-- В Telegram WebView inline onclick может блокироваться CSP, поэтому обработчик клика вешаем в script.js -->
         <button id="btn-choose-level" class="btn">Выбрать уровень</button>
+        <!-- Персонажи (Макс и Ася) -->
+        <div class="welcome-characters" aria-label="Персонажи приветствия">
+            <div class="welcome-character">
+                <div class="speech speech-left">
+                    <div class="speech-text"><strong>Макс:</strong> «Стань лучше вместе с АПЗ.»</div>
+                </div>
+                <img class="character-img" src="assets/max.webp" alt="Макс">
+            </div>
+
+            <div class="welcome-character">
+                <div class="speech speech-right">
+                    <div class="speech-text"><strong>Ася:</strong> «Рост начинается с первого шага.»</div>
+                </div>
+                <img class="character-img" src="assets/asya.webp" alt="Ася">
+            </div>
+        </div>
+
     </div>
     <!-- Экран: Выбор уровня -->
     <div id="screen-levels" class="screen">
