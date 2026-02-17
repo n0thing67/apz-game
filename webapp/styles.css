@@ -1264,27 +1264,36 @@ hr {
 
 
 
-/* === Welcome screen centering === */
-#screen-welcome.active {
+/* === Welcome screen layout ===
+   Требование: заголовок/описание/кнопка — как можно выше,
+   персонажи и облака — на своих местах (внизу). */
+#screen-welcome.screen.active {
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
-    gap: 12px;
-    transform: translateY(100px);
+    justify-content: flex-start;
+    gap: 10px;
+
+    /* отменяем прежнее смещение вниз */
+    transform: none;
+
+    /* на всякий случай убираем авто-центровку из mobile media-query */
+    margin-top: 0;
+    margin-bottom: 0;
+
+    /* растягиваем экран по высоте, чтобы персонажей можно было «прижать» вниз */
+    height: calc(100vh - 40px);
+    height: calc(100dvh - 40px);
+    padding-top: calc(env(safe-area-inset-top, 0px) + 10px);
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
+    box-sizing: border-box;
 }
 
-
-
-
-/* --- Mobile fix: move ONLY welcome texts up so they don't overlap speech bubbles --- */
-@media (max-width: 480px), (max-height: 740px) {
-    #screen-welcome.active > h1,
-    #screen-welcome.active > p,
-    #screen-welcome.active > #btn-choose-level {
-        transform: translateY(-70px);
-    }
+/* Персонажи всегда внизу экрана приветствия */
+#screen-welcome.screen .welcome-characters{
+    margin-top: auto;
 }
+
 
 /* ================================
    Aptitude test (профориентация)
