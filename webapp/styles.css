@@ -1281,12 +1281,25 @@ hr {
     margin-top: 0;
     margin-bottom: 0;
 
-    /* растягиваем экран по высоте, чтобы персонажей можно было «прижать» вниз */
-    height: calc(100vh - 40px);
-    height: calc(100dvh - 40px);
+    /* растягиваем экран по высоте, чтобы персонажей можно было «прижать» вниз
+       ВАЖНО: используем min-height (а не height), иначе flex-элементы могут
+       начать «сжиматься» и текст заголовка в некоторых WebView обрезается. */
+    min-height: calc(100vh - 40px);
+    min-height: calc(100dvh - 40px);
     padding-top: calc(env(safe-area-inset-top, 0px) + 10px);
     padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
     box-sizing: border-box;
+
+    /* не обрезаем заголовок/текст (у .screen по умолчанию overflow:hidden) */
+    overflow: visible;
+}
+
+/* На некоторых мобильных WebView flex-контейнер может пытаться сжать верхние
+   элементы, из-за чего h1 визуально «пропадает». Запрещаем shrink. */
+#screen-welcome.screen.active > h1,
+#screen-welcome.screen.active > p,
+#screen-welcome.screen.active > button{
+    flex-shrink: 0;
 }
 
 /* Персонажи всегда внизу экрана приветствия */
