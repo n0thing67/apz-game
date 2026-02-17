@@ -1731,57 +1731,83 @@ hr {
     margin-right: auto;
 }
 
+/* ===== Персонажи ===== */
+
 .welcome-character{
-    position: relative;
+    margin-top: 18px;
     flex: 1 1 0;
     display: flex;
     flex-direction: column;
     align-items: center;
-    min-width: 0;
+    position: relative;
 }
 
-.character-img{
-    width: 100%;
-    max-width: 160px;
-    height: auto;
-    display: block;
-    filter: drop-shadow(0 6px 10px rgba(0,0,0,.25));
+/* Макс */
+.welcome-characters .welcome-character:first-child{
+    transform: translateX(-40px); /* двигаем только персонажа */
 }
+
+.welcome-characters .welcome-character:first-child .character-img{
+    height: 120px;
+    max-width: 190px;
+    object-fit: contain;
+}
+
+/* Ася */
+.welcome-characters .welcome-character:last-child{
+    transform: translateX(40px);
+}
+
+.welcome-characters .welcome-character:last-child .character-img{
+    height: 120px;
+    max-width: 170px;
+    object-fit: contain;
+}
+
+
+/* ===== Облака ===== */
 
 .speech{
     position: absolute;
     bottom: 100%;
-    width: 210px;
-    height: 150px;
+    width: 140px;
+    height: 95px;
     display: flex;
     align-items: center;
     justify-content: center;
     background-repeat: no-repeat;
     background-size: contain;
     background-position: center;
-    padding: 26px 26px 34px 26px;
+    padding: 16px;
     box-sizing: border-box;
-    transform: translateY(-6px);
     pointer-events: none;
 }
 
+/* Левое облако */
 .speech-left{
-    left: 50%;
-    transform: translate(-55%, -6px);
+    left: 90%;
+    transform: translate(-60%, 5px);
     background-image: url("assets/bubble_left.webp");
 }
 
+/* Правое облако */
 .speech-right{
-    left: 50%;
-    transform: translate(-45%, -6px);
+    left: 5%;
+    transform: translate(-50%, 30px);  /* центрируем */
     background-image: url("assets/bubble_right.webp");
+    width: 260px;   /* увеличили ширину */
+    height: 130px;  /* можно чуть больше */
+    padding: 18px 22px 44px 37px;
 }
 
 .speech-text{
-    font-size: 12.5px;
+    font-size: 11px;
     line-height: 1.2;
     color: #111;
+    text-align: center;
+    word-break: break-word;
 }
+
 
 /* Mobile tweaks */
 @media (max-width: 380px){
