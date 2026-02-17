@@ -40,6 +40,27 @@ body {
         margin-top: auto;
         margin-bottom: auto;
     }
+    /* На узких экранах диалоговые облака могут залезать на заголовок/описание/кнопку.
+       Фикс: закрепляем блок персонажей внизу приветственного экрана и резервируем место снизу,
+       чтобы контент (h1/p/кнопка) всегда был выше облаков. */
+    #screen-welcome.screen.active{
+        position: relative;
+        /* резерв под персонажей + облака */
+        padding-bottom: 340px;
+    }
+    #screen-welcome .welcome-characters{
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 14px;
+        margin-top: 0;
+        width: 100%;
+    }
+    /* чуть компактнее заголовок/подзаголовок на мобилке */
+    #screen-welcome h1{ margin-top: 6px; }
+    #screen-welcome p{ margin-bottom: 14px; }
+    #screen-welcome #btn-choose-level{ margin-top: 14px; }
+
 }
 
 /* PERF: blur/backdrop-filter очень дорогой на мобилках (особенно iOS).
