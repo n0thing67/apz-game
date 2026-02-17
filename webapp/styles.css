@@ -1861,7 +1861,7 @@ hr {
         gap: 12px;
         max-width: 380px;
         margin-top: 14px;
-        transform: translateY(40px);
+        transform: translateY(35px);
     }
 
     /* уменьшаем разнос персонажей, чтобы ничего не уезжало за края */
