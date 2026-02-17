@@ -135,6 +135,8 @@ def game_keyboard() -> ReplyKeyboardMarkup:
                 KeyboardButton(
                     text="🏭 Зайти на завод (Играть)",
                     web_app=WebAppInfo(url=f"{GAME_URL}/" + api_part),
+                    # Bot API 9.4+: primary = синяя кнопка
+                    style="primary",
                 )
             ]
         ],
@@ -149,6 +151,21 @@ def admin_inline_keyboard() -> InlineKeyboardMarkup:
                 InlineKeyboardButton(
                     text="Админ-панель",
                     web_app=WebAppInfo(url=f"{ADMIN_URL}/admin.html"),
+                )
+            ]
+        ]
+    )
+
+
+def stats_inline_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="📊 Статистика",
+                    callback_data="stats",
+                    # Bot API 9.4+: success = зелёная кнопка
+                    style="success",
                 )
             ]
         ]
@@ -293,17 +310,23 @@ async def handle_web_app_data(message: types.Message):
         await message.answer(
             f"🚀 Результат получен! Твой счёт: {score}⭐️.\n"
             f"🧠 Профиль сохранён: {APT_LABEL.get(aptitude_top, aptitude_top)}.\n"
-            f"Используй /stats, чтобы посмотреть таблицу лидеров."
+            f"Нажми кнопку «Статистика», чтобы посмотреть результаты."
+            ,
+            reply_markup=stats_inline_keyboard(),
         )
     elif score_raw is not None:
         await message.answer(
             f"🚀 Результат получен! Твой счёт: {score}⭐️.\n"
-            f"Используй /stats, чтобы посмотреть таблицу лидеров."
+            f"Нажми кнопку «Статистика», чтобы посмотреть результаты."
+            ,
+            reply_markup=stats_inline_keyboard(),
         )
     elif aptitude_top is not None:
         await message.answer(
             f"🧠 Результат теста сохранён: {APT_LABEL.get(aptitude_top, aptitude_top)}.\n"
-            f"Используй /stats, чтобы посмотреть таблицу лидеров."
+            f"Нажми кнопку «Статистика», чтобы посмотреть результаты."
+            ,
+            reply_markup=stats_inline_keyboard(),
         )
     else:
         await message.answer("✅ Данные получены.")
@@ -339,7 +362,9 @@ async def cmd_stats(message: types.Message):
     if not user:
         await message.answer(
             "Похоже, ты ещё не зарегистрирован(а).\n"
-            "Нажми /start и пройди регистрацию, а потом снова введи /stats."
+            "Нажми /start и пройди регистрацию, а потом нажми «Статистика»."
+            ,
+            reply_markup=stats_inline_keyboard(),
         )
         return
 
@@ -381,3 +406,11 @@ async def cmd_stats(message: types.Message):
         lines.append(f'{emoji} {label}')
 
     await message.answer("\n".join(lines))
+
+
+@router.callback_query(F.data == "stats")
+async def cb_stats(callback: types.CallbackQuery):
+    # Даём пользователю кнопку вместо команды /stats, не меняя основную логику.
+    await callback.answer()
+    if callback.message:
+        await cmd_stats(callback.message)
