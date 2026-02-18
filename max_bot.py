@@ -12,30 +12,29 @@ from database.db import (
     get_user,
     register_user,
     get_top_users_stats,
+    get_user_rank,
 )
 from web_server import run_web_server
 
 # MAX bot framework (max-botapi-python / maxapi)
-from maxapi import Bot, Dispatcher
-
-# Фильтры/типы
+from maxapi import Bot, Dispatcher, F
+from maxapi.enums.intent import Intent
 from maxapi.types import BotStarted, Command, MessageCreated
 
-# Кнопки (в библиотеке maxapi есть готовые payload/кнопки)
-try:
-    from maxapi.types import (
-        ButtonsPayload,
-        CallbackButton,
-        LinkButton,
-        ButtonType,
-        Intent,
-    )
-except Exception:  # на случай несовпадения версий
-    ButtonsPayload = CallbackButton = LinkButton = ButtonType = Intent = None  # type: ignore
+# В разных версиях maxapi часть моделей может быть (или не быть) реэкспортирована в maxapi.types.
+# Делаем совместимый импорт.
+try:  # pragma: no cover
+    from maxapi.types import MessageCallback, CallbackButton, LinkButton
+except Exception:  # pragma: no cover
+    from maxapi.types.updates.message_callback import MessageCallback
+    from maxapi.types.attachments.buttons.callback_button import CallbackButton
+    from maxapi.types.attachments.buttons.link_button import LinkButton
+from maxapi.utils.inline_keyboard import InlineKeyboardBuilder
 
 
 load_dotenv()
 
+# ВАЖНО: чтобы не перепутать с Telegram, используем отдельную переменную.
 TOKEN = (os.getenv("MAX_BOT_TOKEN") or "").strip()
 if not TOKEN:
     raise RuntimeError("Не найден токен MAX_BOT_TOKEN в .env")
@@ -43,11 +42,13 @@ if not TOKEN:
 GAME_URL = (os.getenv("GAME_URL") or os.getenv("WEBAPP_URL") or "").strip().rstrip("/")
 
 # --- простое состояние регистрации для MAX (не трогаем Telegram FSM) ---
-# В MAX у BotStarted может не приходить user_id (зависит от версии/типа события),
-# поэтому состояние храним по chat_id (в личке chat_id обычно стабилен).
-REG_STATE: Dict[int, str] = {}               # chat_id -> "waiting_fullname" | "waiting_age"
-REG_NAME: Dict[int, Tuple[str, str]] = {}    # chat_id -> (first_name, last_name)
-CHAT_USER: Dict[int, int] = {}               # chat_id -> user_id (если удалось достать)
+# В MAX идентификатор пользователя может быть недоступен в BotStarted,
+# поэтому состояние регистрации храним по chat_id (он стабилен для диалога).
+# chat_id -> "waiting_fullname" | "waiting_age"
+REG_STATE: Dict[int, str] = {}
+REG_NAME: Dict[int, Tuple[str, str]] = {}
+# chat_id -> user_id (когда MAX присылает sender.user_id)
+CHAT_USER: Dict[int, int] = {}
 
 
 def _parse_fullname(text: str) -> Optional[Tuple[str, str]]:
@@ -58,7 +59,7 @@ def _parse_fullname(text: str) -> Optional[Tuple[str, str]]:
     first_name = parts[0]
     last_name = " ".join(parts[1:])
 
-    # Мягкая валидация: русские буквы/дефис
+    # Мягкая валидация: русские буквы/дефис/пробелы
     ru_re = re.compile(r"^[А-Яа-яЁё\-]+$")
     if not ru_re.match(first_name):
         return None
@@ -79,189 +80,158 @@ def _parse_age(text: str) -> Optional[int]:
     return age
 
 
-def _norm_start_word(text: str) -> str:
-    return (text or "").strip().lower()
-
-
-def _is_start_request(text: str) -> bool:
-    t = _norm_start_word(text)
-    # MAX-кнопка «Начать» часто отправляет обычный текст
-    return t in {"начать", "start", "/start", "старт"}
-
-
-def _is_stats_request(text: str) -> bool:
-    t = _norm_start_word(text)
-    return t in {"статистика", "stats", "/stats"}
-
-
-def _extract_chat_id_from_any(event) -> int:
-    # BotStarted: event.chat_id / event.chatId
-    chat_id = getattr(event, "chat_id", None) or getattr(event, "chatId", None) or 0
-    # MessageCreated: event.message.chat_id
+def _extract_chat_and_user_ids_from_message(event: MessageCreated) -> Tuple[int, int]:
+    '''
+    MAX SDK может немного отличаться по именам полей.
+    Делаем максимально терпимо к разным версиям.
+    '''
     msg = getattr(event, "message", None)
-    if msg is not None:
-        chat_id = getattr(msg, "chat_id", None) or getattr(msg, "chatId", None) or chat_id
-    return int(chat_id or 0)
+    chat_id = getattr(msg, "chat_id", None) or getattr(event, "chat_id", None) or 0
 
-
-def _extract_user_id_from_message(event: MessageCreated) -> int:
-    msg = getattr(event, "message", None)
-    if msg is None:
-        return 0
     sender = getattr(msg, "sender", None) or getattr(event, "sender", None)
     user_id = (
         getattr(sender, "user_id", None)
-        or getattr(sender, "userId", None)
         or getattr(sender, "id", None)
         or getattr(event, "user_id", None)
-        or getattr(event, "userId", None)
+        or chat_id
         or 0
     )
-    try:
-        return int(user_id or 0)
-    except Exception:
-        return 0
+
+    return int(chat_id), int(user_id)
 
 
 def _get_message_text(event: MessageCreated) -> str:
     """Достаём текст из входящего сообщения MAX максимально совместимо.
 
-    В актуальных примерах maxapi используется event.message.body.text. 
+    В актуальных примерах maxapi используется event.message.body.text.
+    В некоторых версиях/типах может быть event.message.text.
     """
     msg = getattr(event, "message", None)
     if msg is None:
         return ""
 
+    # Актуальный путь из документации/примеров: message.body.text
     body = getattr(msg, "body", None)
-    # основной путь: message.body.text
     if body is not None:
-        t = getattr(body, "text", None)
-        if isinstance(t, str):
-            return t
+        text = getattr(body, "text", None)
+        if isinstance(text, str) and text.strip():
+            return text
 
-    # запасные варианты
-    t2 = getattr(msg, "text", None)
-    if isinstance(t2, str):
-        return t2
+    # Запасной вариант (на случай другой схемы)
+    text2 = getattr(msg, "text", None)
+    if isinstance(text2, str) and text2.strip():
+        return text2
 
-    # dict-like body
+    # Иногда body может быть dict-подобным
     try:
-        if isinstance(body, dict) and isinstance(body.get("text"), str):
-            return body.get("text")  # type: ignore[return-value]
+        if isinstance(body, dict):
+            t = body.get("text")
+            if isinstance(t, str) and t.strip():
+                return t
     except Exception:
         pass
 
     return ""
 
 
-def _keyboard_main_menu():
-    """Собираем клавиатуру MAX (если типы доступны в версии библиотеки)."""
-    if not (ButtonsPayload and CallbackButton and ButtonType and Intent):
-        return None
+def _extract_chat_and_user_ids_from_started(event: BotStarted) -> Tuple[int, int]:
+    chat_id = getattr(event, "chat_id", None) or getattr(event, "chatId", None) or 0
+    user_id = getattr(event, "user_id", None) or getattr(event, "userId", None) or 0
 
-    buttons = []
+    # В личном чате chat_id часто = user_id, но не всегда. Подстрахуемся.
+    if not user_id and chat_id:
+        user_id = chat_id
 
-    # «Зайти на завод» — ссылка на webapp/игру
-    if GAME_URL and LinkButton and ButtonType:
-        try:
-            btn_play = LinkButton(
-                type=ButtonType.LINK,
-                text="🏭 Зайти на завод",
-                url=GAME_URL,
-                intent=getattr(Intent, "PRIMARY", getattr(Intent, "DEFAULT", None)),
-            )
-            buttons.append([btn_play])
-        except Exception:
-            pass
+    return int(chat_id), int(user_id)
 
-    # «Статистика» — callback
-    try:
-        btn_stats = CallbackButton(
-            type=ButtonType.CALLBACK,
-            text="📊 Статистика",
-            payload="stats",
-            intent=getattr(Intent, "POSITIVE", getattr(Intent, "DEFAULT", None)),
-        )
-        buttons.append([btn_stats])
-    except Exception:
-        pass
+def _resolve_db_user_id(chat_id: int, user_id: int) -> int:
+    """Возвращает идентификатор пользователя для БД.
 
-    if not buttons:
-        return None
-
-    try:
-        return ButtonsPayload(buttons=buttons)
-    except Exception:
-        return None
-
-
-async def _send_menu(bot: Bot, chat_id: int, text: str) -> None:
-    kb = _keyboard_main_menu()
-    if kb is not None:
-        try:
-            await bot.send_message(chat_id=chat_id, text=text, attachments=[kb])
-            return
-        except Exception:
-            # Если в текущей версии attachments/keyboard отличаются — просто отправим текст
-            pass
-    await bot.send_message(chat_id=chat_id, text=text)
+    В идеале используем реальный user_id от MAX (sender.user_id).
+    Если его нет — используем chat_id как стабильный ключ, чтобы регистрация не ломалась.
+    """
+    if user_id:
+        CHAT_USER[chat_id] = user_id
+        return user_id
+    return CHAT_USER.get(chat_id, chat_id)
 
 
 async def _send_welcome(bot: Bot, chat_id: int, user_id: int) -> None:
-    # запоминаем user_id для этого чата (если пришёл)
-    if user_id:
-        CHAT_USER[chat_id] = user_id
+    def _main_keyboard() -> list:
+        builder = InlineKeyboardBuilder()
+        if GAME_URL:
+            builder.row(
+                LinkButton(
+                    text="🏭 Зайти на завод (Играть)",
+                    url=GAME_URL,
+                )
+            )
+        builder.row(
+            CallbackButton(
+                text="📊 Статистика",
+                payload="stats",
+                intent=Intent.POSITIVE,
+            )
+        )
+        return [builder.as_markup()]
 
-    db_user_id = CHAT_USER.get(chat_id) or chat_id
-
+    db_user_id = _resolve_db_user_id(chat_id, user_id)
     user = await get_user(db_user_id)
     if user:
         _, first_name, *_ = user
         text = f"С возвращением, {first_name}!"
-        await _send_menu(bot, chat_id, text)
+        await bot.send_message(chat_id=chat_id, text=text, attachments=_main_keyboard())
         return
 
-    # новая регистрация / перезапуск регистрации
     REG_STATE[chat_id] = "waiting_fullname"
-    REG_NAME.pop(chat_id, None)
-
     await bot.send_message(
         chat_id=chat_id,
         text=(
             "Добро пожаловать на АПЗ!\n"
             "✍️ Введите Имя и Фамилию одним сообщением (через пробел).\n"
-            "Пример: Иван Иванов\n\n"
-            "Если вы уже нажимали «Начать», но бот перезапустился — просто отправьте /start ещё раз."
+            "Пример: Иван Иванов"
         ),
     )
 
 
-async def _send_stats(event: MessageCreated, chat_id: int, db_user_id: int) -> None:
+async def _render_stats_text(user_id: int) -> str:
+    db_user_id = _resolve_db_user_id(chat_id, user_id)
     user = await get_user(db_user_id)
     if not user:
-        # Если человек не зарегистрирован — предлагаем старт
-        await event.message.answer("Сначала нажми «Начать» (или отправь /start) и пройди регистрацию.")
-        return
+        return "Похоже, ты ещё не зарегистрирован(а).\nНажми /start и пройди регистрацию."
+
+    _uid, fn, ln, _age, score = user
+    name = f"{fn} {ln}".strip() or "(без имени)"
 
     try:
-        rows = await get_top_users_stats(limit=20)
+        rank_info = await get_user_rank(user_id)
+    except Exception:
+        rank_info = None
+
+    if rank_info:
+        rank, total = rank_info
+        head = f"📊 Твоя статистика\n👤 {name}\n⭐ Очки: {score}\n🏅 Место: {rank} из {total}"
+    else:
+        head = f"📊 Твоя статистика\n👤 {name}\n⭐ Очки: {score}"
+
+    try:
+        rows = await get_top_users_stats(limit=10)
     except Exception:
         rows = []
 
-    lines = ["🏆 Топ игроков:"]
+    lines = [head, "", "🏆 Топ игроков:"]
     if not rows:
         lines.append("Пока нет данных.")
     else:
         for i, r in enumerate(rows, start=1):
             try:
-                _uid, fn, ln, _age, score, *_ = r
-                name = f"{fn} {ln}".strip()
+                _tid, tfn, tln, tscore, _apt = r
+                tname = f"{tfn} {tln}".strip() or "(без имени)"
+                lines.append(f"{i}. {tname} — {tscore}")
             except Exception:
-                name = str(r[0])
-                score = r[1] if len(r) > 1 else 0
-            lines.append(f"{i}. {name} — {score}")
+                lines.append(f"{i}. {r}")
 
-    await event.message.answer("\n".join(lines))
+    return "\n".join(lines)
 
 
 async def main() -> None:
@@ -273,7 +243,7 @@ async def main() -> None:
     dp = Dispatcher()
 
     # Если у бота раньше был установлен webhook — polling не получит события,
-    # пока webhook не удалить (сказано в README библиотеки). 
+    # пока webhook не удалить (это прямо сказано в README max-botapi-python).
     try:
         await bot.delete_webhook()
     except Exception:
@@ -281,91 +251,71 @@ async def main() -> None:
 
     @dp.bot_started()
     async def on_bot_started(event: BotStarted):
-        chat_id = _extract_chat_id_from_any(event)
+        chat_id, user_id = _extract_chat_and_user_ids_from_started(event)
         if not chat_id:
             return
-        # В BotStarted user_id может не быть — это нормально.
-        user_id = getattr(event, "user_id", None) or getattr(event, "userId", None) or 0
-        try:
-            user_id = int(user_id or 0)
-        except Exception:
-            user_id = 0
         await _send_welcome(event.bot, chat_id, user_id)
 
     @dp.message_created(Command("start"))
     async def on_start(event: MessageCreated):
-        chat_id = _extract_chat_id_from_any(event)
+        chat_id, user_id = _extract_chat_and_user_ids_from_message(event)
         if not chat_id:
             return
-        user_id = _extract_user_id_from_message(event)
-        # Явный /start всегда перезапускает сценарий регистрации (если пользователь хочет «начать заново»)
-        REG_STATE.pop(chat_id, None)
-        REG_NAME.pop(chat_id, None)
-        await _send_welcome(event.bot, chat_id, user_id)
+        await _send_welcome(event.bot, chat_id, db_user_id)
 
     @dp.message_created(Command("stats"))
     async def on_stats(event: MessageCreated):
-        chat_id = _extract_chat_id_from_any(event)
-        user_id = _extract_user_id_from_message(event)
-        if user_id:
-            CHAT_USER[chat_id] = user_id
-        db_user_id = CHAT_USER.get(chat_id) or chat_id
-        await _send_stats(event, chat_id, db_user_id)
+        chat_id, user_id = _extract_chat_and_user_ids_from_message(event)
+        db_user_id = _resolve_db_user_id(chat_id, user_id)
+        await event.message.answer(await _render_stats_text(db_user_id))
 
-    # Ловим callback по кнопке «Статистика»
-    try:
-        from maxapi.types import CallbackCreated
-        from maxapi import F  # фильтры как в примерах/документации 
+    @dp.message_callback(F.callback.payload == "stats")
+    async def on_stats_callback(event: MessageCallback):
+        chat_id, user_id = event.get_ids()
+        if chat_id is None:
+            # если исходное сообщение к моменту callback удалили
+            chat_id = event.callback.user.user_id
 
-        @dp.callback_created(F.callback.payload == "stats")
-        async def on_stats_button(event: CallbackCreated):
-            chat_id = _extract_chat_id_from_any(event)
-            user_id = getattr(getattr(event, "callback", None), "user_id", None) or getattr(event, "user_id", None) or 0
-            try:
-                user_id = int(user_id or 0)
-            except Exception:
-                user_id = 0
-            if user_id:
-                CHAT_USER[chat_id] = user_id
-            db_user_id = CHAT_USER.get(chat_id) or chat_id
-            # отвечаем тем же топом
-            # CallbackCreated обычно не имеет message.answer, поэтому шлём через bot
-            tmp_event = type("Tmp", (), {"message": type("M", (), {"answer": lambda self, t: event.bot.send_message(chat_id=chat_id, text=t)})()})()
-            await _send_stats(tmp_event, chat_id, db_user_id)
-    except Exception:
-        # Если callback-и в конкретной версии библиотеки недоступны — живём через /stats и текст «Статистика»
-        pass
+        # 1) ответим на callback всплывашкой
+        try:
+            await event.answer(notification="Статистика")
+        except Exception:
+            pass
+
+        # 2) отправим статистику отдельным сообщением
+        db_user_id = _resolve_db_user_id(int(chat_id), int(user_id))
+        await event.bot.send_message(chat_id=chat_id, text=await _render_stats_text(db_user_id))
 
     @dp.message_created()
     async def on_any_message(event: MessageCreated):
-        chat_id = _extract_chat_id_from_any(event)
-        user_id = _extract_user_id_from_message(event)
-        if user_id:
-            CHAT_USER[chat_id] = user_id
-        db_user_id = CHAT_USER.get(chat_id) or chat_id
-
-        text = _get_message_text(event).strip()
-
-        # Если пользователь нажал «Начать» повторно или хочет перезапустить — поддерживаем это в любой момент
-        if _is_start_request(text):
-            REG_STATE.pop(chat_id, None)
-            REG_NAME.pop(chat_id, None)
-            await _send_welcome(event.bot, chat_id, user_id)
-            return
-
-        # «Статистика» текстом (на случай, если кнопка/колбек недоступны в конкретной версии клиента)
-        if _is_stats_request(text):
-            await _send_stats(event, chat_id, db_user_id)
-            return
-
+        # Регистрация (после BotStarted)
+        chat_id, user_id = _extract_chat_and_user_ids_from_message(event)
+        text = _get_message_text(event)
+        # Обновим привязку chat_id -> user_id, если MAX прислал sender.user_id
+        _ = _resolve_db_user_id(chat_id, user_id)
         state = REG_STATE.get(chat_id)
 
-        # Если бот перезапустился и состояние потерялось:
-        # - если пользователь не зарегистрирован, не молчим — подскажем /start
+        # Кнопка «Начать» в MAX часто отправляет обычный текст (не /start),
+        # поэтому ловим этот кейс отдельно.
+        start_text = (text or "").strip().lower()
+        if start_text in ("начать", "start", "/start"):
+            # Сбрасываем незавершённую регистрацию и запускаем приветствие заново
+            REG_STATE.pop(chat_id, None)
+            REG_NAME.pop(chat_id, None)
+            chat_id, _ = _extract_chat_and_user_ids_from_message(event)
+            if chat_id:
+                await _send_welcome(event.bot, chat_id, db_user_id)
+            return
+
         if not state:
-            user = await get_user(db_user_id)
+            # Если пользователь не в процессе регистрации, но ещё не зарегистрирован — подскажем, что делать.
+            db_user_id = _resolve_db_user_id(chat_id, user_id)
+            try:
+                user = await get_user(db_user_id)
+            except Exception:
+                user = None
             if not user:
-                await event.message.answer("Я ещё не знаю вас 🙂 Нажмите «Начать» или отправьте /start, чтобы пройти регистрацию.")
+                await event.message.answer('Я ещё не знаю вас 🙂\nНажмите «Начать» или отправьте /start, чтобы пройти регистрацию.')
             return
 
         if state == "waiting_fullname":
@@ -386,6 +336,7 @@ async def main() -> None:
                 return
 
             first_name, last_name = REG_NAME.get(chat_id, ("", ""))
+            db_user_id = _resolve_db_user_id(chat_id, user_id)
             try:
                 await register_user(db_user_id, first_name, last_name, age)
             except Exception:
@@ -394,8 +345,12 @@ async def main() -> None:
             REG_STATE.pop(chat_id, None)
             REG_NAME.pop(chat_id, None)
 
-            await _send_menu(event.bot, chat_id, "✅ Готово! Ты зарегистрирован(а).")
-            return
+            # После регистрации сразу показываем кнопки как в Telegram-версии
+            chat_id, _ = _extract_chat_and_user_ids_from_message(event)
+            if chat_id:
+                await _send_welcome(event.bot, chat_id, db_user_id)
+            else:
+                await event.message.answer("✅ Готово! Ты зарегистрирован(а).")
 
     # Поднимаем web-сервер (как и в Telegram версии)
     web_task = asyncio.create_task(run_web_server())
