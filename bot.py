@@ -11,7 +11,9 @@ load_dotenv()
 
 from handlers import user_reg
 
-TOKEN = os.getenv("BOT_TOKEN")
+# Токен бота берём из переменной окружения MAX_BOT_TOKEN.
+# Оставляем обратную совместимость с прежним BOT_TOKEN (если он ещё используется в окружении).
+TOKEN = (os.getenv("MAX_BOT_TOKEN") or os.getenv("BOT_TOKEN"))
 
 async def main():
     logging.basicConfig(level=logging.INFO)
