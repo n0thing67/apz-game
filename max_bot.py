@@ -12,12 +12,24 @@ from database.db import (
     get_user,
     register_user,
     get_top_users_stats,
+    get_user_rank,
 )
 from web_server import run_web_server
 
 # MAX bot framework (max-botapi-python / maxapi)
-from maxapi import Bot, Dispatcher
+from maxapi import Bot, Dispatcher, F
+from maxapi.enums.intent import Intent
 from maxapi.types import BotStarted, Command, MessageCreated
+
+# В разных версиях maxapi часть моделей может быть (или не быть) реэкспортирована в maxapi.types.
+# Делаем совместимый импорт.
+try:  # pragma: no cover
+    from maxapi.types import MessageCallback, CallbackButton, LinkButton
+except Exception:  # pragma: no cover
+    from maxapi.types.updates.message_callback import MessageCallback
+    from maxapi.types.attachments.buttons.callback_button import CallbackButton
+    from maxapi.types.attachments.buttons.link_button import LinkButton
+from maxapi.utils.inline_keyboard import InlineKeyboardBuilder
 
 
 load_dotenv()
@@ -130,13 +142,29 @@ def _extract_chat_and_user_ids_from_started(event: BotStarted) -> Tuple[int, int
 
 
 async def _send_welcome(bot: Bot, chat_id: int, user_id: int) -> None:
+    def _main_keyboard() -> list:
+        builder = InlineKeyboardBuilder()
+        if GAME_URL:
+            builder.row(
+                LinkButton(
+                    text="🏭 Зайти на завод (Играть)",
+                    url=GAME_URL,
+                )
+            )
+        builder.row(
+            CallbackButton(
+                text="📊 Статистика",
+                payload="stats",
+                intent=Intent.POSITIVE,
+            )
+        )
+        return [builder.as_markup()]
+
     user = await get_user(user_id)
     if user:
         _, first_name, *_ = user
-        text = f"С возвращением, {first_name}!\n\nКоманды: /start /stats"
-        if GAME_URL:
-            text += f"\n\n🎮 Игра: {GAME_URL}"
-        await bot.send_message(chat_id=chat_id, text=text)
+        text = f"С возвращением, {first_name}!"
+        await bot.send_message(chat_id=chat_id, text=text, attachments=_main_keyboard())
         return
 
     REG_STATE[user_id] = "waiting_fullname"
@@ -148,6 +176,45 @@ async def _send_welcome(bot: Bot, chat_id: int, user_id: int) -> None:
             "Пример: Иван Иванов"
         ),
     )
+
+
+async def _render_stats_text(user_id: int) -> str:
+    user = await get_user(user_id)
+    if not user:
+        return "Похоже, ты ещё не зарегистрирован(а).\nНажми /start и пройди регистрацию."
+
+    _uid, fn, ln, _age, score = user
+    name = f"{fn} {ln}".strip() or "(без имени)"
+
+    try:
+        rank_info = await get_user_rank(user_id)
+    except Exception:
+        rank_info = None
+
+    if rank_info:
+        rank, total = rank_info
+        head = f"📊 Твоя статистика\n👤 {name}\n⭐ Очки: {score}\n🏅 Место: {rank} из {total}"
+    else:
+        head = f"📊 Твоя статистика\n👤 {name}\n⭐ Очки: {score}"
+
+    try:
+        rows = await get_top_users_stats(limit=10)
+    except Exception:
+        rows = []
+
+    lines = [head, "", "🏆 Топ игроков:"]
+    if not rows:
+        lines.append("Пока нет данных.")
+    else:
+        for i, r in enumerate(rows, start=1):
+            try:
+                _tid, tfn, tln, tscore, _apt = r
+                tname = f"{tfn} {tln}".strip() or "(без имени)"
+                lines.append(f"{i}. {tname} — {tscore}")
+            except Exception:
+                lines.append(f"{i}. {r}")
+
+    return "\n".join(lines)
 
 
 async def main() -> None:
@@ -181,32 +248,24 @@ async def main() -> None:
 
     @dp.message_created(Command("stats"))
     async def on_stats(event: MessageCreated):
-        chat_id, user_id = _extract_chat_and_user_ids_from_message(event)
+        _chat_id, user_id = _extract_chat_and_user_ids_from_message(event)
+        await event.message.answer(await _render_stats_text(user_id))
 
-        user = await get_user(user_id)
-        if not user:
-            await event.message.answer("Сначала нажми «Начать» (или отправь /start) и пройди регистрацию.")
-            return
+    @dp.message_callback(F.callback.payload == "stats")
+    async def on_stats_callback(event: MessageCallback):
+        chat_id, user_id = event.get_ids()
+        if chat_id is None:
+            # если исходное сообщение к моменту callback удалили
+            chat_id = event.callback.user.user_id
 
+        # 1) ответим на callback всплывашкой
         try:
-            rows = await get_top_users_stats(limit=20)
+            await event.answer(notification="Статистика")
         except Exception:
-            rows = []
+            pass
 
-        lines = ["🏆 Топ игроков:"]
-        if not rows:
-            lines.append("Пока нет данных.")
-        else:
-            for i, r in enumerate(rows, start=1):
-                try:
-                    _uid, fn, ln, _age, score, *_ = r
-                    name = f"{fn} {ln}".strip()
-                except Exception:
-                    name = str(r[0])
-                    score = r[1] if len(r) > 1 else 0
-                lines.append(f"{i}. {name} — {score}")
-
-        await event.message.answer("\n".join(lines))
+        # 2) отправим статистику отдельным сообщением
+        await event.bot.send_message(chat_id=chat_id, text=await _render_stats_text(user_id))
 
     @dp.message_created()
     async def on_any_message(event: MessageCreated):
@@ -256,10 +315,12 @@ async def main() -> None:
             REG_STATE.pop(user_id, None)
             REG_NAME.pop(user_id, None)
 
-            msg = "✅ Готово! Ты зарегистрирован(а).\n\nКоманды: /start /stats"
-            if GAME_URL:
-                msg += f"\n\n🎮 Игра: {GAME_URL}"
-            await event.message.answer(msg)
+            # После регистрации сразу показываем кнопки как в Telegram-версии
+            chat_id, _ = _extract_chat_and_user_ids_from_message(event)
+            if chat_id:
+                await _send_welcome(event.bot, chat_id, user_id)
+            else:
+                await event.message.answer("✅ Готово! Ты зарегистрирован(а).")
 
     # Поднимаем web-сервер (как и в Telegram версии)
     web_task = asyncio.create_task(run_web_server())
