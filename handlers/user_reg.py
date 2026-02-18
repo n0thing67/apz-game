@@ -187,7 +187,7 @@ async def cmd_start(message: types.Message, state: FSMContext):
 
     await message.answer(
         "Добро пожаловать на АПЗ! Для начала работы, пожалуйста, представьтесь.\n"
-        "✍️ Введите *Имя и Фамилию* одним сообщением (через пробел).\n"
+        "✍️ Введите <b>Имя и Фамилию</b> одним сообщением (через пробел).\n"
         "Пример: Иван Иванов",
         parse_mode="HTML",
     )
@@ -201,7 +201,7 @@ async def process_fullname(message: types.Message, state: FSMContext):
 
     if len(parts) < 2:
         await message.answer(
-            "❌ Нужно ввести *Имя и Фамилию* через пробел.\n"
+            "❌ Нужно ввести <b>Имя и Фамилию</b> через пробел.\n"
             "Пример: Иван Иванов",
             parse_mode="HTML",
         )
