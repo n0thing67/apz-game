@@ -19,7 +19,7 @@ from web_server import run_web_server
 from maxapi import Bot, Dispatcher
 
 # Фильтры/типы
-from maxapi.types import BotStarted, Command, MessageCreated
+from maxapi.types import BotStarted, MessageCreated
 
 # Кнопки (в библиотеке maxapi есть готовые payload/кнопки)
 try:
@@ -43,11 +43,15 @@ if not TOKEN:
 GAME_URL = (os.getenv("GAME_URL") or os.getenv("WEBAPP_URL") or "").strip().rstrip("/")
 
 # --- простое состояние регистрации для MAX (не трогаем Telegram FSM) ---
-# В MAX у BotStarted может не приходить user_id (зависит от версии/типа события),
-# поэтому состояние храним по chat_id (в личке chat_id обычно стабилен).
-REG_STATE: Dict[int, str] = {}               # chat_id -> "waiting_fullname" | "waiting_age"
-REG_NAME: Dict[int, Tuple[str, str]] = {}    # chat_id -> (first_name, last_name)
-CHAT_USER: Dict[int, int] = {}               # chat_id -> user_id (если удалось достать)
+# В MAX событие BotStarted может приходить без user_id.
+# А вот MessageCreated почти всегда содержит sender.user_id.
+# Поэтому состояние регистрации храним по user_id (стабильно),
+# а chat_id используем только для отправки сообщений bot.send_message.
+REG_STATE_UID: Dict[int, str] = {}               # user_id -> "waiting_fullname" | "waiting_age"
+REG_NAME_UID: Dict[int, Tuple[str, str]] = {}    # user_id -> (first_name, last_name)
+
+# Привязка чата к пользователю (когда можем извлечь обе сущности)
+CHAT_USER: Dict[int, int] = {}                   # chat_id -> user_id
 
 
 def _parse_fullname(text: str) -> Optional[Tuple[str, str]]:
@@ -112,6 +116,12 @@ def _extract_chat_id_from_any(event) -> int:
     msg = getattr(event, "message", None)
     if not chat_id and msg is not None:
         chat_id = getattr(msg, "chat_id", None) or getattr(msg, "chatId", None)
+
+    # 2.1) Частый вариант: message.chat.id
+    if not chat_id and msg is not None:
+        chat = getattr(msg, "chat", None)
+        if chat is not None:
+            chat_id = getattr(chat, "id", None) or getattr(chat, "chat_id", None) or getattr(chat, "chatId", None)
 
     # 3) Иногда message может быть dict/pydantic — вытащим из дампа
     if not chat_id and msg is not None:
@@ -262,19 +272,20 @@ async def _send_welcome(bot: Bot, chat_id: int, user_id: int) -> None:
     if user_id:
         CHAT_USER[chat_id] = user_id
 
-    db_user_id = CHAT_USER.get(chat_id) or chat_id
+    # Если user_id известен — можем понять, зарегистрирован ли пользователь.
+    if user_id:
+        user = await get_user(user_id)
+        if user:
+            _, first_name, *_ = user
+            await _send_menu(bot, chat_id, f"С возвращением, {first_name}!")
+            return
 
-    user = await get_user(db_user_id)
-    if user:
-        _, first_name, *_ = user
-        text = f"С возвращением, {first_name}!"
-        await _send_menu(bot, chat_id, text)
-        return
+        # старт/перезапуск регистрации по стабильному ключу user_id
+        REG_STATE_UID[user_id] = "waiting_fullname"
+        REG_NAME_UID.pop(user_id, None)
 
-    # новая регистрация / перезапуск регистрации
-    REG_STATE[chat_id] = "waiting_fullname"
-    REG_NAME.pop(chat_id, None)
-
+    # Если user_id в BotStarted не пришёл — просто показываем инструкцию.
+    # Реальное состояние регистрации будет подхвачено в MessageCreated, где user_id почти всегда есть.
     await bot.send_message(
         chat_id=chat_id,
         text=(
@@ -342,14 +353,9 @@ async def main() -> None:
             user_id = 0
         await _send_welcome(event.bot, chat_id, user_id)
 
-    @dp.message_created(Command("stats"))
-    async def on_stats(event: MessageCreated):
-        chat_id = _extract_chat_id_from_any(event)
-        user_id = _extract_user_id_from_message(event)
-        if user_id:
-            CHAT_USER[chat_id] = user_id
-        db_user_id = CHAT_USER.get(chat_id) or chat_id
-        await _send_stats(event, chat_id, db_user_id)
+    # В MAX команда /stats может работать нестабильно (в клиентах часто это просто текст).
+    # Поэтому статистику обрабатываем через кнопку/текст "Статистика" в одном месте (on_any_message)
+    # и через callback (если доступен).
 
     # Ловим callback по кнопке «Статистика»
     try:
@@ -366,7 +372,7 @@ async def main() -> None:
                 user_id = 0
             if user_id:
                 CHAT_USER[chat_id] = user_id
-            db_user_id = CHAT_USER.get(chat_id) or chat_id
+            db_user_id = user_id or CHAT_USER.get(chat_id) or chat_id
             # отвечаем тем же топом
             # CallbackCreated обычно не имеет message.answer, поэтому шлём через bot
             tmp_event = type("Tmp", (), {"message": type("M", (), {"answer": lambda self, t: event.bot.send_message(chat_id=chat_id, text=t)})()})()
@@ -379,16 +385,19 @@ async def main() -> None:
     async def on_any_message(event: MessageCreated):
         chat_id = _extract_chat_id_from_any(event)
         user_id = _extract_user_id_from_message(event)
-        if user_id:
+        if chat_id and user_id:
             CHAT_USER[chat_id] = user_id
-        db_user_id = CHAT_USER.get(chat_id) or chat_id
+
+        # В БД идентификатор пользователя = user_id (как в Telegram). Если user_id вдруг не извлекли — fallback на chat_id.
+        db_user_id = user_id or CHAT_USER.get(chat_id) or chat_id
 
         text = _get_message_text(event).strip()
 
         # Если пользователь нажал «Начать» повторно или хочет перезапустить — поддерживаем это в любой момент
         if _is_start_request(text):
-            REG_STATE.pop(chat_id, None)
-            REG_NAME.pop(chat_id, None)
+            if user_id:
+                REG_STATE_UID.pop(user_id, None)
+                REG_NAME_UID.pop(user_id, None)
             await _send_welcome(event.bot, chat_id, user_id)
             return
 
@@ -397,24 +406,33 @@ async def main() -> None:
             await _send_stats(event, chat_id, db_user_id)
             return
 
-        state = REG_STATE.get(chat_id)
+        # --- Регистрация ---
+        # 1) Если пользователь уже зарегистрирован — можно игнорировать «шум» или показывать меню по запросу.
+        user = await get_user(db_user_id)
+        if user:
+            return
 
-        # Если бот перезапустился и состояние потерялось:
-        # - если пользователь не зарегистрирован, не молчим — подскажем нажать «Начать»
+        # 2) Если user_id не смогли извлечь (редко) — просим нажать «Начать».
+        if not user_id:
+            await event.message.answer("Нажмите «Начать», чтобы пройти регистрацию.")
+            return
+
+        state = REG_STATE_UID.get(user_id)
+
+        # Если состояние потерялось (перезапуск), но пользователь прислал Имя Фамилия — подхватываем.
         if not state:
-            user = await get_user(db_user_id)
-            if not user:
-                # Частый кейс в MAX: после BotStarted/"Добро пожаловать" chat_id в следующем событии
-                # может прийти в другом поле, и мы можем не найти REG_STATE.
-                # Чтобы пользователь не застревал, если он прислал "Имя Фамилия" — продолжаем регистрацию автоматически.
-                parsed = _parse_fullname(text)
-                if parsed:
-                    REG_NAME[chat_id] = parsed
-                    REG_STATE[chat_id] = "waiting_age"
-                    await event.message.answer("Отлично! Теперь введи возраст (числом).")
-                    return
-
-                await event.message.answer("Я ещё не знаю вас 🙂 Нажмите «Начать», чтобы пройти регистрацию.")
+            parsed = _parse_fullname(text)
+            if parsed:
+                REG_NAME_UID[user_id] = parsed
+                REG_STATE_UID[user_id] = "waiting_age"
+                await event.message.answer("Отлично! Теперь введи возраст (числом).")
+                return
+            # Если прислали возраст без имени — попросим имя.
+            if _parse_age(text) is not None:
+                REG_STATE_UID[user_id] = "waiting_fullname"
+                await event.message.answer("Сначала введи Имя и Фамилию (через пробел).\nПример: Иван Иванов")
+                return
+            await event.message.answer("Я ещё не знаю вас 🙂 Нажмите «Начать», чтобы пройти регистрацию.")
             return
 
         if state == "waiting_fullname":
@@ -422,9 +440,8 @@ async def main() -> None:
             if not parsed:
                 await event.message.answer("❌ Нужно ввести Имя и Фамилию через пробел.\nПример: Иван Иванов")
                 return
-
-            REG_NAME[chat_id] = parsed
-            REG_STATE[chat_id] = "waiting_age"
+            REG_NAME_UID[user_id] = parsed
+            REG_STATE_UID[user_id] = "waiting_age"
             await event.message.answer("Отлично! Теперь введи возраст (числом).")
             return
 
@@ -434,16 +451,20 @@ async def main() -> None:
                 await event.message.answer("❌ Возраст должен быть числом (например 25). Попробуй ещё раз.")
                 return
 
-            first_name, last_name = REG_NAME.get(chat_id, ("", ""))
+            first_name, last_name = REG_NAME_UID.get(user_id, ("", ""))
             try:
-                await register_user(db_user_id, first_name, last_name, age)
+                await register_user(user_id, first_name, last_name, age)
             except Exception:
                 pass
 
-            REG_STATE.pop(chat_id, None)
-            REG_NAME.pop(chat_id, None)
+            REG_STATE_UID.pop(user_id, None)
+            REG_NAME_UID.pop(user_id, None)
 
-            await _send_menu(event.bot, chat_id, "✅ Готово! Ты зарегистрирован(а).")
+            # Если chat_id не смогли извлечь — ответим через контекст.
+            if chat_id:
+                await _send_menu(event.bot, chat_id, "✅ Готово! Ты зарегистрирован(а).")
+            else:
+                await event.message.answer("✅ Готово! Ты зарегистрирован(а).")
             return
 
     # Поднимаем web-сервер (как и в Telegram версии)
