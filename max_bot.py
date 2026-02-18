@@ -84,6 +84,40 @@ def _extract_chat_and_user_ids_from_message(event: MessageCreated) -> Tuple[int,
     return int(chat_id), int(user_id)
 
 
+def _get_message_text(event: MessageCreated) -> str:
+    """Достаём текст из входящего сообщения MAX максимально совместимо.
+
+    В актуальных примерах maxapi используется event.message.body.text.
+    В некоторых версиях/типах может быть event.message.text.
+    """
+    msg = getattr(event, "message", None)
+    if msg is None:
+        return ""
+
+    # Актуальный путь из документации/примеров: message.body.text
+    body = getattr(msg, "body", None)
+    if body is not None:
+        text = getattr(body, "text", None)
+        if isinstance(text, str) and text.strip():
+            return text
+
+    # Запасной вариант (на случай другой схемы)
+    text2 = getattr(msg, "text", None)
+    if isinstance(text2, str) and text2.strip():
+        return text2
+
+    # Иногда body может быть dict-подобным
+    try:
+        if isinstance(body, dict):
+            t = body.get("text")
+            if isinstance(t, str) and t.strip():
+                return t
+    except Exception:
+        pass
+
+    return ""
+
+
 def _extract_chat_and_user_ids_from_started(event: BotStarted) -> Tuple[int, int]:
     chat_id = getattr(event, "chat_id", None) or getattr(event, "chatId", None) or 0
     user_id = getattr(event, "user_id", None) or getattr(event, "userId", None) or 0
@@ -178,7 +212,7 @@ async def main() -> None:
     async def on_any_message(event: MessageCreated):
         # Регистрация (после BotStarted)
         _chat_id, user_id = _extract_chat_and_user_ids_from_message(event)
-        text = getattr(event.message, "text", None) or ""
+        text = _get_message_text(event)
         state = REG_STATE.get(user_id)
 
         # Кнопка «Начать» в MAX часто отправляет обычный текст (не /start),
