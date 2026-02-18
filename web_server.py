@@ -276,7 +276,8 @@ async def handle_me(request: web.Request) -> web.Response:
     reset_token = await get_stats_reset_token()
 
     init_data = request.headers.get("X-Telegram-InitData", "")
-    token = os.getenv("BOT_TOKEN", "")
+    # Токен бота берём из MAX_BOT_TOKEN (обратная совместимость: BOT_TOKEN)
+    token = (os.getenv("MAX_BOT_TOKEN") or os.getenv("BOT_TOKEN") or "")
     parsed = _verify_telegram_webapp_init_data(init_data, token)
     if not parsed:
         return web.json_response({"ok": False, "error": "bad_init_data"}, status=401)
@@ -342,7 +343,8 @@ async def handle_me(request: web.Request) -> web.Response:
 
 async def _require_admin(request: web.Request) -> int:
     """Проверка admin по initData (передаётся в заголовке X-Telegram-InitData или ?initData=...)."""
-    bot_token = os.getenv("BOT_TOKEN", "")
+    # Токен бота берём из MAX_BOT_TOKEN (обратная совместимость: BOT_TOKEN)
+    bot_token = (os.getenv("MAX_BOT_TOKEN") or os.getenv("BOT_TOKEN") or "")
     init_data = request.headers.get("X-Telegram-InitData") or request.query.get("initData") or ""
 
     verified = _verify_telegram_webapp_init_data(init_data, bot_token)
@@ -505,7 +507,8 @@ def create_app() -> web.Application:
     app = web.Application(middlewares=[cors_middleware])
 
     # Bot instance для отправки грамот из админ-панели
-    token = os.getenv("BOT_TOKEN", "")
+    # Токен бота берём из MAX_BOT_TOKEN (обратная совместимость: BOT_TOKEN)
+    token = (os.getenv("MAX_BOT_TOKEN") or os.getenv("BOT_TOKEN") or "")
     app["bot"] = Bot(token=token) if token else Bot(token="0")
 
     async def _close_bot(app_: web.Application):
