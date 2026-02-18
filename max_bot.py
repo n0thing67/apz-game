@@ -181,6 +181,18 @@ async def main() -> None:
         text = getattr(event.message, "text", None) or ""
         state = REG_STATE.get(user_id)
 
+        # Кнопка «Начать» в MAX часто отправляет обычный текст (не /start),
+        # поэтому ловим этот кейс отдельно.
+        start_text = (text or "").strip().lower()
+        if start_text in ("начать", "start", "/start"):
+            # Сбрасываем незавершённую регистрацию и запускаем приветствие заново
+            REG_STATE.pop(user_id, None)
+            REG_NAME.pop(user_id, None)
+            chat_id, _ = _extract_chat_and_user_ids_from_message(event)
+            if chat_id:
+                await _send_welcome(event.bot, chat_id, user_id)
+            return
+
         if not state:
             return
 
