@@ -86,10 +86,9 @@ def _norm_start_word(text: str) -> str:
 def _is_start_request(text: str) -> bool:
     t = _norm_start_word(text)
     # MAX-кнопка «Начать» часто отправляет обычный текст
-    if t in {"начать", "start", "/start", "старт"}:
+    if t in {"начать", "start", "старт"}:
         return True
-    # на случай /start с параметрами или упоминанием бота
-    return t.startswith("/start")
+    return False
 
 
 def _is_stats_request(text: str) -> bool:
@@ -282,7 +281,7 @@ async def _send_welcome(bot: Bot, chat_id: int, user_id: int) -> None:
             "Добро пожаловать на АПЗ!\n"
             "✍️ Введите Имя и Фамилию одним сообщением (через пробел).\n"
             "Пример: Иван Иванов\n\n"
-            "Если вы уже нажимали «Начать», но бот перезапустился — просто отправьте /start ещё раз."
+            "Если вы уже нажимали «Начать», но бот перезапустился — просто нажмите «Начать» ещё раз."
         ),
     )
 
@@ -291,7 +290,7 @@ async def _send_stats(event: MessageCreated, chat_id: int, db_user_id: int) -> N
     user = await get_user(db_user_id)
     if not user:
         # Если человек не зарегистрирован — предлагаем старт
-        await event.message.answer("Сначала нажми «Начать» (или отправь /start) и пройди регистрацию.")
+        await event.message.answer("Сначала нажми «Начать» и пройди регистрацию.")
         return
 
     try:
@@ -341,17 +340,6 @@ async def main() -> None:
             user_id = int(user_id or 0)
         except Exception:
             user_id = 0
-        await _send_welcome(event.bot, chat_id, user_id)
-
-    @dp.message_created(Command("start"))
-    async def on_start(event: MessageCreated):
-        chat_id = _extract_chat_id_from_any(event)
-        if not chat_id:
-            return
-        user_id = _extract_user_id_from_message(event)
-        # Явный /start всегда перезапускает сценарий регистрации (если пользователь хочет «начать заново»)
-        REG_STATE.pop(chat_id, None)
-        REG_NAME.pop(chat_id, None)
         await _send_welcome(event.bot, chat_id, user_id)
 
     @dp.message_created(Command("stats"))
@@ -412,7 +400,7 @@ async def main() -> None:
         state = REG_STATE.get(chat_id)
 
         # Если бот перезапустился и состояние потерялось:
-        # - если пользователь не зарегистрирован, не молчим — подскажем /start
+        # - если пользователь не зарегистрирован, не молчим — подскажем нажать «Начать»
         if not state:
             user = await get_user(db_user_id)
             if not user:
@@ -426,7 +414,7 @@ async def main() -> None:
                     await event.message.answer("Отлично! Теперь введи возраст (числом).")
                     return
 
-                await event.message.answer("Я ещё не знаю вас 🙂 Нажмите «Начать» или отправьте /start, чтобы пройти регистрацию.")
+                await event.message.answer("Я ещё не знаю вас 🙂 Нажмите «Начать», чтобы пройти регистрацию.")
             return
 
         if state == "waiting_fullname":
