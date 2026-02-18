@@ -5,3 +5,4 @@ aiohttp>=3.9
 Pillow>=10.0
 psycopg2-binary
 asyncpg>=0.29
+maxapi>=0.9.13
