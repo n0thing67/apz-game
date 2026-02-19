@@ -275,7 +275,15 @@ async def handle_me(request: web.Request) -> web.Response:
     # Сначала получаем текущий reset_token (он нужен даже если пользователя ещё нет в БД)
     reset_token = await get_stats_reset_token()
 
-    init_data = request.headers.get("X-Telegram-InitData", "")
+    init_data = request.headers.get("X-Telegram-InitData") or request.query.get("initData") or ""
+
+    if not init_data:
+        try:
+            body = await request.json()
+            init_data = (body.get("initData") or body.get("init_data") or "").strip()
+        except Exception:
+            pass
+
     token = os.getenv("BOT_TOKEN", "")
     parsed = _verify_telegram_webapp_init_data(init_data, token)
     if not parsed:
