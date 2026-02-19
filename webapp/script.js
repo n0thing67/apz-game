@@ -1063,62 +1063,64 @@ function renderLevelMenuStats() {
 
 async function resetAllStats() {
     // Кнопка "Сбросить статистику" должна работать из меню уровней.
-    // Важно: сброс выполняем НА СЕРВЕРЕ для конкретного пользователя (как в админке),
-    // а затем очищаем localStorage, чтобы интерфейс сразу показал пустые данные.
+    // Поэтому здесь НЕ используем переменные текущего уровня (levelId/score и т.п.),
+    // которые могут быть не определены и ломают обработчик.
 
-    // Если мы внутри Telegram WebApp — сначала сбрасываем на сервере (иначе старые данные вернутся из БД).
+    // 1) Сначала сбрасываем статистику НА СЕРВЕРЕ (как в админке "очистить статистику у выбранного пользователя").
+    // Это принципиально важно, чтобы /stats и админ-панель не показывали старые результаты.
     if (tg?.initData) {
         try {
             const res = await fetch(apiUrl('/api/reset_my_scores'), {
                 method: 'POST',
-                cache: 'no-store',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Telegram-InitData': tg.initData
-                },
-                body: JSON.stringify({})
+                headers: { 'X-Telegram-InitData': tg.initData }
             });
 
             if (!res.ok) {
-                notify('Не удалось очистить статистику (нет связи с сервером). Попробуй ещё раз.');
+                notify('Не удалось очистить статистику на сервере. Попробуй ещё раз.');
                 return;
             }
 
-            const data = await res.json().catch(() => ({}));
-            // Сохраняем актуальные токены, чтобы при следующем входе не было "оживления" старых данных.
+            const data = await res.json();
+            if (!data?.ok) {
+                notify('Не удалось очистить статистику на сервере. Попробуй ещё раз.');
+                return;
+            }
+
+            // Обновим токены сброса, чтобы локальная логика синхронизации не "оживляла" старые данные.
             try {
-                if (data?.reset_token != null) localStorage.setItem(RESET_TOKEN_KEY, String(data.reset_token));
+                if (data.reset_token != null) localStorage.setItem(RESET_TOKEN_KEY, String(data.reset_token));
             } catch (e) {}
             try {
-                if (data?.user_reset_token != null) localStorage.setItem(USER_RESET_TOKEN_KEY, String(data.user_reset_token));
+                if (data.user_reset_token != null) localStorage.setItem(USER_RESET_TOKEN_KEY, String(data.user_reset_token));
             } catch (e) {}
         } catch (e) {
-            notify('Не удалось очистить статистику (ошибка сети). Попробуй ещё раз.');
+            notify('Не удалось очистить статистику на сервере (нет соединения). Попробуй ещё раз.');
             return;
         }
     }
 
-    // Локальная очистка (интерфейс/кэш)
+    // 2) После успешного сброса на сервере — чистим локальные данные (текущий WebApp).
     stats = {};
     try { localStorage.removeItem(STATS_KEY); } catch (e) {}
-    // Сброс профтеста "что тебе подходит?" и рекомендаций
+// При каждом запуске также сбрасываем профтест "что тебе подходит?" и рекомендации (⭐)
+try { localStorage.removeItem(APTITUDE_STORAGE_KEY); } catch (e) {}
+    // Сброс статистики профтеста "что тебе подходит?"
     try { localStorage.removeItem(APTITUDE_STORAGE_KEY); } catch (e) {}
     try { clearAptitudeMenuRecommendations(); } catch (e) {}
 
-    // Совместимая со старым финалом статистика (очки по уровням)
+    // Сбросим совместимую со старым финалом статистику (очки по уровням)
     levelScores = { 1: 0, 2: 0, 3: 0, 4: 0 };
 
     saveStats(stats);
     renderLevelMenuStats();
-    notify('Готово! Статистика очищена.');
 }
 
-
+// Подтверждение очистки статистики из меню уровней.
 // Требование: перед сбросом показываем окно подтверждения.
 function confirmResetStats() {
     const msg =
         'Очистить статистику?\n\n' +
-        'Будут удалены результаты игр и данные теста «Что тебе подходит?» на этом устройстве.';
+        'Будут удалены результаты игр и данные теста «Что тебе подходит?» у твоего профиля (в базе данных), а WebApp очистит локальные данные.';
 
     // Telegram WebApp: показываем системный popup с подтверждением.
     if (tg?.showPopup) {
@@ -1142,7 +1144,7 @@ function confirmResetStats() {
     // Фолбэк (браузер/не Telegram): стандартный confirm.
     try {
         if (typeof confirm === 'function') {
-            const ok = confirm('Очистить статистику?\n\nЭто действие удалит результаты игр и теста на этом устройстве.');
+            const ok = confirm('Очистить статистику?\n\nЭто действие удалит результаты игр и теста у твоего профиля (в базе данных) и очистит локальные данные.');
             if (ok) resetAllStats();
             return;
         }
