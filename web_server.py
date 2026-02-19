@@ -1,375 +1,219 @@
-import os
-import json
-import time
-import hmac
+import asyncio
 import hashlib
+import hmac
+import json
 import logging
-from pathlib import Path
+import os
+from io import BytesIO
 from urllib.parse import parse_qsl
 
-import asyncio
 from aiohttp import web
 
+from aiogram import Bot
+from aiogram.types import BufferedInputFile
+from PIL import Image, ImageDraw, ImageFont
+
 from database.db import (
-    get_user_profile,
-    get_all_users,
     get_levels,
     set_level_active,
-    reset_all_scores,
-    reset_user_scores,
+    get_top_users,
+    get_all_users,
+    get_user,
+    get_user_profile,
     delete_user,
     delete_all_users,
+    reset_all_scores,
+    reset_user_scores,
     get_stats_reset_token,
-    get_user_reset_token,
     get_user_deleted_token,
+    get_user_reset_token,
 )
 
-# =========================
-# Telegram WebApp initData
-# =========================
 
-def _parse_init_data(init_data: str) -> dict:
-    init_data = (init_data or "").strip()
-    if init_data.startswith("?"):
-        init_data = init_data[1:]
-    # НЕ strict_parsing: Telegram WebView иногда отдаёт пустые значения/особые символы
-    pairs = parse_qsl(init_data, keep_blank_values=True)
-    return {k: v for k, v in pairs}
+WEBAPP_DIR = os.path.join(os.path.dirname(__file__), "webapp")
 
-def _verify_telegram_webapp_init_data(init_data: str, bot_token: str) -> tuple[bool, dict]:
+# Шаблоны грамот/дипломов (вариант A: PNG + наложение текста)
+CERT_TEMPLATES_DIR = os.path.join(WEBAPP_DIR, "assets", "cert_templates")
+
+
+def _resolve_font_paths(font_key: str):
+    """Возвращает (regular_path, bold_path) с безопасным фолбэком.
+
+    В админке доступен выбор нескольких шрифтов. Здесь оставляем только те,
+    которые гарантированно умеют кириллицу и часто присутствуют в Linux-окружении.
+    Если конкретного шрифта нет в системе — используем DejaVu Sans как фолбэк.
     """
-    Returns (ok, parsed_dict). Проверка по алгоритму Telegram WebApp.
-    https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app
-    """
+
+    base = "/usr/share/fonts/truetype"
+
+    # В проекте оставляем только DejaVu Sans / DejaVu Serif.
+    # Все остальные ключи безопасно фолбэкаются в DejaVu Sans.
+    font_map = {
+        "dejavu_sans": (
+            f"{base}/dejavu/DejaVuSans.ttf",
+            f"{base}/dejavu/DejaVuSans-Bold.ttf",
+        ),
+        "dejavu_serif": (
+            f"{base}/dejavu/DejaVuSerif.ttf",
+            f"{base}/dejavu/DejaVuSerif-Bold.ttf",
+        ),
+        # Совместимость со старым ключом
+        "sans": (
+            f"{base}/dejavu/DejaVuSans.ttf",
+            f"{base}/dejavu/DejaVuSans-Bold.ttf",
+        ),
+        "serif": (
+            f"{base}/dejavu/DejaVuSerif.ttf",
+            f"{base}/dejavu/DejaVuSerif-Bold.ttf",
+        ),
+    }
+
+    key = str(font_key or "dejavu_sans").lower()
+    regular, bold = font_map.get(key, font_map["dejavu_sans"])
+
+    # если bold отсутствует — используем regular
+    if not os.path.exists(regular):
+        regular, bold = font_map["dejavu_sans"]
+    if not os.path.exists(bold):
+        bold = regular
+
+    return (regular, bold)
+
+
+def _fit_font(draw: ImageDraw.ImageDraw, text: str, font_path: str, max_width: int, start_size: int, min_size: int = 18):
+    size = start_size
+    while size >= min_size:
+        font = ImageFont.truetype(font_path, size)
+        bbox = draw.textbbox((0, 0), text, font=font)
+        w = bbox[2] - bbox[0]
+        if w <= max_width:
+            return font
+        size -= 2
+    return ImageFont.truetype(font_path, min_size)
+
+
+def _render_award_png(template_filename: str, full_name: str, event_name: str, event_date: str, score: int | None = None, font_key: str = "sans") -> bytes:
+    template_path = os.path.join(CERT_TEMPLATES_DIR, template_filename)
+    img = Image.open(template_path).convert("RGBA")
+    w, h = img.size
+    draw = ImageDraw.Draw(img)
+
+    regular_font_path, bold_font_path = _resolve_font_paths(font_key)
+
+    # Блоки текста (относительно размера шаблона)
+    # Требования:
+    # 1) название мероприятия — чуть ниже "Сертификат за участие" и крупное (как ФИО)
+    # 2) ФИО сразу под мероприятием
+    # 3) Очки сразу под ФИО
+    # 4) Дата на уровне "верхушки кубка" (примерно 70% высоты, с защитой от наложения)
+    max_text_width = int(w * 0.78)
+    gap = max(10, int(h * 0.02))
+
+    # Для дипломов (1/2/3 место) по ТЗ опускаем блоки ниже на 100px,
+    # сертификат оставляем без изменений.
+    offset_y = 100 if template_filename in {"1mesto.png", "2mesto.png", "3mesto.png"} else 0
+
+    # Мероприятие (крупно, как ФИО)
+    event_text = (event_name or "").strip()
+    event_font = _fit_font(draw, event_text, bold_font_path, max_text_width, start_size=int(h * 0.05), min_size=26)
+    event_bbox = draw.textbbox((0, 0), event_text, font=event_font)
+    event_w = event_bbox[2] - event_bbox[0]
+    event_h = event_bbox[3] - event_bbox[1]
+    event_y = int(h * 0.30) + offset_y
+    draw.text(((w - event_w) / 2, event_y), event_text, font=event_font, fill=(20, 30, 45, 255))
+
+    # Имя участника — крупно, сразу под мероприятием
+    name_font = _fit_font(draw, full_name, bold_font_path, max_text_width, start_size=int(h * 0.05), min_size=28)
+    name_bbox = draw.textbbox((0, 0), full_name, font=name_font)
+    name_w = name_bbox[2] - name_bbox[0]
+    name_h = name_bbox[3] - name_bbox[1]
+    name_y = event_y + event_h + gap
+    draw.text(((w - name_w) / 2, name_y), full_name, font=name_font, fill=(20, 30, 45, 255))
+
+    # Очки участника — сразу под ФИО
     try:
-        data = _parse_init_data(init_data)
-        given_hash = data.get("hash", "")
-        if not given_hash:
-            return False, data
-
-        check_pairs = []
-        for k, v in data.items():
-            if k == "hash":
-                continue
-            check_pairs.append(f"{k}={v}")
-        check_pairs.sort()
-        data_check_string = "\n".join(check_pairs)
-
-        secret_key = hmac.new(b"WebAppData", bot_token.encode("utf-8"), hashlib.sha256).digest()
-        calc_hash = hmac.new(secret_key, data_check_string.encode("utf-8"), hashlib.sha256).hexdigest()
-
-        if not hmac.compare_digest(calc_hash, given_hash):
-            return False, data
-
-        return True, data
+        score_val = int(score) if score is not None else 0
     except Exception:
-        return False, {}
+        score_val = 0
+    score_text = f"Очки: {score_val}"
+    score_font = _fit_font(draw, score_text, regular_font_path, max_text_width, start_size=int(h * 0.035), min_size=18)
+    score_bbox = draw.textbbox((0, 0), score_text, font=score_font)
+    score_w = score_bbox[2] - score_bbox[0]
+    score_h = score_bbox[3] - score_bbox[1]
+    score_y = name_y + name_h + gap
+    draw.text(((w - score_w) / 2, score_y), score_text, font=score_font, fill=(25, 45, 70, 255))
 
-def _extract_user_id(parsed_init: dict) -> int | None:
+    # Дата — на уровне верхушки кубка слева (примерно), ниже очков если нужно
+    date_text = f"Дата: {event_date}".strip()
+    date_font = _fit_font(draw, date_text, regular_font_path, max_text_width, start_size=int(h * 0.03), min_size=18)
+    date_bbox = draw.textbbox((0, 0), date_text, font=date_font)
+    date_w = date_bbox[2] - date_bbox[0]
+    date_h = date_bbox[3] - date_bbox[1]
+    date_y_target = int(h * 0.70)
+    date_y = max(date_y_target, score_y + score_h + gap)
+    draw.text(((w - date_w) / 2, date_y), date_text, font=date_font, fill=(25, 45, 70, 255))
+
+
+    out = BytesIO()
+    img.convert("RGB").save(out, format="PNG", optimize=True)
+    return out.getvalue()
+
+
+def _verify_telegram_webapp_init_data(init_data: str, bot_token: str) -> dict | None:
+    """Проверка initData из Telegram WebApp (HMAC SHA-256).
+
+    Возвращает распарсенный dict параметров initData при успехе, иначе None.
+    """
+    if not init_data or not bot_token:
+        return None
+
     try:
-        user_json = parsed_init.get("user")
-        if not user_json:
-            return None
-        user = json.loads(user_json)
-        uid = user.get("id")
+        clean = str(init_data).strip()
+        # Telegram иногда отдаёт initData с ведущим '?', а также с пустыми значениями.
+        # strict_parsing=True может падать на таких строках, из-за чего WebApp-операции
+        # (в т.ч. сброс статистики) не доходят до БД.
+        clean = clean[1:] if clean.startswith('?') else clean
+        params = dict(parse_qsl(clean, keep_blank_values=True))
+    except Exception:
+        return None
+
+    their_hash = params.pop("hash", None)
+    if not their_hash:
+        return None
+
+    # data_check_string: key=value\n... отсортировано по ключу
+    data_check_string = "\n".join(f"{k}={params[k]}" for k in sorted(params.keys()))
+
+    secret_key = hmac.new(b"WebAppData", bot_token.encode("utf-8"), hashlib.sha256).digest()
+    calc_hash = hmac.new(secret_key, data_check_string.encode("utf-8"), hashlib.sha256).hexdigest()
+
+    if not hmac.compare_digest(calc_hash, their_hash):
+        return None
+
+    return params
+
+
+def _extract_user_id(verified_params: dict) -> int | None:
+    # user={"id":..., ...}
+    raw_user = verified_params.get("user")
+    if not raw_user:
+        return None
+    try:
+        u = json.loads(raw_user)
+        uid = u.get("id")
         return int(uid) if uid is not None else None
     except Exception:
         return None
 
-def _get_init_data_from_request(request: web.Request) -> str:
-    # 1) header (как в админке)
-    init_data = request.headers.get("X-Telegram-InitData", "")
-    if init_data:
-        return init_data
 
-    # 2) query (старый клиент)
-    init_data = request.query.get("initData", "") or request.query.get("init_data", "")
-    if init_data:
-        return init_data
+def _get_admin_ids() -> set[int]:
+    raw_admins = os.getenv("ADMIN_IDS", "")
+    return {int(x.strip()) for x in raw_admins.split(",") if x.strip().isdigit()}
 
-    return ""
-
-def _admin_ids() -> set[int]:
-    raw = os.getenv("ADMIN_IDS", "")
-    return {int(x.strip()) for x in raw.split(",") if x.strip().isdigit()}
-
-def _is_admin(user_id: int) -> bool:
-    return user_id in _admin_ids()
-
-# =========================
-# HTTP handlers
-# =========================
-
-async def handle_levels(request: web.Request) -> web.Response:
-    levels = await get_levels()
-    return web.json_response({"ok": True, "levels": levels})
-
-async def handle_me(request: web.Request) -> web.Response:
-    bot_token = os.getenv("BOT_TOKEN", "").strip()
-    init_data = _get_init_data_from_request(request)
-    ok, parsed = _verify_telegram_webapp_init_data(init_data, bot_token) if bot_token else (False, {})
-    if not ok:
-        return web.json_response({"ok": False, "error": "bad_init_data"}, status=401)
-
-    user_id = _extract_user_id(parsed)
-    if not user_id:
-        return web.json_response({"ok": False, "error": "no_user"}, status=401)
-
-    row = await get_user_profile(int(user_id))
-    if not row:
-        # пользователь мог быть удалён админом — фронт сам покажет регистрацию/нулевые значения
-        user = {"telegram_id": int(user_id), "first_name": "", "last_name": "", "age": None, "score": 0, "aptitude_top": None}
-    else:
-        telegram_id, first_name, last_name, age, score, aptitude_top = row
-        user = {
-            "telegram_id": telegram_id,
-            "first_name": first_name or "",
-            "last_name": last_name or "",
-            "age": age,
-            "score": int(score or 0),
-            "aptitude_top": aptitude_top,
-        }
-
-    stats_reset_token = await get_stats_reset_token()
-    user_reset_token = await get_user_reset_token(int(user_id))
-    user_deleted_token = await get_user_deleted_token(int(user_id))
-
-    return web.json_response({
-        "ok": True,
-        "user": user,
-        "stats_reset_token": stats_reset_token,
-        "user_reset_token": user_reset_token,
-        "user_deleted_token": user_deleted_token,
-        "is_admin": _is_admin(int(user_id)),
-    })
-
-async def handle_user_reset_scores(request: web.Request) -> web.Response:
-    """
-    Сброс статистики текущего пользователя (мини-веб).
-    Делает ТО ЖЕ, что админская очистка статистики конкретного пользователя:
-    database.db.reset_user_scores(user_id)
-    """
-    bot_token = os.getenv("BOT_TOKEN", "").strip()
-    init_data = _get_init_data_from_request(request)
-
-    # дополнительно: если клиент отправил JSON body {initData: "..."} — подхватим
-    if not init_data:
-        try:
-            body = await request.json()
-            init_data = (body.get("initData") or body.get("init_data") or "").strip()
-        except Exception:
-            pass
-
-    ok, parsed = _verify_telegram_webapp_init_data(init_data, bot_token) if bot_token else (False, {})
-    if not ok:
-        return web.json_response({"ok": False, "error": "bad_init_data"}, status=401)
-
-    user_id = _extract_user_id(parsed)
-    if not user_id:
-        return web.json_response({"ok": False, "error": "no_user"}, status=401)
-
-    await reset_user_scores(int(user_id))
-
-    # отдадим токены, чтобы WebApp мог синхронизировать localStorage
-    stats_reset_token = await get_stats_reset_token()
-    user_reset_token = await get_user_reset_token(int(user_id))
-
-    return web.json_response({"ok": True, "reset_token": stats_reset_token, "user_reset_token": user_reset_token})
-
-# -------- Admin API --------
-
-async def _require_admin(request: web.Request) -> int | None:
-    bot_token = os.getenv("BOT_TOKEN", "").strip()
-    init_data = _get_init_data_from_request(request)
-    ok, parsed = _verify_telegram_webapp_init_data(init_data, bot_token) if bot_token else (False, {})
-    if not ok:
-        return None
-    uid = _extract_user_id(parsed)
-    if not uid or not _is_admin(int(uid)):
-        return None
-    return int(uid)
-
-async def handle_admin_stats(request: web.Request) -> web.Response:
-    if await _require_admin(request) is None:
-        return web.json_response({"ok": False, "error": "forbidden"}, status=403)
-
-    rows = await get_all_users(limit=200)
-    users = []
-    for telegram_id, first_name, last_name, age, score in rows:
-        users.append({
-            "telegram_id": telegram_id,
-            "first_name": first_name or "",
-            "last_name": last_name or "",
-            "age": age,
-            "score": int(score or 0),
-        })
-    return web.json_response({"ok": True, "users": users})
-
-async def handle_admin_reset_all(request: web.Request) -> web.Response:
-    if await _require_admin(request) is None:
-        return web.json_response({"ok": False, "error": "forbidden"}, status=403)
-    await reset_all_scores()
-    return web.json_response({"ok": True})
-
-async def handle_admin_reset_user(request: web.Request) -> web.Response:
-    if await _require_admin(request) is None:
-        return web.json_response({"ok": False, "error": "forbidden"}, status=403)
-    try:
-        body = await request.json()
-    except Exception:
-        body = {}
-    tg_id = int(body.get("telegram_id") or 0)
-    if not tg_id:
-        return web.json_response({"ok": False, "error": "bad_request"}, status=400)
-    await reset_user_scores(tg_id)
-    return web.json_response({"ok": True})
-
-async def handle_admin_delete_user(request: web.Request) -> web.Response:
-    if await _require_admin(request) is None:
-        return web.json_response({"ok": False, "error": "forbidden"}, status=403)
-    try:
-        body = await request.json()
-    except Exception:
-        body = {}
-    tg_id = int(body.get("telegram_id") or 0)
-    if not tg_id:
-        return web.json_response({"ok": False, "error": "bad_request"}, status=400)
-    await delete_user(tg_id)
-    return web.json_response({"ok": True})
-
-async def handle_admin_delete_all_users(request: web.Request) -> web.Response:
-    if await _require_admin(request) is None:
-        return web.json_response({"ok": False, "error": "forbidden"}, status=403)
-    await delete_all_users()
-    return web.json_response({"ok": True})
-
-async def handle_admin_set_level(request: web.Request) -> web.Response:
-    if await _require_admin(request) is None:
-        return web.json_response({"ok": False, "error": "forbidden"}, status=403)
-    try:
-        body = await request.json()
-    except Exception:
-        body = {}
-    level_key = str(body.get("level_key") or "").strip()
-    is_active = bool(body.get("is_active"))
-    if not level_key:
-        return web.json_response({"ok": False, "error": "bad_request"}, status=400)
-    await set_level_active(level_key, is_active)
-    return web.json_response({"ok": True})
-
-# --- Awards (минимально рабочая реализация, без изменения остальных процессов) ---
-from PIL import Image, ImageDraw, ImageFont  # Pillow in requirements
-import aiohttp
-
-_CERT_DIR = Path(__file__).resolve().parent / "webapp" / "assets" / "cert_templates"
-
-def _font_by_key(font_key: str, size: int) -> ImageFont.FreeTypeFont:
-    key = (font_key or "").strip().lower()
-    # DejaVu доступен на большинстве linux-окружений
-    if key == "dejavu_serif":
-        path = "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf"
-    else:
-        path = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-    try:
-        return ImageFont.truetype(path, size=size)
-    except Exception:
-        return ImageFont.load_default()
-
-def _center(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.ImageFont, y: int, img_w: int, fill=(0,0,0)):
-    w = draw.textlength(text, font=font)
-    x = int((img_w - w) / 2)
-    draw.text((x, y), text, font=font, fill=fill)
-
-async def handle_admin_send_award(request: web.Request) -> web.Response:
-    if await _require_admin(request) is None:
-        return web.json_response({"ok": False, "error": "forbidden"}, status=403)
-    try:
-        body = await request.json()
-    except Exception:
-        body = {}
-
-    tg_id = int(body.get("telegram_id") or 0)
-    template_key = str(body.get("template_key") or "participation")
-    event_name = str(body.get("event_name") or "").strip()
-    event_date = str(body.get("event_date") or "").strip()
-    font_key = str(body.get("font_key") or "dejavu_sans")
-
-    if not tg_id or not event_name or not event_date:
-        return web.json_response({"ok": False, "error": "bad_request"}, status=400)
-
-    # получаем имя/очки
-    row = await get_user_profile(tg_id)
-    first_name = last_name = ""
-    score = 0
-    if row:
-        _, first_name, last_name, _, score, _ = row
-    full_name = f"{last_name or ''} {first_name or ''}".strip() or str(tg_id)
-
-    # выбираем шаблон
-    if template_key == "1":
-        tmpl = _CERT_DIR / "1mesto.png"
-    elif template_key == "2":
-        tmpl = _CERT_DIR / "2mesto.png"
-    elif template_key == "3":
-        tmpl = _CERT_DIR / "3mesto.png"
-    else:
-        tmpl = _CERT_DIR / "sertificat.png"
-
-    if not tmpl.exists():
-        return web.json_response({"ok": False, "error": "template_missing"}, status=500)
-
-    img = Image.open(tmpl).convert("RGBA")
-    draw = ImageDraw.Draw(img)
-    W, H = img.size
-
-    # Позиции: «дипломы» (1/2/3) у вас уже требовали опускать блоки на 100px.
-    # Делаем это здесь, сертификат оставляем как есть.
-    is_diploma = template_key in ("1","2","3")
-    dy = 100 if is_diploma else 0
-
-    font_event = _font_by_key(font_key, 40)
-    font_name = _font_by_key(font_key, 52)
-    font_score = _font_by_key(font_key, 36)
-    font_date = _font_by_key(font_key, 30)
-
-    # Центровка по ширине, базовые Y подобраны под ваши шаблоны (работают стабильно),
-    # а для дипломов добавляем dy=100 как просили.
-    _center(draw, event_name, font_event, y=520 + dy, img_w=W)
-    _center(draw, full_name, font_name, y=640 + dy, img_w=W)
-    _center(draw, f"Очки: {int(score or 0)}", font_score, y=760 + dy, img_w=W)
-    _center(draw, event_date, font_date, y=980 + dy, img_w=W)
-
-    out_dir = Path(os.getenv("RENDER_DISK_PATH") or Path(__file__).resolve().parent / "tmp")
-    out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / f"award_{tg_id}_{int(time.time()*1000)}.png"
-    img.save(out_path, format="PNG")
-
-    # Отправка файлом в Telegram
-    bot_token = os.getenv("BOT_TOKEN", "").strip()
-    if not bot_token:
-        return web.json_response({"ok": False, "error": "no_bot_token"}, status=500)
-
-    api_url = f"https://api.telegram.org/bot{bot_token}/sendDocument"
-
-    async with aiohttp.ClientSession() as session:
-        data = aiohttp.FormData()
-        data.add_field("chat_id", str(tg_id))
-        data.add_field("caption", "Документ сформирован ✅")
-        data.add_field("document", out_path.read_bytes(), filename=out_path.name, content_type="image/png")
-        async with session.post(api_url, data=data) as resp:
-            if resp.status != 200:
-                txt = await resp.text()
-                logging.error("sendDocument failed: %s %s", resp.status, txt)
-                return web.json_response({"ok": False, "error": "send_failed"}, status=502)
-
-    return web.json_response({"ok": True})
-
-# =========================
-# App bootstrap
-# =========================
 
 @web.middleware
 async def cors_middleware(request: web.Request, handler):
+    # Чтобы WebApp нормально делал fetch() из WebView.
     if request.method == "OPTIONS":
         resp = web.Response(status=204)
     else:
@@ -377,40 +221,391 @@ async def cors_middleware(request: web.Request, handler):
 
     resp.headers["Access-Control-Allow-Origin"] = "*"
     resp.headers["Access-Control-Allow-Methods"] = "GET,POST,OPTIONS"
+    # Важно: WebApp шлёт initData в кастомном заголовке.
+    # Если его не разрешить в CORS, браузер/WebView блокирует запросы (особенно /api/me),
+    # и локальный localStorage потом «оживляет» старые очки/рекомендации после админского сброса.
     resp.headers["Access-Control-Allow-Headers"] = "Content-Type, X-Telegram-InitData"
     return resp
 
-async def run_web_server() -> None:
-    port = int(os.getenv("WEB_PORT") or os.getenv("PORT") or "8080")
 
+async def handle_levels(request: web.Request) -> web.Response:
+    # ВАЖНО: сброс статистики в WebApp должен работать так же надёжно,
+    # как и отключение уровней. /api/levels вызывается без кастомных заголовков
+    # (значит, без CORS-preflight), поэтому сюда также добавляем reset_token.
+    #
+    # Также сюда же (по uid в query) добавляем признак существования пользователя и метку удаления:
+    # при удалении пользователя в админке WebApp должен очистить localStorage при следующем входе
+    # так же надёжно, как и подхватываются отключённые уровни.
+    levels = await get_levels()
+    reset_token = await get_stats_reset_token()
+
+    uid_raw = request.query.get("uid")
+    user_exists = None
+    user_deleted_token = "0"
+    user_reset_token = "0"
+    if uid_raw:
+        try:
+            uid = int(uid_raw)
+            user = await get_user(uid)
+            user_exists = bool(user)
+            if not user_exists:
+                user_deleted_token = await get_user_deleted_token(uid)
+            else:
+                user_reset_token = await get_user_reset_token(uid)
+        except Exception:
+            user_exists = None
+            user_deleted_token = "0"
+            user_reset_token = "0"
+
+    return web.json_response(
+        {
+            "ok": True,
+            "levels": levels,
+            "reset_token": reset_token,
+            "user_exists": user_exists,
+            "user_deleted_token": str(user_deleted_token or "0"),
+            "user_reset_token": str(user_reset_token or "0"),
+        }
+    )
+
+
+
+async def handle_me(request: web.Request) -> web.Response:
+    """Возвращает состояние пользователя для WebApp.
+
+    Нужно, чтобы при удалении/сбросе пользователя в админке
+    локальная статистика (localStorage) не «оживляла» старые результаты
+    после повторной регистрации.
+    """
+    # Сначала получаем текущий reset_token (он нужен даже если пользователя ещё нет в БД)
+    reset_token = await get_stats_reset_token()
+
+    init_data = request.headers.get("X-Telegram-InitData") or request.query.get("initData") or ""
+
+    if not init_data:
+        try:
+            body = await request.json()
+            init_data = (body.get("initData") or body.get("init_data") or "").strip()
+        except Exception:
+            pass
+
+    token = os.getenv("BOT_TOKEN", "")
+    parsed = _verify_telegram_webapp_init_data(init_data, token)
+    if not parsed:
+        return web.json_response({"ok": False, "error": "bad_init_data"}, status=401)
+
+    user_raw = parsed.get("user")
+    if not user_raw:
+        return web.json_response(
+            {
+                "ok": True,
+                "exists": False,
+                "user_exists": False,
+                "user": None,
+                "reset_token": reset_token,
+                "user_deleted_token": "0",
+                "user_reset_token": "0",
+            }
+        )
+
+    try:
+        user_obj = json.loads(user_raw) if isinstance(user_raw, str) else user_raw
+        tg_id = int(user_obj.get("id"))
+    except Exception:
+        return web.json_response({"ok": False, "error": "bad_user"}, status=400)
+
+    # Метка удаления пользователя (если админ удалил его в панели) — нужна, чтобы очистить localStorage в WebApp.
+    user_deleted_token = await get_user_deleted_token(tg_id)
+    # Метка сброса статистики пользователя (если админ очистил только его).
+    user_reset_token = await get_user_reset_token(tg_id)
+
+    row = await get_user_profile(tg_id)
+    if not row:
+        return web.json_response(
+            {
+                "ok": True,
+                "exists": False,
+                "user_exists": False,
+                "user": None,
+                "reset_token": reset_token,
+                "user_deleted_token": user_deleted_token,
+                "user_reset_token": user_reset_token,
+            }
+        )
+
+    telegram_id, first_name, last_name, age, score, aptitude_top = row
+    return web.json_response(
+        {
+            "ok": True,
+            "reset_token": reset_token,
+            "exists": True,
+            "user_exists": True,
+            "user_deleted_token": user_deleted_token,
+            "user_reset_token": user_reset_token,
+            "user": {
+                "telegram_id": telegram_id,
+                "first_name": first_name,
+                "last_name": last_name,
+                "age": age,
+                "score": score,
+                "aptitude_top": aptitude_top,
+            },
+        }
+    )
+
+async def _require_admin(request: web.Request) -> int:
+    """Проверка admin по initData (передаётся в заголовке X-Telegram-InitData или ?initData=...)."""
+    bot_token = os.getenv("BOT_TOKEN", "")
+    init_data = request.headers.get("X-Telegram-InitData") or request.query.get("initData") or ""
+
+    verified = _verify_telegram_webapp_init_data(init_data, bot_token)
+    if not verified:
+        raise web.HTTPUnauthorized(text="Bad initData")
+
+    user_id = _extract_user_id(verified)
+    if not user_id:
+        raise web.HTTPUnauthorized(text="No user")
+
+    if user_id not in _get_admin_ids():
+        raise web.HTTPForbidden(text="Not admin")
+    return user_id
+
+async def handle_user_reset_scores(request: web.Request) -> web.Response:
+    """Сброс статистики пользователем из WebApp.
+
+    Раньше WebApp очищал только localStorage, но данные в БД оставались прежними,
+    из‑за чего команда/кнопка «Статистика» в боте показывала старые результаты.
+    Здесь сбрасываем статистику в БД и отдаём обновлённые токены сброса.
+    """
+    init_data = request.headers.get("X-Telegram-InitData") or request.query.get("initData") or ""
+
+    if not init_data:
+        try:
+            body = await request.json()
+            init_data = (body.get("initData") or body.get("init_data") or "").strip()
+        except Exception:
+            pass
+
+    token = os.getenv("BOT_TOKEN", "")
+    parsed = _verify_telegram_webapp_init_data(init_data, token)
+    if not parsed:
+        return web.json_response({"ok": False, "error": "bad_init_data"}, status=401)
+
+    user_raw = parsed.get("user")
+    if not user_raw:
+        return web.json_response({"ok": False, "error": "no_user"}, status=400)
+
+    try:
+        user_obj = json.loads(user_raw) if isinstance(user_raw, str) else user_raw
+        tg_id = int(user_obj.get("id"))
+    except Exception:
+        return web.json_response({"ok": False, "error": "bad_user"}, status=400)
+
+    # Сбрасываем статистику в БД (score + aptitude_top) и ставим метки сброса
+    await reset_user_scores(tg_id)
+
+    # Возвращаем актуальные токены — WebApp может синхронизировать localStorage без лишних запросов
+    reset_token = await get_stats_reset_token()
+    user_reset_token = await get_user_reset_token(tg_id)
+
+    return web.json_response(
+        {
+            "ok": True,
+            "telegram_id": tg_id,
+            "reset_token": str(reset_token or "0"),
+            "user_reset_token": str(user_reset_token or "0"),
+        }
+    )
+
+
+
+async def admin_get_stats(request: web.Request) -> web.Response:
+    await _require_admin(request)
+    reset_token = await get_stats_reset_token()
+    top = await get_top_users()
+    users = await get_all_users(limit=500)
+    return web.json_response(
+        {
+            "ok": True,
+            "reset_token": reset_token,
+            "top": [
+                {"first_name": f, "last_name": l, "score": s}
+                for (f, l, s) in top
+            ],
+            "users": [
+                {
+                    "telegram_id": tid,
+                    "first_name": fn,
+                    "last_name": ln,
+                    "age": age,
+                    "score": score,
+                }
+                for (tid, fn, ln, age, score) in users
+            ],
+        }
+    )
+
+
+async def admin_reset_scores(request: web.Request) -> web.Response:
+    await _require_admin(request)
+    await reset_all_scores()
+    return web.json_response({"ok": True})
+
+
+async def admin_reset_user_scores(request: web.Request) -> web.Response:
+    """Сброс статистики одного пользователя (очки + профтест)."""
+    await _require_admin(request)
+    payload = await request.json()
+    tg_id = int(payload.get("telegram_id"))
+    await reset_user_scores(tg_id)
+    return web.json_response({"ok": True, "telegram_id": tg_id})
+
+
+async def admin_delete_user(request: web.Request) -> web.Response:
+    await _require_admin(request)
+    payload = await request.json()
+    tg_id = int(payload.get("telegram_id"))
+    await delete_user(tg_id)
+    return web.json_response({"ok": True})
+
+
+async def admin_delete_all_users(request: web.Request) -> web.Response:
+    """Полная очистка таблицы users (все пользователи + их статистика)."""
+    await _require_admin(request)
+    await delete_all_users()
+    return web.json_response({"ok": True})
+
+
+async def admin_set_level(request: web.Request) -> web.Response:
+    await _require_admin(request)
+    payload = await request.json()
+    level_key = str(payload.get("level_key"))
+    is_active = bool(payload.get("is_active"))
+    await set_level_active(level_key, is_active)
+    return web.json_response({"ok": True})
+
+
+async def admin_send_award(request: web.Request) -> web.Response:
+    await _require_admin(request)
+    payload = await request.json()
+
+    tg_id = int(payload.get("telegram_id"))
+    template_key = str(payload.get("template_key") or "participation")
+    event_name = str(payload.get("event_name") or "").strip()
+    event_date = str(payload.get("event_date") or "").strip()
+    font_key = str(payload.get("font_key") or "sans").strip()
+
+    if not tg_id:
+        raise web.HTTPBadRequest(text="telegram_id required")
+    if not event_name:
+        raise web.HTTPBadRequest(text="event_name required")
+    if not event_date:
+        raise web.HTTPBadRequest(text="event_date required")
+
+    # Берём ФИО из статистики/БД
+    user = await get_user(tg_id)
+    if not user:
+        raise web.HTTPNotFound(text="User not found")
+    _, first_name, last_name, _, score = user
+    full_name = f"{first_name or ''} {last_name or ''}".strip() or str(tg_id)
+
+    template_map = {
+        "participation": "sertificat.png",
+        "1": "1mesto.png",
+        "2": "2mesto.png",
+        "3": "3mesto.png",
+    }
+    if template_key not in template_map:
+        raise web.HTTPBadRequest(text="Bad template_key")
+
+    png_bytes = _render_award_png(
+        template_filename=template_map[template_key],
+        full_name=full_name,
+        event_name=event_name,
+        event_date=event_date,
+        score=score,
+        font_key=font_key,
+    )
+
+    bot: Bot = request.app["bot"]
+    filename = f"award_{template_key}_{tg_id}.png"
+    file = BufferedInputFile(png_bytes, filename=filename)
+
+    caption = (
+        "Сертификат за участие" if template_key == "participation" else f"Диплом за {template_key} место"
+    )
+    caption = f"{caption}\n{event_name} — {event_date}\nОчки: {score if score is not None else 0}"
+
+    try:
+        await bot.send_document(chat_id=tg_id, document=file, caption=caption)
+
+        # Дублируем админу в закрытый канал (если задано)
+        admin_channel_id_raw = (os.getenv("ADMIN_CHANNEL_ID") or "").strip()
+        if admin_channel_id_raw:
+            try:
+                admin_channel_id = int(admin_channel_id_raw)
+                admin_caption = (
+                    f"🗂 Копия: {caption}\n"
+                    f"Пользователь: {full_name}\n"
+                    f"Telegram ID: {tg_id}"
+                )
+                # BufferedInputFile нельзя надёжно переиспользовать — создаём новый объект из тех же bytes
+                file2 = BufferedInputFile(png_bytes, filename=filename)
+                await bot.send_document(chat_id=admin_channel_id, document=file2, caption=admin_caption)
+            except Exception:
+                # Не блокируем отправку пользователю, если канал недоступен/не настроен
+                pass
+    except Exception as e:
+        # например, пользователь не писал боту/заблокировал
+        raise web.HTTPBadRequest(text=f"Send failed: {e}")
+
+    return web.json_response({"ok": True, "sent_to": tg_id})
+
+
+def create_app() -> web.Application:
     app = web.Application(middlewares=[cors_middleware])
+
+    # Bot instance для отправки грамот из админ-панели
+    token = os.getenv("BOT_TOKEN", "")
+    app["bot"] = Bot(token=token) if token else Bot(token="0")
+
+    async def _close_bot(app_: web.Application):
+        try:
+            await app_["bot"].session.close()
+        except Exception:
+            pass
+
+    app.on_cleanup.append(_close_bot)
 
     # API
     app.router.add_get("/api/levels", handle_levels)
     app.router.add_get("/api/me", handle_me)
     app.router.add_post("/api/user/reset_scores", handle_user_reset_scores)
 
-    app.router.add_get("/api/admin/stats", handle_admin_stats)
-    app.router.add_post("/api/admin/reset_scores", handle_admin_reset_all)
-    app.router.add_post("/api/admin/reset_user_scores", handle_admin_reset_user)
-    app.router.add_post("/api/admin/delete_user", handle_admin_delete_user)
-    app.router.add_post("/api/admin/delete_all_users", handle_admin_delete_all_users)
-    app.router.add_post("/api/admin/set_level", handle_admin_set_level)
-    app.router.add_post("/api/admin/send_award", handle_admin_send_award)
+    app.router.add_get("/api/admin/stats", admin_get_stats)
+    app.router.add_post("/api/admin/reset_scores", admin_reset_scores)
+    app.router.add_post("/api/admin/reset_user_scores", admin_reset_user_scores)
+    app.router.add_post("/api/admin/delete_user", admin_delete_user)
+    app.router.add_post("/api/admin/delete_all_users", admin_delete_all_users)
+    app.router.add_post("/api/admin/set_level", admin_set_level)
+    app.router.add_post("/api/admin/send_award", admin_send_award)
 
     # Static webapp
-    base_dir = Path(__file__).resolve().parent / "webapp"
-    app.router.add_get("/", lambda r: web.FileResponse(base_dir / "index.html"))
-    app.router.add_get("/admin", lambda r: web.FileResponse(base_dir / "admin.html"))
-    app.router.add_static("/", str(base_dir), show_index=False)
+    app.router.add_static("/", WEBAPP_DIR, show_index=True)
+    return app
 
+
+async def run_web_server() -> None:
+    host = os.getenv("WEB_HOST", "0.0.0.0")
+    port = int(os.getenv("WEB_PORT", os.getenv("PORT", "8080")))
+
+    app = create_app()
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, host="0.0.0.0", port=port)
+    site = web.TCPSite(runner, host=host, port=port)
+    logging.getLogger(__name__).info("Web server starting on http://%s:%s", host, port)
     await site.start()
 
-    logging.info("Web server started on port %s", port)
-
-    # Keep alive
+    # держим задачу живой
     while True:
         await asyncio.sleep(3600)
