@@ -796,6 +796,19 @@ function apiUrl(path) {
     return API_BASE + path;
 }
 
+// В Telegram WebView кастомные headers иногда приводят к CORS/preflight проблемам.
+// Поэтому initData передаём через query-параметр.
+function apiUrlWithInitData(path) {
+    const base = apiUrl(path);
+    try {
+        if (!tg?.initData) return base;
+        const sep = base.includes('?') ? '&' : '?';
+        return base + sep + 'initData=' + encodeURIComponent(tg.initData);
+    } catch (e) {
+        return base;
+    }
+}
+
 
 
 // Синхронизация профтеста ("Что тебе больше подходит") с сервером.
@@ -808,10 +821,9 @@ async function syncAptitudeWithServer() {
         // В этом случае apiUrl('/api/me') вернёт относительный путь и fetch() должен работать.
         if (!tg?.initData) return;
 
-        const res = await fetch(apiUrl('/api/me'), {
+        const res = await fetch(apiUrlWithInitData('/api/me'), {
             method: 'GET',
-            cache: 'no-store',
-            headers: { 'X-Telegram-InitData': tg.initData }
+            cache: 'no-store'
         });
         if (!res.ok) return;
 
@@ -1085,9 +1097,9 @@ async function resetAllStatsForUser() {
     // Это гарантирует, что /stats и админка покажут актуальные данные, а не старые результаты с устройства.
     try {
         if (tg?.initData) {
-            await fetch(apiUrl('/api/user/reset_my_scores'), {
+            await fetch(apiUrlWithInitData('/api/user/reset_my_scores'), {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'X-Telegram-InitData': tg.initData },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({})
             });
         }
