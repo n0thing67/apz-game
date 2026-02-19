@@ -340,31 +340,13 @@ async def handle_me(request: web.Request) -> web.Response:
         }
     )
 
-async def _require_admin(request: web.Request) -> int:
-    """Проверка admin по initData (передаётся в заголовке X-Telegram-InitData или ?initData=...)."""
-    bot_token = os.getenv("BOT_TOKEN", "")
-    init_data = request.headers.get("X-Telegram-InitData") or request.query.get("initData") or ""
-
-    verified = _verify_telegram_webapp_init_data(init_data, bot_token)
-    if not verified:
-        raise web.HTTPUnauthorized(text="Bad initData")
-
-    user_id = _extract_user_id(verified)
-    if not user_id:
-        raise web.HTTPUnauthorized(text="No user")
-
-    if user_id not in _get_admin_ids():
-        raise web.HTTPForbidden(text="Not admin")
-    return user_id
-
 
 
 async def handle_reset_my_scores(request: web.Request) -> web.Response:
-    """Сбросить статистику ТЕКУЩЕГО пользователя (из WebApp).
+    """Сбросить статистику ТЕКУЩЕГО пользователя (WebApp).
 
-    Используется кнопкой «Сбросить статистику» в мини‑приложении.
-    Сброс выполняется в БД для конкретного Telegram ID (не только в localStorage),
-    по той же логике, что и очистка статистики админом у конкретного пользователя.
+    Делает то же самое, что и админская очистка статистики у конкретного пользователя:
+    сбрасывает score/aptitude_top и обновляет user_reset_token (+ совместимый stats_reset_token).
     """
     init_data = request.headers.get("X-Telegram-InitData", "")
     token = os.getenv("BOT_TOKEN", "")
@@ -382,11 +364,40 @@ async def handle_reset_my_scores(request: web.Request) -> web.Response:
     except Exception:
         return web.json_response({"ok": False, "error": "bad_user"}, status=400)
 
+    # ВАЖНО: используем ту же функцию, что и админка
     await reset_user_scores(tg_id)
 
+    # Вернём актуальные токены, чтобы WebApp синхронизировал localStorage
     reset_token = await get_stats_reset_token()
     user_reset_token = await get_user_reset_token(tg_id)
-    return web.json_response({"ok": True, "reset_token": reset_token, "user_reset_token": user_reset_token})
+
+    return web.json_response(
+        {
+            "ok": True,
+            "telegram_id": tg_id,
+            "reset_token": reset_token,
+            "user_reset_token": user_reset_token,
+        }
+    )
+
+
+async def _require_admin(request: web.Request) -> int:
+    """Проверка admin по initData (передаётся в заголовке X-Telegram-InitData или ?initData=...)."""
+    bot_token = os.getenv("BOT_TOKEN", "")
+    init_data = request.headers.get("X-Telegram-InitData") or request.query.get("initData") or ""
+
+    verified = _verify_telegram_webapp_init_data(init_data, bot_token)
+    if not verified:
+        raise web.HTTPUnauthorized(text="Bad initData")
+
+    user_id = _extract_user_id(verified)
+    if not user_id:
+        raise web.HTTPUnauthorized(text="No user")
+
+    if user_id not in _get_admin_ids():
+        raise web.HTTPForbidden(text="Not admin")
+    return user_id
+
 
 async def admin_get_stats(request: web.Request) -> web.Response:
     await _require_admin(request)
