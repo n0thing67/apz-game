@@ -1061,11 +1061,27 @@ function renderLevelMenuStats() {
     if (q) q.textContent = (stats['quiz']?.bestScore ?? '—');
 }
 
-function resetAllStats() {
+async function resetAllStats() {
     // Кнопка "Сбросить статистику" должна работать из меню уровней.
     // Поэтому здесь НЕ используем переменные текущего уровня (levelId/score и т.п.),
     // которые могут быть не определены и ломают обработчик.
-    stats = {};
+    
+    // ВАЖНО: пользовательский сброс должен очищать данные и на сервере,
+    // чтобы кнопка «Статистика» в боте показывала актуальные (очищенные) значения.
+    try {
+        if (tg?.initData) {
+            await fetch(apiUrl('/api/reset_my_scores'), {
+                method: 'POST',
+                headers: { 'X-Telegram-InitData': tg.initData }
+            });
+        }
+    } catch (e) {
+        // Если интернет/сервер недоступны — локально всё равно очищаем,
+        // но сообщаем, что серверная статистика могла не обновиться.
+        try { tg?.showAlert?.('Не удалось синхронизировать очистку с сервером. Проверь интернет и попробуй ещё раз.'); } catch (_) {}
+    }
+
+stats = {};
     try { localStorage.removeItem(STATS_KEY); } catch (e) {}
 // При каждом запуске также сбрасываем профтест "что тебе подходит?" и рекомендации (⭐)
 try { localStorage.removeItem(APTITUDE_STORAGE_KEY); } catch (e) {}
@@ -1099,7 +1115,7 @@ function confirmResetStats() {
                     ]
                 },
                 (btnId) => {
-                    if (btnId === 'reset') resetAllStats();
+                    if (btnId === 'reset') resetAllStats().catch(() => {});
                 }
             );
             return;
@@ -1110,13 +1126,13 @@ function confirmResetStats() {
     try {
         if (typeof confirm === 'function') {
             const ok = confirm('Очистить статистику?\n\nЭто действие удалит результаты игр и теста на этом устройстве.');
-            if (ok) resetAllStats();
+            if (ok) resetAllStats().catch(() => {});
             return;
         }
     } catch (e) {}
 
     // Если ни confirm ни popup недоступны — просто выполняем действие.
-    resetAllStats();
+    resetAllStats().catch(() => {});
 }
 
 function notify(msg) {
