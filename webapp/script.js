@@ -1063,45 +1063,34 @@ function renderLevelMenuStats() {
 
 
 async function resetStatsOnServer() {
-    // Синхронизируем очистку статистики с БД, чтобы бот/кнопка «Статистика»
-    // не показывали старые результаты после выхода из WebApp.
-    //
-    // ВАЖНО: initData передаём в заголовке X-Telegram-InitData (как в /api/me).
-    // Передача initData через query-параметр может ломаться в WebView/прокси и
-    // приводить к тому, что сброс происходит только локально (localStorage),
-    // а в БД остаются старые значения.
+    // Сбрасываем статистику на сервере (в БД), как при очистке админом конкретного пользователя.
+    // ВАЖНО: initData отправляем заголовком X-Telegram-InitData (как в admin.js) — так стабильнее, чем query.
     try {
         const initData = tg?.initData || '';
         if (!initData) return;
 
-        const url = apiUrl('/api/user/reset_scores');
+        const url = apiUrl('/api/user/reset_scores'); // без query, чтобы ничего не "резалось" в WebView
 
-        // 1) Основной путь: заголовок (как у админских запросов проверки доступа)
-        let resp = await fetch(url, {
+        const resp = await fetch(url, {
             method: 'POST',
             headers: {
-                'X-Telegram-InitData': initData
-            }
+                'X-Telegram-InitData': initData,
+                'Content-Type': 'application/json'
+            },
+            // На всякий случай продублируем initData в body — сервер умеет брать оттуда тоже.
+            body: JSON.stringify({ initData })
         });
-
-        // 2) Фолбэк: если окружение режет кастомные заголовки — пробуем старый вариант.
-        if (!resp.ok) {
-            const url2 = apiUrl('/api/user/reset_scores?initData=' + encodeURIComponent(initData));
-            resp = await fetch(url2, { method: 'POST' });
-        }
 
         const data = await resp.json().catch(() => ({}));
         if (!resp.ok || !data?.ok) return;
 
-        // Обновляем локальные токены, чтобы логика синхронизации не «пересбрасывала» повторно.
+        // Обновляем токены, чтобы синхронизация localStorage не "оживляла" старые значения.
         try {
             if (data.reset_token != null) localStorage.setItem(RESET_TOKEN_KEY, String(data.reset_token));
-        } catch (e) {}
-        try {
             if (data.user_reset_token != null) localStorage.setItem(USER_RESET_TOKEN_KEY, String(data.user_reset_token));
         } catch (e) {}
     } catch (e) {
-        // silently ignore
+        // молча — UI/логика игры не должны ломаться из-за сети
     }
 }
 
@@ -3022,223 +3011,4 @@ window.addEventListener('DOMContentLoaded', () => {
     // поэтому синк должен выполняться не только один раз на загрузке.
     syncResetAndRefreshUIThrottled();
 
-    // Повторный синх при возврате в WebView (после закрытия/сворачивания/повторного открытия)
-    // — именно тут чаще всего «оживают» очки/рекомендации из localStorage.
-    window.addEventListener('focus', syncResetAndRefreshUIThrottled);
-    document.addEventListener('visibilitychange', () => {
-        if (!document.hidden) syncResetAndRefreshUIThrottled();
-    });
-
-    // Важно: некоторые версии Telegram/WebView НЕ триггерят focus/visibilitychange при повторном открытии
-    // (страница как бы остаётся "активной"), из-за чего сброс из админки не подхватывается.
-    // Поэтому делаем лёгкий периодический синх (троттлинг внутри syncResetAndRefreshUIThrottled).
-    try {
-        if (!window.__apzResetSyncTimer) {
-            window.__apzResetSyncTimer = setInterval(() => {
-                syncResetAndRefreshUIThrottled();
-            }, 5000);
-        }
-    } catch (e) {}
-
-    // Разблокируем звук на первом пользовательском жесте
-    // (иначе в Telegram WebView/iOS Safari многие звуки не запускаются)
-    document.addEventListener('pointerdown', unlockSfxOnce, { once: true, capture: true });
-    document.addEventListener('touchstart', unlockSfxOnce, { once: true, capture: true });
-
-    // Глобальный "menu-click" для кнопок интерфейса.
-    // Исключаем кнопки-ответы квиза — у них отдельные звуки correct/uncorrect.
-    document.addEventListener('click', (ev) => {
-        const btn = ev.target?.closest?.('button');
-        if (!btn) return;
-        if (btn.classList?.contains('answer-btn')) return;
-        // защита от призрачных кликов (Android/WebView)
-        if (Date.now() < ignoreClickUntil) return;
-        playSfx('menu-click');
-    }, true);
-
-    // Глушим клики сразу после загрузки WebView
-    lockClicks(900);
-
-    // Подтягиваем доступность уровней (админ мог отключить некоторые)
-    // и применяем к меню.
-    loadLevelAvailability().then(() => {
-        applyLevelAvailabilityToMenu();
-    });
-    // На некоторых WebView (особенно Android) первый рендер может привести к тому,
-    // что глобальные кнопки остаются видимыми. Принудительно синхронизируем UI:
-    // на приветственном экране кнопка "К уровням" показываться не должна.
-    try {
-        levelCompleted = false;
-        currentLevelId = null;
-        showScreen('screen-welcome');
-        updateSoundToggleUI();
-        // При запуске восстанавливаем результаты профтеста (если они уже были сохранены)
-        // и показываем ⭐ рекомендации в меню.
-        try {
-            const savedApt = loadSavedAptitudeResult();
-            const statLine = document.getElementById('aptitude-stat-line');
-            const statMain = document.getElementById('stat-aptitude-main');
-
-            if (savedApt && savedApt.main) {
-                const LABEL = {
-                    TECH: '🔧 Техническое мышление',
-                    LOGIC: '🧩 Логическое мышление',
-                    CREATIVE: '🎨 Творческое мышление',
-                    HUMAN: '📖 Гуманитарное мышление',
-                    SOCIAL: '🤝 Командное мышление',
-                };
-                if (statMain) statMain.textContent = LABEL[savedApt.main] || savedApt.main;
-                if (statLine) statLine.style.display = '';
-                applyAptitudeRecommendationsToMenu(savedApt);
-            } else {
-                if (statMain) statMain.textContent = '—';
-                if (statLine) statLine.style.display = 'none';
-                clearAptitudeMenuRecommendations();
-            }
-        } catch (e) {}
-    } catch (e) {}
-
-    // Переключатель звука (в меню)
-    const btnSound = document.getElementById('btn-sound-toggle');
-    if (btnSound) {
-        btnSound.addEventListener('click', (e) => {
-            // Не даём глобальному обработчику кнопок проигрывать "menu-click" поверх переключения
-            e.preventDefault();
-            e.stopPropagation();
-            // На всякий случай — разлочим звук в рамках жеста пользователя
-            unlockSfxOnce();
-            setSfxMuted(!sfxMuted);
-        });
-    }
-
-    const btnChoose = document.getElementById('btn-choose-level');
-    const btnApt = document.getElementById('btn-aptitude-test');
-    if (btnApt) {
-        btnApt.addEventListener('click', (e) => {
-            if (Date.now() < ignoreClickUntil) {
-                e?.preventDefault?.();
-                e?.stopPropagation?.();
-                return;
-            }
-            unlockSfxOnce();
-            openAptitudeMode();
-        });
-    }
-
-
-    if (btnChoose) {
-        const go = (e) => {
-            // защита от первого "призрачного" клика
-            if (Date.now() < ignoreClickUntil) {
-                e?.preventDefault?.();
-                e?.stopPropagation?.();
-                return;
-            }
-            levelLaunchArmed = true;
-            showLevels();
-        };
-        // Важно: только click. pointerup/touchend иногда срабатывают призрачно при открытии WebApp.
-        btnChoose.addEventListener('click', go);
-    }
-
-    // Универсальные обработчики вместо inline onclick (Telegram/WebView может их блокировать)
-    const handleAction = (e) => {
-        // Закрываем подсказку по клику в любом месте (кроме самой подсказки и подписи шкалы)
-        if (e.type === 'click') {
-            const tt = document.getElementById('aptitude-tooltip');
-            if (tt && !tt.classList.contains('hidden')) {
-                const keep = e.target.closest('.apt-tooltip') || e.target.closest('.apt-label');
-                if (!keep) hideAptitudeTooltip();
-            }
-        }
-
-        const el = e.target.closest('[data-action], [data-level]');
-        if (!el) return;
-
-        // Общая защита от "ghost click" сразу после открытия WebApp/смены экрана
-        if (e.type === 'click' && Date.now() < ignoreClickUntil) {
-            e.preventDefault();
-            e.stopPropagation();
-            return;
-        }
-
-        // На некоторых Android/WebView бывают "ghost" pointer/touch события при открытии экрана.
-        // Чтобы уровень не запускался сам, старт уровня разрешаем только по обычному click.
-        if (el.dataset.level && e.type !== 'click') {
-            return;
-        }
-
-        // Запуск уровня из меню
-        if (el.dataset.level && !el.dataset.action) {
-            // Запрещаем автозапуск: уровень можно запускать только когда реально открыт экран уровней
-            // и пользователь уже "вооружил" запуск кнопкой "Выбрать уровень".
-            const active = document.querySelector('.screen.active');
-            const onLevelsScreen = active && active.id === 'screen-levels';
-            if (!levelLaunchArmed || !onLevelsScreen) {
-                e.preventDefault();
-                e.stopPropagation();
-                return;
-            }
-            // Отдельная логика для игры «Узнать, что мне подходит»
-            // Она управляется через те же переключатели уровней, но запускается своим экраном.
-            if (el.dataset.level === 'aptitude') {
-                if (!enabledLevels.has('aptitude')) {
-                    showToast("Эта игра отключена администратором");
-                    return;
-                }
-                openAptitudeMode();
-                return;
-            }
-            startLevel(el.dataset.level);
-            return;
-        }
-
-        const action = el.dataset.action;
-        if (!action) return;
-
-        if (action === 'show-aptitude-test') {
-            openAptitudeMode();
-        } else if (action === 'aptitude-hint') {
-            // подсказка по шкале (по тапу)
-            showAptitudeTooltip(el.dataset.hint || '', el);
-        } else if (action === 'aptitude-answer') {
-            // ответ в профтесте
-            const s = (el.dataset.score || '').trim();
-            if (s) aptitudeScores[s] = (aptitudeScores[s] || 0) + 1;
-            aptitudeIndex++;
-            if (aptitudeIndex >= APTITUDE_QUESTIONS.length) {
-                finishAptitudeTest();
-            } else {
-                renderAptitudeQuestion();
-            }
-        } else if (action === 'restart-aptitude-test') {
-            // Перепрохождение: сбрасываем результат и убираем старые ⭐ в меню
-            try { localStorage.removeItem(APTITUDE_STORAGE_KEY); } catch (e) {}
-            try { clearAptitudeMenuRecommendations(); } catch (e) {}
-            startAptitudeTest();
-        } else if (action === 'go-levels-from-test') {
-            exitToLevels();
-        } else if (action === 'show-levels') {
-            exitToLevels();
-        } else if (action === 'reset-stats') {
-            confirmResetStats();
-        } else if (action === 'save-stats') {
-            exportStats();
-        } else if (action === 'final-send-stats') {
-            confirmSendStatsAndClose();
-        } else if (action === 'start-game') {
-            const lvl = Number(el.dataset.level || 1);
-            startGame(lvl);
-        } else if (action === 'start-doodle') {
-            startDoodleLoop();
-        } else if (action === 'init-2048') {
-            init2048();
-        } else if (action === 'close-app') {
-            closeApp();
-        }
-    };
-
-    // click + pointerup для надёжности
-    document.addEventListener('click', handleAction, true);
-});
-
+    // Повторный си
