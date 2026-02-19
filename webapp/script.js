@@ -1069,13 +1069,10 @@ async function resetStatsOnServer() {
         const initData = tg?.initData || '';
         if (!initData) return;
 
-        const resp = await fetch(apiUrl('/api/user/reset_scores'), {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Telegram-InitData': initData
-            },
-            body: '{}'
+        const url = apiUrl('/api/user/reset_scores?initData=' + encodeURIComponent(initData));
+
+        const resp = await fetch(url, {
+            method: 'POST'
         });
 
         const data = await resp.json().catch(() => ({}));
