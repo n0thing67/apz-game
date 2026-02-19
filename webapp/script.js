@@ -1061,92 +1061,28 @@ function renderLevelMenuStats() {
     if (q) q.textContent = (stats['quiz']?.bestScore ?? '—');
 }
 
-
-async function resetStatsOnServer() {
-    // Синхронизируем очистку статистики с БД, чтобы бот/кнопка «Статистика»
-    // и админ‑панель не показывали старые результаты после «Сбросить статистику» в WebApp.
-    //
-    // ВАЖНО: initData передаём в заголовке X-Telegram-InitData (как в /api/me).
-    // Если окружение режет кастомные заголовки — используем фолбэк через query‑параметр.
-    try {
-        const initData =
-            (tg?.initData || '') ||
-            (new URL(window.location.href).searchParams.get('initData') || '');
-
-        if (!initData) return false;
-
-        const url = apiUrl('/api/user/reset_scores');
-
-        // 1) Основной путь: заголовок (как у /api/me)
-        let resp = await fetch(url, {
-            method: 'POST',
-            cache: 'no-store',
-            headers: {
-                'X-Telegram-InitData': initData
-            }
-        });
-
-        // 2) Фолбэк: если окружение режет кастомные заголовки (CORS/preflight/прокси)
-        if (!resp.ok) {
-            const url2 = apiUrl('/api/user/reset_scores?initData=' + encodeURIComponent(initData));
-            resp = await fetch(url2, { method: 'POST', cache: 'no-store' });
-        }
-
-        const data = await resp.json().catch(() => ({}));
-        if (!resp.ok || !data?.ok) return false;
-
-        // Обновляем локальные токены, чтобы синхронизация не «пересбрасывала» повторно.
-        try {
-            if (data.reset_token != null) localStorage.setItem(RESET_TOKEN_KEY, String(data.reset_token));
-        } catch (e) {}
-        try {
-            if (data.user_reset_token != null) localStorage.setItem(USER_RESET_TOKEN_KEY, String(data.user_reset_token));
-        } catch (e) {}
-
-        return true;
-    } catch (e) {
-        return false;
-    }
-}
-
-async function resetAllStats() {
+function resetAllStats() {
     // Кнопка "Сбросить статистику" должна работать из меню уровней.
     // Поэтому здесь НЕ используем переменные текущего уровня (levelId/score и т.п.),
     // которые могут быть не определены и ломают обработчик.
     stats = {};
     try { localStorage.removeItem(STATS_KEY); } catch (e) {}
-
-    // Сброс результата профтеста "Что тебе подходит?" и рекомендаций (⭐)
+// При каждом запуске также сбрасываем профтест "что тебе подходит?" и рекомендации (⭐)
+try { localStorage.removeItem(APTITUDE_STORAGE_KEY); } catch (e) {}
+    // Сброс статистики профтеста "что тебе подходит?"
     try { localStorage.removeItem(APTITUDE_STORAGE_KEY); } catch (e) {}
     try { clearAptitudeMenuRecommendations(); } catch (e) {}
 
-    // Сброс очков по уровням (совместимость со старым финалом)
+    // Сбросим совместимую со старым финалом статистику (очки по уровням)
     levelScores = { 1: 0, 2: 0, 3: 0, 4: 0 };
-    try { localStorage.removeItem('levelScores'); } catch (e) {}
 
-    // Синхронизируем сброс с сервером и ДЖЁМ ответа — иначе пользователь может быстро закрыть WebApp,
-    // и запрос не успеет дойти (в итоге бот/админка продолжают показывать старую статистику).
-    try { if (tg?.enableClosingConfirmation) tg.enableClosingConfirmation(); } catch (e) {}
-
-    const ok = await resetStatsOnServer();
-
-    try { if (tg?.disableClosingConfirmation) tg.disableClosingConfirmation(); } catch (e) {}
-
-    // Обновляем интерфейс сразу после сброса (и после возможного обновления токенов)
-    try { syncResetAndRefreshUIThrottled(); } catch (e) {}
-
-    if (ok) {
-        try { showToast("✅ Статистика очищена"); } catch (e) {}
-    } else {
-        // Локально уже очистили — но если сервер не подтвердил, предупредим.
-        try { showToast("⚠️ Локальная статистика очищена, но не удалось обновить БД"); } catch (e) {}
-    }
+    saveStats(stats);
+    renderLevelMenuStats();
 }
-
 
 // Подтверждение очистки статистики из меню уровней.
 // Требование: перед сбросом показываем окно подтверждения.
-async function confirmResetStats() {
+function confirmResetStats() {
     const msg =
         'Очистить статистику?\n\n' +
         'Будут удалены результаты игр и данные теста «Что тебе подходит?» на этом устройстве.';
