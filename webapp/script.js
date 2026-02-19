@@ -1065,15 +1065,30 @@ function renderLevelMenuStats() {
 async function resetStatsOnServer() {
     // Синхронизируем очистку статистики с БД, чтобы бот/кнопка «Статистика»
     // не показывали старые результаты после выхода из WebApp.
+    //
+    // ВАЖНО: initData передаём в заголовке X-Telegram-InitData (как в /api/me).
+    // Передача initData через query-параметр может ломаться в WebView/прокси и
+    // приводить к тому, что сброс происходит только локально (localStorage),
+    // а в БД остаются старые значения.
     try {
         const initData = tg?.initData || '';
         if (!initData) return;
 
-        const url = apiUrl('/api/user/reset_scores?initData=' + encodeURIComponent(initData));
+        const url = apiUrl('/api/user/reset_scores');
 
-        const resp = await fetch(url, {
-            method: 'POST'
+        // 1) Основной путь: заголовок (как у админских запросов проверки доступа)
+        let resp = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'X-Telegram-InitData': initData
+            }
         });
+
+        // 2) Фолбэк: если окружение режет кастомные заголовки — пробуем старый вариант.
+        if (!resp.ok) {
+            const url2 = apiUrl('/api/user/reset_scores?initData=' + encodeURIComponent(initData));
+            resp = await fetch(url2, { method: 'POST' });
+        }
 
         const data = await resp.json().catch(() => ({}));
         if (!resp.ok || !data?.ok) return;
