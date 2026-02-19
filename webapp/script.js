@@ -1064,57 +1064,57 @@ function renderLevelMenuStats() {
 
 async function resetStatsOnServer() {
     // Синхронизируем очистку статистики с БД, чтобы бот/кнопка «Статистика»
-    // не показывали старые результаты после выхода из WebApp.
+    // и админ‑панель не показывали старые результаты после «Сбросить статистику» в WebApp.
     //
     // ВАЖНО: initData передаём в заголовке X-Telegram-InitData (как в /api/me).
-    // Передача initData через query-параметр может ломаться в WebView/прокси и
-    // приводить к тому, что сброс происходит только локально (localStorage),
-    // а в БД остаются старые значения.
+    // Если окружение режет кастомные заголовки — используем фолбэк через query‑параметр.
     try {
-        const initData = tg?.initData || '';
-        if (!initData) return;
+        const initData =
+            (tg?.initData || '') ||
+            (new URL(window.location.href).searchParams.get('initData') || '');
+
+        if (!initData) return false;
 
         const url = apiUrl('/api/user/reset_scores');
 
-        // 1) Основной путь: заголовок (как у админских запросов проверки доступа)
+        // 1) Основной путь: заголовок (как у /api/me)
         let resp = await fetch(url, {
             method: 'POST',
+            cache: 'no-store',
             headers: {
                 'X-Telegram-InitData': initData
             }
         });
 
-        // 2) Фолбэк: если окружение режет кастомные заголовки — пробуем старый вариант.
+        // 2) Фолбэк: если окружение режет кастомные заголовки (CORS/preflight/прокси)
         if (!resp.ok) {
             const url2 = apiUrl('/api/user/reset_scores?initData=' + encodeURIComponent(initData));
-            resp = await fetch(url2, { method: 'POST' });
+            resp = await fetch(url2, { method: 'POST', cache: 'no-store' });
         }
 
         const data = await resp.json().catch(() => ({}));
-        if (!resp.ok || !data?.ok) return;
+        if (!resp.ok || !data?.ok) return false;
 
-        // Обновляем локальные токены, чтобы логика синхронизации не «пересбрасывала» повторно.
+        // Обновляем локальные токены, чтобы синхронизация не «пересбрасывала» повторно.
         try {
             if (data.reset_token != null) localStorage.setItem(RESET_TOKEN_KEY, String(data.reset_token));
         } catch (e) {}
         try {
             if (data.user_reset_token != null) localStorage.setItem(USER_RESET_TOKEN_KEY, String(data.user_reset_token));
         } catch (e) {}
+
+        return true;
     } catch (e) {
-        // silently ignore
+        return false;
     }
 }
 
-function resetAllStats() {
+async function resetAllStats() {
     // Кнопка "Сбросить статистику" должна работать из меню уровней.
     // Поэтому здесь НЕ используем переменные текущего уровня (levelId/score и т.п.),
     // которые могут быть не определены и ломают обработчик.
     stats = {};
     try { localStorage.removeItem(STATS_KEY); } catch (e) {}
-
-    // Синхронизируем сброс с сервером (в фоне), чтобы бот/кнопка «Статистика»
-    // не показывали старые результаты после выхода из WebApp.
-    resetStatsOnServer();
 
     // Сброс результата профтеста "Что тебе подходит?" и рекомендаций (⭐)
     try { localStorage.removeItem(APTITUDE_STORAGE_KEY); } catch (e) {}
@@ -1122,15 +1122,31 @@ function resetAllStats() {
 
     // Сброс очков по уровням (совместимость со старым финалом)
     levelScores = { 1: 0, 2: 0, 3: 0, 4: 0 };
+    try { localStorage.removeItem('levelScores'); } catch (e) {}
 
-    saveStats(stats);
-    renderLevelMenuStats();
+    // Синхронизируем сброс с сервером и ДЖЁМ ответа — иначе пользователь может быстро закрыть WebApp,
+    // и запрос не успеет дойти (в итоге бот/админка продолжают показывать старую статистику).
+    try { if (tg?.enableClosingConfirmation) tg.enableClosingConfirmation(); } catch (e) {}
+
+    const ok = await resetStatsOnServer();
+
+    try { if (tg?.disableClosingConfirmation) tg.disableClosingConfirmation(); } catch (e) {}
+
+    // Обновляем интерфейс сразу после сброса (и после возможного обновления токенов)
+    try { syncResetAndRefreshUIThrottled(); } catch (e) {}
+
+    if (ok) {
+        try { showToast("✅ Статистика очищена"); } catch (e) {}
+    } else {
+        // Локально уже очистили — но если сервер не подтвердил, предупредим.
+        try { showToast("⚠️ Локальная статистика очищена, но не удалось обновить БД"); } catch (e) {}
+    }
 }
 
 
 // Подтверждение очистки статистики из меню уровней.
 // Требование: перед сбросом показываем окно подтверждения.
-function confirmResetStats() {
+async function confirmResetStats() {
     const msg =
         'Очистить статистику?\n\n' +
         'Будут удалены результаты игр и данные теста «Что тебе подходит?» на этом устройстве.';
