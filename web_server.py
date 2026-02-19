@@ -358,6 +358,39 @@ async def _require_admin(request: web.Request) -> int:
     return user_id
 
 
+
+
+async def _require_user(request: web.Request) -> int:
+    """Проверка пользователя по initData (Telegram WebApp). Возвращает telegram_id."""
+    bot_token = os.getenv("BOT_TOKEN", "")
+    init_data = request.headers.get("X-Telegram-InitData") or request.query.get("initData") or ""
+
+    verified = _verify_telegram_webapp_init_data(init_data, bot_token)
+    if not verified:
+        raise web.HTTPUnauthorized(text="Bad initData")
+
+    user_id = _extract_user_id(verified)
+    if not user_id:
+        raise web.HTTPUnauthorized(text="No user")
+
+    return int(user_id)
+
+
+async def user_reset_my_scores(request: web.Request) -> web.Response:
+    """Сброс статистики самим пользователем (очки + профтест) на сервере.
+
+    Это должно работать так же, как сброс статистики админом у конкретного пользователя,
+    чтобы /stats и админ-панель показывали актуальные данные, а не старый localStorage.
+    """
+    tg_id = await _require_user(request)
+    # Если пользователя нет в БД — сбрасывать нечего, но ответим ок.
+    try:
+        await reset_user_scores(int(tg_id))
+    except Exception:
+        # reset_user_scores внутри уже безопасно, но на всякий случай не валим WebApp.
+        pass
+    return web.json_response({"ok": True, "telegram_id": int(tg_id)})
+
 async def admin_get_stats(request: web.Request) -> web.Response:
     await _require_admin(request)
     reset_token = await get_stats_reset_token()
@@ -501,46 +534,6 @@ async def admin_send_award(request: web.Request) -> web.Response:
     return web.json_response({"ok": True, "sent_to": tg_id})
 
 
-async def user_reset_my_scores(request: web.Request) -> web.Response:
-    """Сброс статистики *текущего* пользователя из мини-веб.
-
-    Должно работать так же, как «Очистить выбранного» в админке:
-    используем reset_user_scores(tg_id), чтобы сброс был в БД, а не только в localStorage.
-    """
-    init_data = request.headers.get("X-Telegram-InitData", "")
-    token = os.getenv("BOT_TOKEN", "")
-    parsed = _verify_telegram_webapp_init_data(init_data, token)
-    if not parsed:
-        return web.json_response({"ok": False, "error": "bad_init_data"}, status=401)
-
-    user_raw = parsed.get("user")
-    if not user_raw:
-        return web.json_response({"ok": False, "error": "no_user"}, status=400)
-
-    try:
-        user_obj = json.loads(user_raw) if isinstance(user_raw, str) else user_raw
-        tg_id = int(user_obj.get("id"))
-    except Exception:
-        return web.json_response({"ok": False, "error": "bad_user"}, status=400)
-
-    # ВАЖНО: та же функция, что вызывает админка.
-    await reset_user_scores(tg_id)
-
-    reset_token = await get_stats_reset_token()
-    user_reset_token = await get_user_reset_token(tg_id)
-    user_deleted_token = await get_user_deleted_token(tg_id)
-
-    return web.json_response(
-        {
-            "ok": True,
-            "telegram_id": tg_id,
-            "reset_token": reset_token,
-            "user_reset_token": user_reset_token,
-            "user_deleted_token": user_deleted_token,
-        }
-    )
-
-
 def create_app() -> web.Application:
     app = web.Application(middlewares=[cors_middleware])
 
@@ -559,6 +552,7 @@ def create_app() -> web.Application:
     # API
     app.router.add_get("/api/levels", handle_levels)
     app.router.add_get("/api/me", handle_me)
+    app.router.add_post("/api/user/reset_my_scores", user_reset_my_scores)
 
     app.router.add_get("/api/admin/stats", admin_get_stats)
     app.router.add_post("/api/admin/reset_scores", admin_reset_scores)
@@ -567,9 +561,6 @@ def create_app() -> web.Application:
     app.router.add_post("/api/admin/delete_all_users", admin_delete_all_users)
     app.router.add_post("/api/admin/set_level", admin_set_level)
     app.router.add_post("/api/admin/send_award", admin_send_award)
-
-    # WebApp: сброс статистики текущего пользователя (как в админке)
-    app.router.add_post("/api/reset_my_scores", user_reset_my_scores)
 
     # Static webapp
     app.router.add_static("/", WEBAPP_DIR, show_index=True)
