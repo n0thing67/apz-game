@@ -1061,12 +1061,48 @@ function renderLevelMenuStats() {
     if (q) q.textContent = (stats['quiz']?.bestScore ?? '—');
 }
 
+
+async function resetStatsOnServer() {
+    // Синхронизируем очистку статистики с БД, чтобы бот/кнопка «Статистика»
+    // не показывали старые результаты после выхода из WebApp.
+    try {
+        const initData = tg?.initData || '';
+        if (!initData) return;
+
+        const resp = await fetch('/api/user/reset_scores', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Telegram-InitData': initData
+            },
+            body: '{}'
+        });
+
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok || !data?.ok) return;
+
+        // Обновляем локальные токены, чтобы логика синхронизации не «пересбрасывала» повторно.
+        try {
+            if (data.reset_token != null) localStorage.setItem(RESET_TOKEN_KEY, String(data.reset_token));
+        } catch (e) {}
+        try {
+            if (data.user_reset_token != null) localStorage.setItem(USER_RESET_TOKEN_KEY, String(data.user_reset_token));
+        } catch (e) {}
+    } catch (e) {
+        // silently ignore
+    }
+}
+
 function resetAllStats() {
     // Кнопка "Сбросить статистику" должна работать из меню уровней.
     // Поэтому здесь НЕ используем переменные текущего уровня (levelId/score и т.п.),
     // которые могут быть не определены и ломают обработчик.
     stats = {};
     try { localStorage.removeItem(STATS_KEY); } catch (e) {}
+
+    // Сначала сбрасываем на сервере (в фоне), затем чистим локально.
+    // Локальная очистка остаётся мгновенной.
+    resetStatsOnServer();
 // При каждом запуске также сбрасываем профтест "что тебе подходит?" и рекомендации (⭐)
 try { localStorage.removeItem(APTITUDE_STORAGE_KEY); } catch (e) {}
     // Сброс статистики профтеста "что тебе подходит?"
