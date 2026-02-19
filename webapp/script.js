@@ -1091,7 +1091,8 @@ async function resetAllStatsForUser() {
     try {
         // ВАЖНО: используем apiUrl(), потому что WebApp может быть открыт с параметром ?api=
         // (API и WebApp на разных доменах). Иначе запрос уйдёт «не туда» и сброс в БД не произойдёт.
-        const resp = await fetch(apiUrl('/api/reset_my_scores'), {
+        // Серверный сброс статистики пользователя (как в админке).
+        const resp = await fetch(apiUrl('/api/user/reset_my_scores'), {
             method: 'POST',
             cache: 'no-store',
             headers: {
