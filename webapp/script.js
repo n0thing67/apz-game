@@ -796,19 +796,6 @@ function apiUrl(path) {
     return API_BASE + path;
 }
 
-// В Telegram WebView кастомные headers иногда приводят к CORS/preflight проблемам.
-// Поэтому initData передаём через query-параметр.
-function apiUrlWithInitData(path) {
-    const base = apiUrl(path);
-    try {
-        if (!tg?.initData) return base;
-        const sep = base.includes('?') ? '&' : '?';
-        return base + sep + 'initData=' + encodeURIComponent(tg.initData);
-    } catch (e) {
-        return base;
-    }
-}
-
 
 
 // Синхронизация профтеста ("Что тебе больше подходит") с сервером.
@@ -821,9 +808,10 @@ async function syncAptitudeWithServer() {
         // В этом случае apiUrl('/api/me') вернёт относительный путь и fetch() должен работать.
         if (!tg?.initData) return;
 
-        const res = await fetch(apiUrlWithInitData('/api/me'), {
+        const res = await fetch(apiUrl('/api/me'), {
             method: 'GET',
-            cache: 'no-store'
+            cache: 'no-store',
+            headers: { 'X-Telegram-InitData': tg.initData }
         });
         if (!res.ok) return;
 
@@ -1073,15 +1061,12 @@ function renderLevelMenuStats() {
     if (q) q.textContent = (stats['quiz']?.bestScore ?? '—');
 }
 
-function resetAllStats() {
-    // Кнопка "Сбросить статистику" должна работать из меню уровней.
-    // Поэтому здесь НЕ используем переменные текущего уровня (levelId/score и т.п.),
-    // которые могут быть не определены и ломают обработчик.
+function resetAllStatsLocal() {
+    // Локальная очистка (localStorage).
+    // ВАЖНО: реальный сброс в БД делается через /api/reset_my_scores.
     stats = {};
     try { localStorage.removeItem(STATS_KEY); } catch (e) {}
-// При каждом запуске также сбрасываем профтест "что тебе подходит?" и рекомендации (⭐)
-try { localStorage.removeItem(APTITUDE_STORAGE_KEY); } catch (e) {}
-    // Сброс статистики профтеста "что тебе подходит?"
+    // Сброс статистики профтеста "что тебе подходит?" + рекомендаций
     try { localStorage.removeItem(APTITUDE_STORAGE_KEY); } catch (e) {}
     try { clearAptitudeMenuRecommendations(); } catch (e) {}
 
@@ -1093,23 +1078,46 @@ try { localStorage.removeItem(APTITUDE_STORAGE_KEY); } catch (e) {}
 }
 
 async function resetAllStatsForUser() {
-    // Сбрасываем статистику на сервере (по telegram_id), как делает админ-панель.
-    // Это гарантирует, что /stats и админка покажут актуальные данные, а не старые результаты с устройства.
-    try {
-        if (tg?.initData) {
-            await fetch(apiUrlWithInitData('/api/user/reset_my_scores'), {
-                method: 'POST',
-                cache: 'no-store'
-            });
-        }
-    } catch (e) {
-        // Даже если сеть/сервер недоступны — всё равно очистим локальные данные, чтобы пользователь видел сброс сразу.
+    // ДЕЛАЕМ ТАК ЖЕ, КАК В АДМИНКЕ:
+    // сначала сбрасываем статистику пользователя в БД через reset_user_scores(tg_id),
+    // затем чистим localStorage, чтобы UI сразу показал 0.
+    const initData = tg?.initData || '';
+    if (!initData) {
+        // Если запуск не из Telegram WebApp — чистим только локально.
+        resetAllStatsLocal();
+        return;
     }
 
-    // Локальная очистка (UI/кэш)
-    resetAllStats();
+    try {
+        // ВАЖНО: используем apiUrl(), потому что WebApp может быть открыт с параметром ?api=
+        // (API и WebApp на разных доменах). Иначе запрос уйдёт «не туда» и сброс в БД не произойдёт.
+        const resp = await fetch(apiUrl('/api/reset_my_scores'), {
+            method: 'POST',
+            cache: 'no-store',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Telegram-InitData': initData,
+            },
+            body: '{}',
+        });
 
-    try { notify('Статистика очищена.'); } catch (e) {}
+        let data = null;
+        try { data = await resp.json(); } catch (e) {}
+
+        if (!resp.ok || !data || data.ok !== true) {
+            throw new Error(data?.error || `http_${resp.status}`);
+        }
+
+        // Сохраняем токены, чтобы синхронизация с сервером была стабильной.
+        try { localStorage.setItem(RESET_TOKEN_KEY, String(data.reset_token ?? '0')); } catch (e) {}
+        try { localStorage.setItem(USER_RESET_TOKEN_KEY, String(data.user_reset_token ?? '0')); } catch (e) {}
+
+        resetAllStatsLocal();
+        notify('Статистика очищена.');
+    } catch (e) {
+        // Не чистим локально, если серверный сброс не прошёл — иначе будет рассинхрон.
+        notify('Не удалось очистить статистику. Проверь интернет и попробуй ещё раз.');
+    }
 }
 
 // Подтверждение очистки статистики из меню уровней.
@@ -1117,7 +1125,7 @@ async function resetAllStatsForUser() {
 function confirmResetStats() {
     const msg =
         'Очистить статистику?\n\n' +
-        'Будут удалены результаты игр и данные теста «Что тебе подходит?» для твоего профиля (на сервере) — на всех устройствах.';
+        'Будут удалены результаты игр и данные теста «Что тебе подходит?» у твоего профиля.';
 
     // Telegram WebApp: показываем системный popup с подтверждением.
     if (tg?.showPopup) {
@@ -1132,7 +1140,7 @@ function confirmResetStats() {
                 },
                 (btnId) => {
                     if (btnId === 'reset') resetAllStatsForUser();
-}
+                }
             );
             return;
         } catch (e) {}
@@ -1143,7 +1151,7 @@ function confirmResetStats() {
         if (typeof confirm === 'function') {
             const ok = confirm('Очистить статистику?\n\nЭто действие удалит результаты игр и теста на этом устройстве.');
             if (ok) resetAllStatsForUser();
-return;
+            return;
         }
     } catch (e) {}
 
