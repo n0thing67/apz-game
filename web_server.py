@@ -340,6 +340,39 @@ async def handle_me(request: web.Request) -> web.Response:
         }
     )
 
+
+
+async def user_reset_my_scores(request: web.Request) -> web.Response:
+    """Сбросить статистику текущего пользователя (из мини‑приложения).
+
+    Нужно, чтобы очистка статистики пользователем в WebApp отражалась в БД
+    так же, как это делает админ через /api/admin/reset_user_scores.
+    """
+    init_data = request.headers.get("X-Telegram-InitData", "")
+    token = os.getenv("BOT_TOKEN", "")
+    parsed = _verify_telegram_webapp_init_data(init_data, token)
+    if not parsed:
+        return web.json_response({"ok": False, "error": "bad_init_data"}, status=401)
+
+    user_raw = parsed.get("user")
+    if not user_raw:
+        return web.json_response({"ok": False, "error": "no_user"}, status=400)
+
+    try:
+        user_obj = json.loads(user_raw) if isinstance(user_raw, str) else user_raw
+        tg_id = int(user_obj.get("id"))
+    except Exception:
+        return web.json_response({"ok": False, "error": "bad_user"}, status=400)
+
+    await reset_user_scores(tg_id)
+
+    # Вернём актуальные метки, чтобы WebApp мог при желании синхронизироваться сразу
+    reset_token = await get_stats_reset_token()
+    user_reset_token = await get_user_reset_token(tg_id)
+    return web.json_response(
+        {"ok": True, "telegram_id": tg_id, "reset_token": reset_token, "user_reset_token": user_reset_token}
+    )
+
 async def _require_admin(request: web.Request) -> int:
     """Проверка admin по initData (передаётся в заголовке X-Telegram-InitData или ?initData=...)."""
     bot_token = os.getenv("BOT_TOKEN", "")
@@ -519,6 +552,7 @@ def create_app() -> web.Application:
     # API
     app.router.add_get("/api/levels", handle_levels)
     app.router.add_get("/api/me", handle_me)
+    app.router.add_post("/api/reset_my_scores", user_reset_my_scores)
 
     app.router.add_get("/api/admin/stats", admin_get_stats)
     app.router.add_post("/api/admin/reset_scores", admin_reset_scores)
