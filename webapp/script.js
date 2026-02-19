@@ -1069,7 +1069,7 @@ async function resetStatsOnServer() {
         const initData = tg?.initData || '';
         if (!initData) return;
 
-        const resp = await fetch('/api/user/reset_scores', {
+        const resp = await fetch(apiUrl('/api/user/reset_scores'), {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -1100,21 +1100,21 @@ function resetAllStats() {
     stats = {};
     try { localStorage.removeItem(STATS_KEY); } catch (e) {}
 
-    // Сначала сбрасываем на сервере (в фоне), затем чистим локально.
-    // Локальная очистка остаётся мгновенной.
+    // Синхронизируем сброс с сервером (в фоне), чтобы бот/кнопка «Статистика»
+    // не показывали старые результаты после выхода из WebApp.
     resetStatsOnServer();
-// При каждом запуске также сбрасываем профтест "что тебе подходит?" и рекомендации (⭐)
-try { localStorage.removeItem(APTITUDE_STORAGE_KEY); } catch (e) {}
-    // Сброс статистики профтеста "что тебе подходит?"
+
+    // Сброс результата профтеста "Что тебе подходит?" и рекомендаций (⭐)
     try { localStorage.removeItem(APTITUDE_STORAGE_KEY); } catch (e) {}
     try { clearAptitudeMenuRecommendations(); } catch (e) {}
 
-    // Сбросим совместимую со старым финалом статистику (очки по уровням)
+    // Сброс очков по уровням (совместимость со старым финалом)
     levelScores = { 1: 0, 2: 0, 3: 0, 4: 0 };
 
     saveStats(stats);
     renderLevelMenuStats();
 }
+
 
 // Подтверждение очистки статистики из меню уровней.
 // Требование: перед сбросом показываем окно подтверждения.
