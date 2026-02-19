@@ -1089,17 +1089,22 @@ async function resetAllStatsForUser() {
     }
 
     try {
-        // ВАЖНО: используем apiUrl(), потому что WebApp может быть открыт с параметром ?api=
-        // (API и WebApp на разных доменах). Иначе запрос уйдёт «не туда» и сброс в БД не произойдёт.
-        // Серверный сброс статистики пользователя (как в админке).
-        const resp = await fetch(apiUrl('/api/user/reset_my_scores'), {
+        // ВАЖНО (почему раньше «не работало»):
+        // Если WebApp открыт с ?api= (т.е. API на другом домене), то запрос с JSON + кастомным заголовком
+        // (X-Telegram-InitData) почти всегда вызывает CORS-preflight (OPTIONS). В некоторых Telegram WebView
+        // он может отрабатываться нестабильно/блокироваться, из‑за чего реальный POST до сервера не доходит.
+        //
+        // Поэтому делаем надёжнее: передаём initData через query-параметр,
+        // а Content-Type ставим "text/plain" (simple request без preflight).
+        // Сервер уже умеет читать initData из query (см. _require_user).
+        const url = apiUrl('/api/user/reset_my_scores?initData=' + encodeURIComponent(initData));
+        const resp = await fetch(url, {
             method: 'POST',
             cache: 'no-store',
             headers: {
-                'Content-Type': 'application/json',
-                'X-Telegram-InitData': initData,
+                'Content-Type': 'text/plain;charset=UTF-8'
             },
-            body: '{}',
+            body: '',
         });
 
         let data = null;
