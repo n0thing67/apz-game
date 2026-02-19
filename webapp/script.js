@@ -1099,8 +1099,7 @@ async function resetAllStatsForUser() {
         if (tg?.initData) {
             await fetch(apiUrlWithInitData('/api/user/reset_my_scores'), {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({})
+                cache: 'no-store'
             });
         }
     } catch (e) {
