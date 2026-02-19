@@ -372,7 +372,15 @@ async def handle_user_reset_scores(request: web.Request) -> web.Response:
     из‑за чего команда/кнопка «Статистика» в боте показывала старые результаты.
     Здесь сбрасываем статистику в БД и отдаём обновлённые токены сброса.
     """
-    init_data = request.headers.get("X-Telegram-InitData", "")
+    init_data = request.headers.get("X-Telegram-InitData") or request.query.get("initData") or ""
+
+    if not init_data:
+        try:
+            body = await request.json()
+            init_data = (body.get("initData") or body.get("init_data") or "").strip()
+        except Exception:
+            pass
+
     token = os.getenv("BOT_TOKEN", "")
     parsed = _verify_telegram_webapp_init_data(init_data, token)
     if not parsed:
