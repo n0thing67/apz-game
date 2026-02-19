@@ -168,7 +168,12 @@ def _verify_telegram_webapp_init_data(init_data: str, bot_token: str) -> dict | 
         return None
 
     try:
-        params = dict(parse_qsl(init_data, strict_parsing=True))
+        clean = str(init_data).strip()
+        # Telegram иногда отдаёт initData с ведущим '?', а также с пустыми значениями.
+        # strict_parsing=True может падать на таких строках, из-за чего WebApp-операции
+        # (в т.ч. сброс статистики) не доходят до БД.
+        clean = clean[1:] if clean.startswith('?') else clean
+        params = dict(parse_qsl(clean, keep_blank_values=True))
     except Exception:
         return None
 
