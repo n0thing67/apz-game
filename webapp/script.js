@@ -1,18 +1,5 @@
 const tg = window.Telegram?.WebApp;
 if (tg?.expand) tg.expand();
-if (tg?.ready) tg.ready();
-
-// Ждём появления initData (в некоторых WebView оно приходит с небольшой задержкой)
-async function getInitData(timeoutMs = 1500) {
-    const start = Date.now();
-    while (Date.now() - start < timeoutMs) {
-        const v = tg?.initData;
-        if (v && String(v).length > 0) return v;
-        await new Promise(r => setTimeout(r, 50));
-    }
-    return "";
-}
-
 // ===== ASSETS: ускоряем загрузку через WebP (с fallback) =====
 function supportsWebP() {
     try {
@@ -819,13 +806,12 @@ async function syncAptitudeWithServer() {
     try {
         // API_BASE может быть пустым, если WebApp и API находятся на одном домене.
         // В этом случае apiUrl('/api/me') вернёт относительный путь и fetch() должен работать.
-        const initData = await getInitData();
-        if (!initData) return;
+        if (!tg?.initData) return;
 
         const res = await fetch(apiUrl('/api/me'), {
             method: 'GET',
             cache: 'no-store',
-            headers: { 'X-Telegram-InitData': initData }
+            headers: { 'X-Telegram-InitData': tg.initData }
         });
         if (!res.ok) return;
 
@@ -1030,11 +1016,11 @@ const USER_DELETED_TOKEN_KEY = 'apzUserDeletedTokenV1';
 const USER_RESET_TOKEN_KEY = 'apzUserResetTokenV1';
 
 // Локальная статистика хранится в localStorage и должна сохраняться между запусками WebApp.
-// Сброс выполняется только по явному действию пользователя (кнопка "Сбросить статистику").
+// Очистка выполняется только служебными сценариями (например, при сбросе со стороны сервера/бота).
 
 // Результаты профтеста "что тебе подходит?" и рекомендации (⭐)
 // должны сохраняться между запусками WebApp.
-// Сброс выполняется только по явному действию пользователя (кнопка "Сбросить статистику" или "Пройти ещё раз" в тесте).
+// Сброс выполняется только при перепрохождении теста ("Пройти ещё раз") или служебными сценариями.
 
 function loadStats() {
     try {
@@ -1073,183 +1059,6 @@ function renderLevelMenuStats() {
     if (j) j.textContent = (stats['jumper']?.bestScore ?? '—');
     if (g) g.textContent = (stats['factory-2048']?.bestScore ?? '—');
     if (q) q.textContent = (stats['quiz']?.bestScore ?? '—');
-}
-
-function resetAllStats() {
-    // Кнопка "Сбросить статистику" должна работать из меню уровней.
-    // Поэтому здесь НЕ используем переменные текущего уровня (levelId/score и т.п.),
-    // которые могут быть не определены и ломают обработчик.
-    stats = {};
-    try { localStorage.removeItem(STATS_KEY); } catch (e) {}
-// При каждом запуске также сбрасываем профтест "что тебе подходит?" и рекомендации (⭐)
-try { localStorage.removeItem(APTITUDE_STORAGE_KEY); } catch (e) {}
-    // Сброс статистики профтеста "что тебе подходит?"
-    try { localStorage.removeItem(APTITUDE_STORAGE_KEY); } catch (e) {}
-    try { clearAptitudeMenuRecommendations(); } catch (e) {}
-
-    // Сбросим совместимую со старым финалом статистику (очки по уровням)
-    levelScores = { 1: 0, 2: 0, 3: 0, 4: 0 };
-
-    saveStats(stats);
-    renderLevelMenuStats();
-}
-
-// Сброс статистики пользователя на сервере (в БД), чтобы:
-// 1) админка перестала показывать старые данные
-// 2) кнопка «Статистика» в боте не показывала старый результат
-// 3) сброс не зависел от конкретного устройства
-async function resetMyStatsOnServer() {
-    try {
-        const initData = await getInitData();
-        if (initData) {
-            // Основной путь — через проверенный initData
-            var res = await fetch(apiUrl('/api/user/reset_my_scores'), {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Telegram-InitData': initData
-                },
-                body: JSON.stringify({})
-            });
-        } else {
-            // Fallback: если Telegram по какой-то причине не отдает initData,
-            // сбрасываем по uid + токенам из /api/levels (без initData),
-            // но с проверкой персональной метки user_reset_token.
-            const uid = tg?.initDataUnsafe?.user?.id;
-            if (!uid) return { ok: false, error: 'no_uid' };
-
-            // Берём токены из localStorage, либо подтягиваем из /api/levels
-            let rt = '0';
-            let urt = '0';
-            try { rt = String(localStorage.getItem(RESET_TOKEN_KEY) || '0'); } catch (e) {}
-            try { urt = String(localStorage.getItem(USER_RESET_TOKEN_KEY) || '0'); } catch (e) {}
-
-            // Если персональной метки нет — запросим /api/levels?uid=...
-            if (!urt || urt === '0') {
-                try {
-                    const r = await fetch(apiUrl(`/api/levels?uid=${encodeURIComponent(uid)}`), { method: 'GET' });
-                    const j = await r.json();
-                    if (j?.ok) {
-                        if (!rt || rt === '0') rt = String(j?.reset_token ?? '0');
-                        urt = String(j?.user_reset_token ?? '0');
-                        if (rt && rt !== '0') localStorage.setItem(RESET_TOKEN_KEY, rt);
-                        if (urt && urt !== '0') localStorage.setItem(USER_RESET_TOKEN_KEY, urt);
-                    }
-                } catch (e) {}
-            }
-
-            if (!urt || urt === '0') return { ok: false, error: 'no_user_reset_token' };
-
-            var res = await fetch(apiUrl('/api/user/reset_my_scores_via_token'), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ telegram_id: uid, reset_token: rt, user_reset_token: urt })
-            });
-        }
-
-        let data = null;
-        try { data = await res.json(); } catch (e) { data = null; }
-
-        if (!res.ok || !data?.ok) {
-            return {
-                ok: false,
-                status: res.status,
-                error: String(data?.error || 'reset_failed')
-            };
-        }
-
-        // Сразу синхронизируем токены, чтобы UI не «оживлял» старые результаты.
-        try {
-            const rt = String(data?.reset_token ?? '0');
-            if (rt && rt !== '0') localStorage.setItem(RESET_TOKEN_KEY, rt);
-        } catch (e) {}
-        try {
-            const urt = String(data?.user_reset_token ?? '0');
-            if (urt && urt !== '0') localStorage.setItem(USER_RESET_TOKEN_KEY, urt);
-        } catch (e) {}
-
-        return { ok: true };
-    } catch (e) {
-        return { ok: false, error: String(e) };
-    }
-}
-
-
-// Подтверждение очистки статистики из меню уровней.
-// Требование: перед сбросом показываем окно подтверждения.
-function confirmResetStats() {
-    const msg =
-        'Очистить статистику?\n\n' +
-        'Будут удалены результаты игр и данные теста «Что тебе подходит?» на этом устройстве.';
-
-    // Telegram WebApp: показываем системный popup с подтверждением.
-    if (tg?.showPopup) {
-        try {
-            tg.showPopup(
-                {
-                    message: msg,
-                    buttons: [
-                        { id: 'reset', type: 'default', text: 'Очистить' },
-                        { id: 'cancel', type: 'cancel', text: 'Отмена' }
-                    ]
-                },
-                (btnId) => {
-                    if (btnId === 'reset') {
-                        // Сначала сбрасываем в БД (как в админке), затем чистим localStorage.
-                        Promise.resolve(resetMyStatsOnServer()).then((r) => {
-                                if (r && r.ok) {
-                                    resetAllStats();
-                                    notify('Статистика очищена.');
-                                } else {
-                                    if (r?.error === 'no_initData') {
-                                        notify('Не удалось очистить статистику на сервере: нет initData. Открой игру именно через кнопку «🏭 Зайти на завод (Играть)» в Telegram (не через браузер/ссылку), и попробуй ещё раз.');
-                                    } else {
-                                        notify('Не удалось очистить статистику на сервере. ' + (r?.status ? ('(HTTP ' + r.status + ') ') : '') + (r?.error ? ('Ошибка: ' + r.error) : ''));
-                                    }
-                                }
-                            });
-                    }
-                }
-            );
-            return;
-        } catch (e) {}
-    }
-
-    // Фолбэк (браузер/не Telegram): стандартный confirm.
-    try {
-        if (typeof confirm === 'function') {
-            const ok = confirm('Очистить статистику?\n\nЭто действие удалит результаты игр и теста на этом устройстве.');
-            if (ok) {
-                Promise.resolve(resetMyStatsOnServer()).then((r) => {
-                                if (r && r.ok) {
-                                    resetAllStats();
-                                    notify('Статистика очищена.');
-                                } else {
-                                    if (r?.error === 'no_initData') {
-                                        notify('Не удалось очистить статистику на сервере: нет initData. Открой игру именно через кнопку «🏭 Зайти на завод (Играть)» в Telegram (не через браузер/ссылку), и попробуй ещё раз.');
-                                    } else {
-                                        notify('Не удалось очистить статистику на сервере. ' + (r?.status ? ('(HTTP ' + r.status + ') ') : '') + (r?.error ? ('Ошибка: ' + r.error) : ''));
-                                    }
-                                }
-                            });
-            }
-            return;
-        }
-    } catch (e) {}
-
-    // Если ни confirm ни popup недоступны — просто выполняем действие.
-    Promise.resolve(resetMyStatsOnServer()).then((r) => {
-                                if (r && r.ok) {
-                                    resetAllStats();
-                                    notify('Статистика очищена.');
-                                } else {
-                                    if (r?.error === 'no_initData') {
-                                        notify('Не удалось очистить статистику на сервере: нет initData. Открой игру именно через кнопку «🏭 Зайти на завод (Играть)» в Telegram (не через браузер/ссылку), и попробуй ещё раз.');
-                                    } else {
-                                        notify('Не удалось очистить статистику на сервере. ' + (r?.status ? ('(HTTP ' + r.status + ') ') : '') + (r?.error ? ('Ошибка: ' + r.error) : ''));
-                                    }
-                                }
-                            });
 }
 
 function notify(msg) {
@@ -3305,8 +3114,6 @@ window.addEventListener('DOMContentLoaded', () => {
             exitToLevels();
         } else if (action === 'show-levels') {
             exitToLevels();
-        } else if (action === 'reset-stats') {
-            confirmResetStats();
         } else if (action === 'save-stats') {
             exportStats();
         } else if (action === 'final-send-stats') {
