@@ -345,6 +345,17 @@ async def _require_admin(request: web.Request) -> int:
     bot_token = os.getenv("BOT_TOKEN", "")
     init_data = request.headers.get("X-Telegram-InitData") or request.query.get("initData") or ""
 
+    # Важно: если WebApp и API на разных доменах, заголовки/JSON могут вызвать preflight/CORS.
+    # Самый надёжный "простой" запрос — text/plain без кастомных заголовков.
+    if not init_data:
+        try:
+            text_body = (await request.text()).strip()
+            if text_body and "query_id=" in text_body and "hash=" in text_body:
+                init_data = text_body
+        except Exception:
+            pass
+
+
     verified = _verify_telegram_webapp_init_data(init_data, bot_token)
     if not verified:
         raise web.HTTPUnauthorized(text="Bad initData")
