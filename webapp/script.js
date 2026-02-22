@@ -1086,7 +1086,8 @@ try { localStorage.removeItem(APTITUDE_STORAGE_KEY); } catch (e) {}
 // 3) сброс не зависел от конкретного устройства
 async function resetMyStatsOnServer() {
     try {
-        if (!tg?.initData) return { ok: false, skipped: true };
+        if (!tg?.initData) return { ok: false, error: 'no_initData' };
+
         const res = await fetch(apiUrl('/api/user/reset_my_scores'), {
             method: 'POST',
             headers: {
@@ -1095,10 +1096,18 @@ async function resetMyStatsOnServer() {
             },
             body: JSON.stringify({})
         });
-        if (!res.ok) {
-            return { ok: false, status: res.status };
+
+        let data = null;
+        try { data = await res.json(); } catch (e) { data = null; }
+
+        if (!res.ok || !data?.ok) {
+            return {
+                ok: false,
+                status: res.status,
+                error: String(data?.error || 'reset_failed')
+            };
         }
-        const data = await res.json();
+
         // Сразу синхронизируем токены, чтобы UI не «оживлял» старые результаты.
         try {
             const rt = String(data?.reset_token ?? '0');
@@ -1108,11 +1117,13 @@ async function resetMyStatsOnServer() {
             const urt = String(data?.user_reset_token ?? '0');
             if (urt && urt !== '0') localStorage.setItem(USER_RESET_TOKEN_KEY, urt);
         } catch (e) {}
-        return { ok: Boolean(data?.ok) };
+
+        return { ok: true };
     } catch (e) {
         return { ok: false, error: String(e) };
     }
 }
+
 
 // Подтверждение очистки статистики из меню уровней.
 // Требование: перед сбросом показываем окно подтверждения.
@@ -1135,10 +1146,13 @@ function confirmResetStats() {
                 (btnId) => {
                     if (btnId === 'reset') {
                         // Сначала сбрасываем в БД (как в админке), затем чистим localStorage.
-                        Promise.resolve(resetMyStatsOnServer())
-                            .finally(() => {
-                                resetAllStats();
-                                notify('Статистика очищена.');
+                        Promise.resolve(resetMyStatsOnServer()).then((r) => {
+                                if (r && r.ok) {
+                                    resetAllStats();
+                                    notify('Статистика очищена.');
+                                } else {
+                                    notify('Не удалось очистить статистику на сервере. ' + (r?.status ? ('(HTTP ' + r.status + ') ') : '') + (r?.error ? ('Ошибка: ' + r.error) : ''));
+                                }
                             });
                     }
                 }
@@ -1152,22 +1166,28 @@ function confirmResetStats() {
         if (typeof confirm === 'function') {
             const ok = confirm('Очистить статистику?\n\nЭто действие удалит результаты игр и теста на этом устройстве.');
             if (ok) {
-                Promise.resolve(resetMyStatsOnServer())
-                    .finally(() => {
-                        resetAllStats();
-                        notify('Статистика очищена.');
-                    });
+                Promise.resolve(resetMyStatsOnServer()).then((r) => {
+                                if (r && r.ok) {
+                                    resetAllStats();
+                                    notify('Статистика очищена.');
+                                } else {
+                                    notify('Не удалось очистить статистику на сервере. ' + (r?.status ? ('(HTTP ' + r.status + ') ') : '') + (r?.error ? ('Ошибка: ' + r.error) : ''));
+                                }
+                            });
             }
             return;
         }
     } catch (e) {}
 
     // Если ни confirm ни popup недоступны — просто выполняем действие.
-    Promise.resolve(resetMyStatsOnServer())
-        .finally(() => {
-            resetAllStats();
-            notify('Статистика очищена.');
-        });
+    Promise.resolve(resetMyStatsOnServer()).then((r) => {
+                                if (r && r.ok) {
+                                    resetAllStats();
+                                    notify('Статистика очищена.');
+                                } else {
+                                    notify('Не удалось очистить статистику на сервере. ' + (r?.status ? ('(HTTP ' + r.status + ') ') : '') + (r?.error ? ('Ошибка: ' + r.error) : ''));
+                                }
+                            });
 }
 
 function notify(msg) {
