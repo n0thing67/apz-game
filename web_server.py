@@ -32,6 +32,74 @@ from database.db import (
 
 WEBAPP_DIR = os.path.join(os.path.dirname(__file__), "webapp")
 
+# -------------------------
+# WebApp one-time codes & user sessions (Variant A)
+# -------------------------
+# Telegram WebApp initData иногда недоступен в некоторых клиентах/режимах открытия.
+# Поэтому делаем надёжную привязку WebApp к пользователю через одноразовый code,
+# который выдаёт бот и который сервер обменивает на session token.
+#
+# ВАЖНО: это НЕ админ-доступ. Сессия даёт право только на действия от имени пользователя
+# (например, очистка *своей* статистики).
+
+import secrets
+
+_CODE_TTL_SEC = 5 * 60          # 5 минут на обмен
+_SESSION_TTL_SEC = 30 * 24 * 3600  # 30 дней
+
+_webapp_codes: dict[str, tuple[int, float]] = {}
+_user_sessions: dict[str, tuple[int, float]] = {}
+
+def _now() -> float:
+    import time
+    return float(time.time())
+
+def _purge_expired() -> None:
+    t = _now()
+    # purge codes
+    for k, (_uid, exp) in list(_webapp_codes.items()):
+        if exp <= t:
+            _webapp_codes.pop(k, None)
+    # purge sessions
+    for k, (_uid, exp) in list(_user_sessions.items()):
+        if exp <= t:
+            _user_sessions.pop(k, None)
+
+def issue_webapp_code(tg_id: int) -> str:
+    """Выдаёт одноразовый code для открытия WebApp от имени tg_id."""
+    _purge_expired()
+    code = secrets.token_urlsafe(24)
+    _webapp_codes[code] = (int(tg_id), _now() + _CODE_TTL_SEC)
+    return code
+
+def _consume_webapp_code(code: str) -> int | None:
+    _purge_expired()
+    item = _webapp_codes.pop(code, None)
+    if not item:
+        return None
+    uid, exp = item
+    if exp <= _now():
+        return None
+    return int(uid)
+
+def _create_user_session(tg_id: int) -> str:
+    _purge_expired()
+    token = secrets.token_urlsafe(32)
+    _user_sessions[token] = (int(tg_id), _now() + _SESSION_TTL_SEC)
+    return token
+
+def _get_user_id_from_session(token: str) -> int | None:
+    _purge_expired()
+    item = _user_sessions.get(token)
+    if not item:
+        return None
+    uid, exp = item
+    if exp <= _now():
+        _user_sessions.pop(token, None)
+        return None
+    return int(uid)
+
+
 # Шаблоны грамот/дипломов (вариант A: PNG + наложение текста)
 CERT_TEMPLATES_DIR = os.path.join(WEBAPP_DIR, "assets", "cert_templates")
 
@@ -613,6 +681,10 @@ def create_app() -> web.Application:
     # Пользовательский сброс статистики (кнопка «Очистить статистику» в WebApp)
     app.router.add_post("/api/user/reset_my_scores", user_reset_my_scores)
     app.router.add_post("/api/user/reset_my_scores_via_token", user_reset_my_scores_via_token)
+
+# Variant A: обмен code -> session и сброс по session (не зависит от initData)
+app.router.add_post("/api/session/exchange", session_exchange)
+app.router.add_post("/api/user/reset_my_scores_session", user_reset_my_scores_session)
 
     app.router.add_get("/api/admin/stats", admin_get_stats)
     app.router.add_post("/api/admin/reset_scores", admin_reset_scores)
