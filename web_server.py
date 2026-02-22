@@ -32,74 +32,6 @@ from database.db import (
 
 WEBAPP_DIR = os.path.join(os.path.dirname(__file__), "webapp")
 
-# -------------------------
-# WebApp one-time codes & user sessions (Variant A)
-# -------------------------
-# Telegram WebApp initData иногда недоступен в некоторых клиентах/режимах открытия.
-# Поэтому делаем надёжную привязку WebApp к пользователю через одноразовый code,
-# который выдаёт бот и который сервер обменивает на session token.
-#
-# ВАЖНО: это НЕ админ-доступ. Сессия даёт право только на действия от имени пользователя
-# (например, очистка *своей* статистики).
-
-import secrets
-
-_CODE_TTL_SEC = 5 * 60          # 5 минут на обмен
-_SESSION_TTL_SEC = 30 * 24 * 3600  # 30 дней
-
-_webapp_codes: dict[str, tuple[int, float]] = {}
-_user_sessions: dict[str, tuple[int, float]] = {}
-
-def _now() -> float:
-    import time
-    return float(time.time())
-
-def _purge_expired() -> None:
-    t = _now()
-    # purge codes
-    for k, (_uid, exp) in list(_webapp_codes.items()):
-        if exp <= t:
-            _webapp_codes.pop(k, None)
-    # purge sessions
-    for k, (_uid, exp) in list(_user_sessions.items()):
-        if exp <= t:
-            _user_sessions.pop(k, None)
-
-def issue_webapp_code(tg_id: int) -> str:
-    """Выдаёт одноразовый code для открытия WebApp от имени tg_id."""
-    _purge_expired()
-    code = secrets.token_urlsafe(24)
-    _webapp_codes[code] = (int(tg_id), _now() + _CODE_TTL_SEC)
-    return code
-
-def _consume_webapp_code(code: str) -> int | None:
-    _purge_expired()
-    item = _webapp_codes.pop(code, None)
-    if not item:
-        return None
-    uid, exp = item
-    if exp <= _now():
-        return None
-    return int(uid)
-
-def _create_user_session(tg_id: int) -> str:
-    _purge_expired()
-    token = secrets.token_urlsafe(32)
-    _user_sessions[token] = (int(tg_id), _now() + _SESSION_TTL_SEC)
-    return token
-
-def _get_user_id_from_session(token: str) -> int | None:
-    _purge_expired()
-    item = _user_sessions.get(token)
-    if not item:
-        return None
-    uid, exp = item
-    if exp <= _now():
-        _user_sessions.pop(token, None)
-        return None
-    return int(uid)
-
-
 # Шаблоны грамот/дипломов (вариант A: PNG + наложение текста)
 CERT_TEMPLATES_DIR = os.path.join(WEBAPP_DIR, "assets", "cert_templates")
 
@@ -344,7 +276,7 @@ async def handle_me(request: web.Request) -> web.Response:
     reset_token = await get_stats_reset_token()
 
     init_data = request.headers.get("X-Telegram-InitData", "")
-    token = (os.getenv("BOT_TOKEN") or os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("TG_BOT_TOKEN") or "").strip()
+    token = os.getenv("BOT_TOKEN", "")
     parsed = _verify_telegram_webapp_init_data(init_data, token)
     if not parsed:
         return web.json_response({"ok": False, "error": "bad_init_data"}, status=401)
@@ -410,7 +342,7 @@ async def handle_me(request: web.Request) -> web.Response:
 
 async def _require_admin(request: web.Request) -> int:
     """Проверка admin по initData (передаётся в заголовке X-Telegram-InitData или ?initData=...)."""
-    bot_token = (os.getenv("BOT_TOKEN") or os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("TG_BOT_TOKEN") or "").strip()
+    bot_token = os.getenv("BOT_TOKEN", "")
     init_data = request.headers.get("X-Telegram-InitData") or request.query.get("initData") or ""
 
     verified = _verify_telegram_webapp_init_data(init_data, bot_token)
@@ -466,96 +398,6 @@ async def admin_reset_user_scores(request: web.Request) -> web.Response:
     tg_id = int(payload.get("telegram_id"))
     await reset_user_scores(tg_id)
     return web.json_response({"ok": True, "telegram_id": tg_id})
-
-
-async def user_reset_my_scores(request: web.Request) -> web.Response:
-    """Пользовательский сброс статистики (через кнопку в мини‑веб приложении).
-
-    ВАЖНО: сброс должен происходить в БД *для конкретного пользователя*,
-    а не только в localStorage на устройстве.
-    Логика такая же, как в админке при reset_user_scores.
-    """
-    init_data = request.headers.get("X-Telegram-InitData", "")
-    token = (os.getenv("BOT_TOKEN") or os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("TG_BOT_TOKEN") or "").strip()
-    parsed = _verify_telegram_webapp_init_data(init_data, token)
-    if not parsed:
-        return web.json_response({"ok": False, "error": "bad_init_data"}, status=401)
-
-    tg_id = _extract_user_id(parsed)
-    if not tg_id:
-        return web.json_response({"ok": False, "error": "no_user"}, status=401)
-
-    # Сброс возможен только если пользователь существует в БД.
-    # (Если его удалили админом — WebApp и так очистит localStorage по user_deleted_token.)
-    row = await get_user(tg_id)
-    if not row:
-        return web.json_response({"ok": False, "error": "user_not_found"}, status=404)
-
-    await reset_user_scores(tg_id)
-
-    # Возвращаем актуальные токены, чтобы WebApp мог сразу синхронизировать localStorage.
-    reset_token = await get_stats_reset_token()
-    user_reset_token = await get_user_reset_token(tg_id)
-    return web.json_response(
-        {
-            "ok": True,
-            "telegram_id": tg_id,
-            "reset_token": str(reset_token or "0"),
-            "user_reset_token": str(user_reset_token or "0"),
-        }
-    )
-
-
-
-async def user_reset_my_scores_via_token(request: web.Request) -> web.Response:
-    """Fallback-сброс статистики пользователя без initData.
-
-    Используется если Telegram WebApp не отдаёт initData.
-    Клиент передает telegram_id (uid) и метки reset_token/user_reset_token.
-    Сервер сверяет метки и сбрасывает статистику ровно у этого пользователя.
-    """
-    try:
-        payload = await request.json()
-    except Exception:
-        payload = {}
-
-    uid = payload.get("telegram_id") or payload.get("uid")
-    if uid is None:
-        return web.json_response({"ok": False, "error": "no_uid"}, status=400)
-
-    try:
-        tg_id = int(uid)
-    except Exception:
-        return web.json_response({"ok": False, "error": "bad_uid"}, status=400)
-
-    row = await get_user(tg_id)
-    if not row:
-        return web.json_response({"ok": False, "error": "user_not_found"}, status=404)
-
-    client_reset_token = str(payload.get("reset_token") or "0")
-    client_user_reset_token = str(payload.get("user_reset_token") or "0")
-
-    server_reset_token = str(await get_stats_reset_token() or "0")
-    server_user_reset_token = str(await get_user_reset_token(tg_id) or "0")
-
-    if client_user_reset_token == "0" or client_user_reset_token != server_user_reset_token:
-        return web.json_response({"ok": False, "error": "bad_user_reset_token"}, status=403)
-
-    if client_reset_token != "0" and client_reset_token != server_reset_token:
-        return web.json_response({"ok": False, "error": "bad_reset_token"}, status=403)
-
-    await reset_user_scores(tg_id)
-
-    reset_token = await get_stats_reset_token()
-    user_reset_token = await get_user_reset_token(tg_id)
-    return web.json_response(
-        {
-            "ok": True,
-            "telegram_id": tg_id,
-            "reset_token": str(reset_token or "0"),
-            "user_reset_token": str(user_reset_token or "0"),
-        }
-    )
 
 
 async def admin_delete_user(request: web.Request) -> web.Response:
@@ -663,7 +505,7 @@ def create_app() -> web.Application:
     app = web.Application(middlewares=[cors_middleware])
 
     # Bot instance для отправки грамот из админ-панели
-    token = (os.getenv("BOT_TOKEN") or os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("TG_BOT_TOKEN") or "").strip()
+    token = os.getenv("BOT_TOKEN", "")
     app["bot"] = Bot(token=token) if token else Bot(token="0")
 
     async def _close_bot(app_: web.Application):
@@ -677,14 +519,6 @@ def create_app() -> web.Application:
     # API
     app.router.add_get("/api/levels", handle_levels)
     app.router.add_get("/api/me", handle_me)
-
-    # Пользовательский сброс статистики (кнопка «Очистить статистику» в WebApp)
-    app.router.add_post("/api/user/reset_my_scores", user_reset_my_scores)
-    app.router.add_post("/api/user/reset_my_scores_via_token", user_reset_my_scores_via_token)
-
-# Variant A: обмен code -> session и сброс по session (не зависит от initData)
-app.router.add_post("/api/session/exchange", session_exchange)
-app.router.add_post("/api/user/reset_my_scores_session", user_reset_my_scores_session)
 
     app.router.add_get("/api/admin/stats", admin_get_stats)
     app.router.add_post("/api/admin/reset_scores", admin_reset_scores)
