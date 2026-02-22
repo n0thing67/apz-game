@@ -391,6 +391,14 @@ async def user_reset_my_stats(request: web.Request) -> web.Response:
         except Exception:
             init_data = ""
 
+    # Главный фолбэк для текущего WebApp: initData приходит в body как text/plain
+    # (см. webapp/script.js: fetch('/api/reset_my_stats', { body: initData, headers: 'text/plain' }))
+    if not init_data:
+        try:
+            init_data = (await request.text()).strip()
+        except Exception:
+            init_data = ""
+
     verified = _verify_telegram_webapp_init_data(init_data, bot_token)
     if not verified:
         return web.json_response({"ok": False, "error": "bad_init_data"}, status=401)
