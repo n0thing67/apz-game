@@ -1101,16 +1101,51 @@ try { localStorage.removeItem(APTITUDE_STORAGE_KEY); } catch (e) {}
 async function resetMyStatsOnServer() {
     try {
         const initData = await getInitData();
-        if (!initData) return { ok: false, error: 'no_initData' };
+        if (initData) {
+            // Основной путь — через проверенный initData
+            var res = await fetch(apiUrl('/api/user/reset_my_scores'), {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Telegram-InitData': initData
+                },
+                body: JSON.stringify({})
+            });
+        } else {
+            // Fallback: если Telegram по какой-то причине не отдает initData,
+            // сбрасываем по uid + токенам из /api/levels (без initData),
+            // но с проверкой персональной метки user_reset_token.
+            const uid = tg?.initDataUnsafe?.user?.id;
+            if (!uid) return { ok: false, error: 'no_uid' };
 
-        const res = await fetch(apiUrl('/api/user/reset_my_scores'), {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Telegram-InitData': initData
-            },
-            body: JSON.stringify({})
-        });
+            // Берём токены из localStorage, либо подтягиваем из /api/levels
+            let rt = '0';
+            let urt = '0';
+            try { rt = String(localStorage.getItem(RESET_TOKEN_KEY) || '0'); } catch (e) {}
+            try { urt = String(localStorage.getItem(USER_RESET_TOKEN_KEY) || '0'); } catch (e) {}
+
+            // Если персональной метки нет — запросим /api/levels?uid=...
+            if (!urt || urt === '0') {
+                try {
+                    const r = await fetch(apiUrl(`/api/levels?uid=${encodeURIComponent(uid)}`), { method: 'GET' });
+                    const j = await r.json();
+                    if (j?.ok) {
+                        if (!rt || rt === '0') rt = String(j?.reset_token ?? '0');
+                        urt = String(j?.user_reset_token ?? '0');
+                        if (rt && rt !== '0') localStorage.setItem(RESET_TOKEN_KEY, rt);
+                        if (urt && urt !== '0') localStorage.setItem(USER_RESET_TOKEN_KEY, urt);
+                    }
+                } catch (e) {}
+            }
+
+            if (!urt || urt === '0') return { ok: false, error: 'no_user_reset_token' };
+
+            var res = await fetch(apiUrl('/api/user/reset_my_scores_via_token'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ telegram_id: uid, reset_token: rt, user_reset_token: urt })
+            });
+        }
 
         let data = null;
         try { data = await res.json(); } catch (e) { data = null; }
