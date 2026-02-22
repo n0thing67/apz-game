@@ -378,26 +378,39 @@ async def user_reset_my_stats(request: web.Request) -> web.Response:
     """
     bot_token = os.getenv("BOT_TOKEN", "")
 
-    # Принимаем initData так же гибко, как в админке:
-    # - заголовок X-Telegram-InitData (основной вариант)
-    # - query-параметр ?initData=... (на всякий случай, если заголовки режутся WebView/прокси)
-    init_data = request.headers.get("X-Telegram-InitData") or request.query.get("initData") or ""
+    # Принимаем initData максимально гибко (как в админке + для WebApp):
+    # 1) заголовок X-Telegram-InitData
+    # 2) query-параметр ?initData=...
+    # 3) raw body text/plain (основной формат в webapp/script.js: Content-Type: text/plain; body: initData)
+    # 4) JSON body (на всякий случай)
+    # 5) form-urlencoded (на всякий случай)
+    init_data = (request.headers.get("X-Telegram-InitData") or request.query.get("initData") or "").strip()
 
-    # Доп. фолбэк: если клиент по ошибке отправил initData в JSON body
+    # 3) text/plain (или любой raw text), если заголовки/квери пустые
+    if not init_data:
+        try:
+            text_body = (await request.text()).strip()
+            # Быстрая валидация формата initData, чтобы не принять мусор.
+            if text_body and "query_id=" in text_body and "hash=" in text_body:
+                init_data = text_body
+        except Exception:
+            pass
+
+    # 4) JSON
     if not init_data:
         try:
             body = await request.json()
-            init_data = str(body.get("initData") or body.get("init_data") or "")
+            init_data = str(body.get("initData") or body.get("init_data") or "").strip()
         except Exception:
-            init_data = ""
+            pass
 
-    # Главный фолбэк для текущего WebApp: initData приходит в body как text/plain
-    # (см. webapp/script.js: fetch('/api/reset_my_stats', { body: initData, headers: 'text/plain' }))
+    # 5) form-urlencoded
     if not init_data:
         try:
-            init_data = (await request.text()).strip()
+            form = await request.post()
+            init_data = str(form.get("initData") or form.get("init_data") or "").strip()
         except Exception:
-            init_data = ""
+            pass
 
     verified = _verify_telegram_webapp_init_data(init_data, bot_token)
     if not verified:
