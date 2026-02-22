@@ -1,5 +1,18 @@
 const tg = window.Telegram?.WebApp;
 if (tg?.expand) tg.expand();
+if (tg?.ready) tg.ready();
+
+// Ждём появления initData (в некоторых WebView оно приходит с небольшой задержкой)
+async function getInitData(timeoutMs = 1500) {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+        const v = tg?.initData;
+        if (v && String(v).length > 0) return v;
+        await new Promise(r => setTimeout(r, 50));
+    }
+    return "";
+}
+
 // ===== ASSETS: ускоряем загрузку через WebP (с fallback) =====
 function supportsWebP() {
     try {
@@ -806,12 +819,13 @@ async function syncAptitudeWithServer() {
     try {
         // API_BASE может быть пустым, если WebApp и API находятся на одном домене.
         // В этом случае apiUrl('/api/me') вернёт относительный путь и fetch() должен работать.
-        if (!tg?.initData) return;
+        const initData = await getInitData();
+        if (!initData) return;
 
         const res = await fetch(apiUrl('/api/me'), {
             method: 'GET',
             cache: 'no-store',
-            headers: { 'X-Telegram-InitData': tg.initData }
+            headers: { 'X-Telegram-InitData': initData }
         });
         if (!res.ok) return;
 
@@ -1086,13 +1100,14 @@ try { localStorage.removeItem(APTITUDE_STORAGE_KEY); } catch (e) {}
 // 3) сброс не зависел от конкретного устройства
 async function resetMyStatsOnServer() {
     try {
-        if (!tg?.initData) return { ok: false, error: 'no_initData' };
+        const initData = await getInitData();
+        if (!initData) return { ok: false, error: 'no_initData' };
 
         const res = await fetch(apiUrl('/api/user/reset_my_scores'), {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'X-Telegram-InitData': tg.initData
+                'X-Telegram-InitData': initData
             },
             body: JSON.stringify({})
         });
@@ -1151,7 +1166,11 @@ function confirmResetStats() {
                                     resetAllStats();
                                     notify('Статистика очищена.');
                                 } else {
-                                    notify('Не удалось очистить статистику на сервере. ' + (r?.status ? ('(HTTP ' + r.status + ') ') : '') + (r?.error ? ('Ошибка: ' + r.error) : ''));
+                                    if (r?.error === 'no_initData') {
+                                        notify('Не удалось очистить статистику на сервере: нет initData. Открой игру именно через кнопку «🏭 Зайти на завод (Играть)» в Telegram (не через браузер/ссылку), и попробуй ещё раз.');
+                                    } else {
+                                        notify('Не удалось очистить статистику на сервере. ' + (r?.status ? ('(HTTP ' + r.status + ') ') : '') + (r?.error ? ('Ошибка: ' + r.error) : ''));
+                                    }
                                 }
                             });
                     }
@@ -1171,7 +1190,11 @@ function confirmResetStats() {
                                     resetAllStats();
                                     notify('Статистика очищена.');
                                 } else {
-                                    notify('Не удалось очистить статистику на сервере. ' + (r?.status ? ('(HTTP ' + r.status + ') ') : '') + (r?.error ? ('Ошибка: ' + r.error) : ''));
+                                    if (r?.error === 'no_initData') {
+                                        notify('Не удалось очистить статистику на сервере: нет initData. Открой игру именно через кнопку «🏭 Зайти на завод (Играть)» в Telegram (не через браузер/ссылку), и попробуй ещё раз.');
+                                    } else {
+                                        notify('Не удалось очистить статистику на сервере. ' + (r?.status ? ('(HTTP ' + r.status + ') ') : '') + (r?.error ? ('Ошибка: ' + r.error) : ''));
+                                    }
                                 }
                             });
             }
@@ -1185,7 +1208,11 @@ function confirmResetStats() {
                                     resetAllStats();
                                     notify('Статистика очищена.');
                                 } else {
-                                    notify('Не удалось очистить статистику на сервере. ' + (r?.status ? ('(HTTP ' + r.status + ') ') : '') + (r?.error ? ('Ошибка: ' + r.error) : ''));
+                                    if (r?.error === 'no_initData') {
+                                        notify('Не удалось очистить статистику на сервере: нет initData. Открой игру именно через кнопку «🏭 Зайти на завод (Играть)» в Telegram (не через браузер/ссылку), и попробуй ещё раз.');
+                                    } else {
+                                        notify('Не удалось очистить статистику на сервере. ' + (r?.status ? ('(HTTP ' + r.status + ') ') : '') + (r?.error ? ('Ошибка: ' + r.error) : ''));
+                                    }
                                 }
                             });
 }
