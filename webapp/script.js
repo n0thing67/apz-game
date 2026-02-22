@@ -1078,14 +1078,11 @@ async function resetAllStats() {
             const res = await fetch(apiUrl('/api/reset_my_stats'), {
                 method: 'POST',
                 cache: 'no-store',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Telegram-InitData': initData
-                },
-                body: JSON.stringify({})
+                // text/plain = "simple request" (без CORS preflight), максимально совместимо с WebView.
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: initData
             });
-
-            if (res.ok) {
+if (res.ok) {
                 const data = await res.json().catch(() => null);
                 serverOk = Boolean(data && data.ok);
                 if (!serverOk) serverError = String((data && data.error) || "server_error");
