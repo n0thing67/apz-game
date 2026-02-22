@@ -362,36 +362,43 @@ async def _require_admin(request: web.Request) -> int:
 async def user_reset_my_stats(request: web.Request) -> web.Response:
     """Сброс статистики самим пользователем из WebApp.
 
-    Важно: сброс должен происходить в БД (на сервере) у КОНКРЕТНОГО пользователя,
-    а не только в localStorage на устройстве.
+    Ключевое требование: сброс должен происходить В БД и именно У КОНКРЕТНОГО пользователя
+    (как в админке при очистке статистики одного пользователя).
     """
-    init_data = request.headers.get("X-Telegram-InitData", "")
-    token = os.getenv("BOT_TOKEN", "")
-    parsed = _verify_telegram_webapp_init_data(init_data, token)
-    if not parsed:
+    bot_token = os.getenv("BOT_TOKEN", "")
+
+    # Принимаем initData так же гибко, как в админке:
+    # - заголовок X-Telegram-InitData (основной вариант)
+    # - query-параметр ?initData=... (на всякий случай, если заголовки режутся WebView/прокси)
+    init_data = request.headers.get("X-Telegram-InitData") or request.query.get("initData") or ""
+
+    # Доп. фолбэк: если клиент по ошибке отправил initData в JSON body
+    if not init_data:
+        try:
+            body = await request.json()
+            init_data = str(body.get("initData") or body.get("init_data") or "")
+        except Exception:
+            init_data = ""
+
+    verified = _verify_telegram_webapp_init_data(init_data, bot_token)
+    if not verified:
         return web.json_response({"ok": False, "error": "bad_init_data"}, status=401)
 
-    user_raw = parsed.get("user")
-    if not user_raw:
+    tg_id = _extract_user_id(verified)
+    if not tg_id:
         return web.json_response({"ok": False, "error": "no_user"}, status=400)
 
-    try:
-        user_obj = json.loads(user_raw) if isinstance(user_raw, str) else user_raw
-        tg_id = int(user_obj.get("id"))
-    except Exception:
-        return web.json_response({"ok": False, "error": "bad_user"}, status=400)
-
-    # Сбрасываем очки + профтест, ставим метку user_reset_token (как в админке).
-    await reset_user_scores(tg_id)
+    # Сбрасываем очки + профтест, ставим user_reset_token и обновляем stats_reset_token — как в админке.
+    await reset_user_scores(int(tg_id))
 
     # Вернём актуальные токены, чтобы клиент мог сразу обновиться без ожидания следующего /api/me.
     reset_token = await get_stats_reset_token()
-    user_reset_token = await get_user_reset_token(tg_id)
+    user_reset_token = await get_user_reset_token(int(tg_id))
 
     return web.json_response(
         {
             "ok": True,
-            "telegram_id": tg_id,
+            "telegram_id": int(tg_id),
             "reset_token": reset_token,
             "user_reset_token": user_reset_token,
         }
