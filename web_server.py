@@ -345,17 +345,6 @@ async def _require_admin(request: web.Request) -> int:
     bot_token = os.getenv("BOT_TOKEN", "")
     init_data = request.headers.get("X-Telegram-InitData") or request.query.get("initData") or ""
 
-    # Важно: если WebApp и API на разных доменах, заголовки/JSON могут вызвать preflight/CORS.
-    # Самый надёжный "простой" запрос — text/plain без кастомных заголовков.
-    if not init_data:
-        try:
-            text_body = (await request.text()).strip()
-            if text_body and "query_id=" in text_body and "hash=" in text_body:
-                init_data = text_body
-        except Exception:
-            pass
-
-
     verified = _verify_telegram_webapp_init_data(init_data, bot_token)
     if not verified:
         raise web.HTTPUnauthorized(text="Bad initData")
@@ -367,74 +356,6 @@ async def _require_admin(request: web.Request) -> int:
     if user_id not in _get_admin_ids():
         raise web.HTTPForbidden(text="Not admin")
     return user_id
-
-
-
-async def user_reset_my_stats(request: web.Request) -> web.Response:
-    """Сброс статистики самим пользователем из WebApp.
-
-    Ключевое требование: сброс должен происходить В БД и именно У КОНКРЕТНОГО пользователя
-    (как в админке при очистке статистики одного пользователя).
-    """
-    bot_token = os.getenv("BOT_TOKEN", "")
-
-    # Принимаем initData максимально гибко (как в админке + для WebApp):
-    # 1) заголовок X-Telegram-InitData
-    # 2) query-параметр ?initData=...
-    # 3) raw body text/plain (основной формат в webapp/script.js: Content-Type: text/plain; body: initData)
-    # 4) JSON body (на всякий случай)
-    # 5) form-urlencoded (на всякий случай)
-    init_data = (request.headers.get("X-Telegram-InitData") or request.query.get("initData") or "").strip()
-
-    # 3) text/plain (или любой raw text), если заголовки/квери пустые
-    if not init_data:
-        try:
-            text_body = (await request.text()).strip()
-            # Быстрая валидация формата initData, чтобы не принять мусор.
-            if text_body and "query_id=" in text_body and "hash=" in text_body:
-                init_data = text_body
-        except Exception:
-            pass
-
-    # 4) JSON
-    if not init_data:
-        try:
-            body = await request.json()
-            init_data = str(body.get("initData") or body.get("init_data") or "").strip()
-        except Exception:
-            pass
-
-    # 5) form-urlencoded
-    if not init_data:
-        try:
-            form = await request.post()
-            init_data = str(form.get("initData") or form.get("init_data") or "").strip()
-        except Exception:
-            pass
-
-    verified = _verify_telegram_webapp_init_data(init_data, bot_token)
-    if not verified:
-        return web.json_response({"ok": False, "error": "bad_init_data"}, status=401)
-
-    tg_id = _extract_user_id(verified)
-    if not tg_id:
-        return web.json_response({"ok": False, "error": "no_user"}, status=400)
-
-    # Сбрасываем очки + профтест, ставим user_reset_token и обновляем stats_reset_token — как в админке.
-    await reset_user_scores(int(tg_id))
-
-    # Вернём актуальные токены, чтобы клиент мог сразу обновиться без ожидания следующего /api/me.
-    reset_token = await get_stats_reset_token()
-    user_reset_token = await get_user_reset_token(int(tg_id))
-
-    return web.json_response(
-        {
-            "ok": True,
-            "telegram_id": int(tg_id),
-            "reset_token": reset_token,
-            "user_reset_token": user_reset_token,
-        }
-    )
 
 
 async def admin_get_stats(request: web.Request) -> web.Response:
@@ -477,6 +398,44 @@ async def admin_reset_user_scores(request: web.Request) -> web.Response:
     tg_id = int(payload.get("telegram_id"))
     await reset_user_scores(tg_id)
     return web.json_response({"ok": True, "telegram_id": tg_id})
+
+
+async def user_reset_my_scores(request: web.Request) -> web.Response:
+    """Пользовательский сброс статистики (через кнопку в мини‑веб приложении).
+
+    ВАЖНО: сброс должен происходить в БД *для конкретного пользователя*,
+    а не только в localStorage на устройстве.
+    Логика такая же, как в админке при reset_user_scores.
+    """
+    init_data = request.headers.get("X-Telegram-InitData", "")
+    token = os.getenv("BOT_TOKEN", "")
+    parsed = _verify_telegram_webapp_init_data(init_data, token)
+    if not parsed:
+        return web.json_response({"ok": False, "error": "bad_init_data"}, status=401)
+
+    tg_id = _extract_user_id(parsed)
+    if not tg_id:
+        return web.json_response({"ok": False, "error": "no_user"}, status=401)
+
+    # Сброс возможен только если пользователь существует в БД.
+    # (Если его удалили админом — WebApp и так очистит localStorage по user_deleted_token.)
+    row = await get_user(tg_id)
+    if not row:
+        return web.json_response({"ok": False, "error": "user_not_found"}, status=404)
+
+    await reset_user_scores(tg_id)
+
+    # Возвращаем актуальные токены, чтобы WebApp мог сразу синхронизировать localStorage.
+    reset_token = await get_stats_reset_token()
+    user_reset_token = await get_user_reset_token(tg_id)
+    return web.json_response(
+        {
+            "ok": True,
+            "telegram_id": tg_id,
+            "reset_token": str(reset_token or "0"),
+            "user_reset_token": str(user_reset_token or "0"),
+        }
+    )
 
 
 async def admin_delete_user(request: web.Request) -> web.Response:
@@ -598,7 +557,9 @@ def create_app() -> web.Application:
     # API
     app.router.add_get("/api/levels", handle_levels)
     app.router.add_get("/api/me", handle_me)
-    app.router.add_post("/api/reset_my_stats", user_reset_my_stats)
+
+    # Пользовательский сброс статистики (кнопка «Очистить статистику» в WebApp)
+    app.router.add_post("/api/user/reset_my_scores", user_reset_my_scores)
 
     app.router.add_get("/api/admin/stats", admin_get_stats)
     app.router.add_post("/api/admin/reset_scores", admin_reset_scores)
