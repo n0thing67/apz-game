@@ -15,8 +15,6 @@ from aiogram.types import (
     InlineKeyboardButton,
 )
 
-from web_server import issue_webapp_code
-
 from database.db import (
     register_user,
     update_score,
@@ -122,32 +120,21 @@ GAME_URL = os.getenv("GAME_URL", "https://n0thing67.github.io/APZ-games/").rstri
 ADMIN_URL = os.getenv("ADMIN_URL", os.getenv("WEBAPP_URL", "")).rstrip("/")
 
 
-def game_keyboard(tg_id: int) -> ReplyKeyboardMarkup:
-    # Variant A: выдаём одноразовый code, который WebApp обменяет на server-session.
-    # Это не ломает текущую логику (?api=...), но делает очистку статистики независимой от initData.
-    code = issue_webapp_code(int(tg_id))
-
-    params = {}
-    if ADMIN_URL:
-        params["api"] = ADMIN_URL
-    params["code"] = code
-
+def game_keyboard() -> ReplyKeyboardMarkup:
+    # Если игра лежит на GitHub Pages, а API (уровни/админка) на Render,
+    # передаем базовый URL API параметром ?api=... чтобы механика вкл/выкл игр работала.
     try:
-        from urllib.parse import urlencode
-        qs = "?" + urlencode(params)
+        from urllib.parse import quote
+        api_part = f"?api={quote(ADMIN_URL, safe='')}" if ADMIN_URL else ""
     except Exception:
-        # максимально простой фолбэк
-        parts = []
-        for k, v in params.items():
-            parts.append(f"{k}={v}")
-        qs = "?" + "&".join(parts)
+        api_part = f"?api={ADMIN_URL}" if ADMIN_URL else ""
 
     return ReplyKeyboardMarkup(
         keyboard=[
             [
                 KeyboardButton(
                     text="🏭 Зайти на завод (Играть)",
-                    web_app=WebAppInfo(url=f"{GAME_URL}/" + qs),
+                    web_app=WebAppInfo(url=f"{GAME_URL}/" + api_part),
                     # Bot API 9.4+: primary = синяя кнопка
                     style="primary",
                 )
@@ -155,6 +142,7 @@ def game_keyboard(tg_id: int) -> ReplyKeyboardMarkup:
         ],
         resize_keyboard=True,
     )
+
 
 def admin_inline_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
@@ -193,7 +181,7 @@ async def cmd_start(message: types.Message, state: FSMContext):
         _, first_name, last_name, age, score = user
         await message.answer(
             f"С возвращением, {first_name}! Нажми кнопку ниже, чтобы начать испытание.",
-            reply_markup=game_keyboard(message.from_user.id),
+            reply_markup=game_keyboard(),
         )
         return
 
@@ -263,7 +251,7 @@ async def process_age(message: types.Message, state: FSMContext):
 
     await message.answer(
         f"Регистрация пройдена, {name}! Нажми кнопку ниже, чтобы начать испытание.",
-        reply_markup=game_keyboard(message.from_user.id),
+        reply_markup=game_keyboard(),
     )
 
 
