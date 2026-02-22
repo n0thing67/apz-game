@@ -359,56 +359,44 @@ async def _require_admin(request: web.Request) -> int:
 
 
 
+async def user_reset_my_stats(request: web.Request) -> web.Response:
+    """Сброс статистики самим пользователем из WebApp.
 
-async def _require_user(request: web.Request) -> int:
-    """Проверка пользователя по initData (Telegram WebApp). Возвращает telegram_id."""
-    bot_token = os.getenv("BOT_TOKEN", "")
-    init_data = request.headers.get("X-Telegram-InitData") or request.query.get("initData") or ""
-
-    verified = _verify_telegram_webapp_init_data(init_data, bot_token)
-    if not verified:
-        raise web.HTTPUnauthorized(text="Bad initData")
-
-    user_id = _extract_user_id(verified)
-    if not user_id:
-        raise web.HTTPUnauthorized(text="No user")
-
-    return int(user_id)
-
-
-async def user_reset_my_scores(request: web.Request) -> web.Response:
-    """Сброс статистики самим пользователем (очки + профтест) на сервере.
-
-    Это должно работать так же, как сброс статистики админом у конкретного пользователя,
-    чтобы /stats и админ-панель показывали актуальные данные, а не старый localStorage.
+    Важно: сброс должен происходить в БД (на сервере) у КОНКРЕТНОГО пользователя,
+    а не только в localStorage на устройстве.
     """
-    tg_id = await _require_user(request)
-    # Если пользователя нет в БД — сбрасывать нечего, но ответим ок.
-    try:
-        await reset_user_scores(int(tg_id))
-    except Exception:
-        # reset_user_scores внутри уже безопасно, но на всякий случай не валим WebApp.
-        pass
+    init_data = request.headers.get("X-Telegram-InitData", "")
+    token = os.getenv("BOT_TOKEN", "")
+    parsed = _verify_telegram_webapp_init_data(init_data, token)
+    if not parsed:
+        return web.json_response({"ok": False, "error": "bad_init_data"}, status=401)
 
-    # Возвращаем токены синхронизации (как /api/levels), чтобы WebApp корректно
-    # сбрасывал localStorage и не «оживлял» старые данные.
+    user_raw = parsed.get("user")
+    if not user_raw:
+        return web.json_response({"ok": False, "error": "no_user"}, status=400)
+
     try:
-        reset_token = await get_stats_reset_token()
+        user_obj = json.loads(user_raw) if isinstance(user_raw, str) else user_raw
+        tg_id = int(user_obj.get("id"))
     except Exception:
-        reset_token = "0"
-    try:
-        user_reset_token = await get_user_reset_token(int(tg_id))
-    except Exception:
-        user_reset_token = "0"
+        return web.json_response({"ok": False, "error": "bad_user"}, status=400)
+
+    # Сбрасываем очки + профтест, ставим метку user_reset_token (как в админке).
+    await reset_user_scores(tg_id)
+
+    # Вернём актуальные токены, чтобы клиент мог сразу обновиться без ожидания следующего /api/me.
+    reset_token = await get_stats_reset_token()
+    user_reset_token = await get_user_reset_token(tg_id)
 
     return web.json_response(
         {
             "ok": True,
-            "telegram_id": int(tg_id),
-            "reset_token": str(reset_token or "0"),
-            "user_reset_token": str(user_reset_token or "0"),
+            "telegram_id": tg_id,
+            "reset_token": reset_token,
+            "user_reset_token": user_reset_token,
         }
     )
+
 
 async def admin_get_stats(request: web.Request) -> web.Response:
     await _require_admin(request)
@@ -571,9 +559,7 @@ def create_app() -> web.Application:
     # API
     app.router.add_get("/api/levels", handle_levels)
     app.router.add_get("/api/me", handle_me)
-    app.router.add_post("/api/user/reset_my_scores", user_reset_my_scores)
-    # Совместимость со старыми/неправильно собранными клиентами.
-    app.router.add_post("/api/reset_my_scores", user_reset_my_scores)
+    app.router.add_post("/api/reset_my_stats", user_reset_my_stats)
 
     app.router.add_get("/api/admin/stats", admin_get_stats)
     app.router.add_post("/api/admin/reset_scores", admin_reset_scores)
