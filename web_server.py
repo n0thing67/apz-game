@@ -438,6 +438,58 @@ async def user_reset_my_scores(request: web.Request) -> web.Response:
     )
 
 
+
+async def user_reset_my_scores_via_token(request: web.Request) -> web.Response:
+    """Fallback-сброс статистики пользователя без initData.
+
+    Используется если Telegram WebApp не отдаёт initData.
+    Клиент передает telegram_id (uid) и метки reset_token/user_reset_token.
+    Сервер сверяет метки и сбрасывает статистику ровно у этого пользователя.
+    """
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+
+    uid = payload.get("telegram_id") or payload.get("uid")
+    if uid is None:
+        return web.json_response({"ok": False, "error": "no_uid"}, status=400)
+
+    try:
+        tg_id = int(uid)
+    except Exception:
+        return web.json_response({"ok": False, "error": "bad_uid"}, status=400)
+
+    row = await get_user(tg_id)
+    if not row:
+        return web.json_response({"ok": False, "error": "user_not_found"}, status=404)
+
+    client_reset_token = str(payload.get("reset_token") or "0")
+    client_user_reset_token = str(payload.get("user_reset_token") or "0")
+
+    server_reset_token = str(await get_stats_reset_token() or "0")
+    server_user_reset_token = str(await get_user_reset_token(tg_id) or "0")
+
+    if client_user_reset_token == "0" or client_user_reset_token != server_user_reset_token:
+        return web.json_response({"ok": False, "error": "bad_user_reset_token"}, status=403)
+
+    if client_reset_token != "0" and client_reset_token != server_reset_token:
+        return web.json_response({"ok": False, "error": "bad_reset_token"}, status=403)
+
+    await reset_user_scores(tg_id)
+
+    reset_token = await get_stats_reset_token()
+    user_reset_token = await get_user_reset_token(tg_id)
+    return web.json_response(
+        {
+            "ok": True,
+            "telegram_id": tg_id,
+            "reset_token": str(reset_token or "0"),
+            "user_reset_token": str(user_reset_token or "0"),
+        }
+    )
+
+
 async def admin_delete_user(request: web.Request) -> web.Response:
     await _require_admin(request)
     payload = await request.json()
@@ -560,6 +612,7 @@ def create_app() -> web.Application:
 
     # Пользовательский сброс статистики (кнопка «Очистить статистику» в WebApp)
     app.router.add_post("/api/user/reset_my_scores", user_reset_my_scores)
+    app.router.add_post("/api/user/reset_my_scores_via_token", user_reset_my_scores_via_token)
 
     app.router.add_get("/api/admin/stats", admin_get_stats)
     app.router.add_post("/api/admin/reset_scores", admin_reset_scores)
