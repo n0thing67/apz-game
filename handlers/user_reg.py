@@ -15,6 +15,8 @@ from aiogram.types import (
     InlineKeyboardButton,
 )
 
+from web_server import issue_webapp_code
+
 from database.db import (
     register_user,
     update_score,
@@ -120,21 +122,32 @@ GAME_URL = os.getenv("GAME_URL", "https://n0thing67.github.io/APZ-games/").rstri
 ADMIN_URL = os.getenv("ADMIN_URL", os.getenv("WEBAPP_URL", "")).rstrip("/")
 
 
-def game_keyboard() -> ReplyKeyboardMarkup:
-    # Если игра лежит на GitHub Pages, а API (уровни/админка) на Render,
-    # передаем базовый URL API параметром ?api=... чтобы механика вкл/выкл игр работала.
+def game_keyboard(tg_id: int) -> ReplyKeyboardMarkup:
+    # Variant A: выдаём одноразовый code, который WebApp обменяет на server-session.
+    # Это не ломает текущую логику (?api=...), но делает очистку статистики независимой от initData.
+    code = issue_webapp_code(int(tg_id))
+
+    params = {}
+    if ADMIN_URL:
+        params["api"] = ADMIN_URL
+    params["code"] = code
+
     try:
-        from urllib.parse import quote
-        api_part = f"?api={quote(ADMIN_URL, safe='')}" if ADMIN_URL else ""
+        from urllib.parse import urlencode
+        qs = "?" + urlencode(params)
     except Exception:
-        api_part = f"?api={ADMIN_URL}" if ADMIN_URL else ""
+        # максимально простой фолбэк
+        parts = []
+        for k, v in params.items():
+            parts.append(f"{k}={v}")
+        qs = "?" + "&".join(parts)
 
     return ReplyKeyboardMarkup(
         keyboard=[
             [
                 KeyboardButton(
                     text="🏭 Зайти на завод (Играть)",
-                    web_app=WebAppInfo(url=f"{GAME_URL}/" + api_part),
+                    web_app=WebAppInfo(url=f"{GAME_URL}/" + qs),
                     # Bot API 9.4+: primary = синяя кнопка
                     style="primary",
                 )
@@ -142,7 +155,6 @@ def game_keyboard() -> ReplyKeyboardMarkup:
         ],
         resize_keyboard=True,
     )
-
 
 def admin_inline_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
@@ -181,7 +193,7 @@ async def cmd_start(message: types.Message, state: FSMContext):
         _, first_name, last_name, age, score = user
         await message.answer(
             f"С возвращением, {first_name}! Нажми кнопку ниже, чтобы начать испытание.",
-            reply_markup=game_keyboard(),
+            reply_markup=game_keyboard(message.from_user.id),
         )
         return
 
@@ -251,7 +263,7 @@ async def process_age(message: types.Message, state: FSMContext):
 
     await message.answer(
         f"Регистрация пройдена, {name}! Нажми кнопку ниже, чтобы начать испытание.",
-        reply_markup=game_keyboard(),
+        reply_markup=game_keyboard(message.from_user.id),
     )
 
 
@@ -366,6 +378,7 @@ async def _send_stats(message: types.Message, tg_id: int) -> None:
     потому что это *бот* (автор сообщения), а не пользователь.
     Поэтому tg_id передаём явно.
     """
+
     # Берём расширенный профиль (в т.ч. результат профтеста), чтобы не лезть в БД вручную.
     profile = None
     try:
