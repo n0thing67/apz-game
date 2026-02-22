@@ -421,7 +421,6 @@ async def _send_stats(message: types.Message, tg_id: int) -> None:
 
     await message.answer("\n".join(lines))
 
-
 # Команду /stats убрали совсем — статистика открывается только по инлайн-кнопке.
 
 
