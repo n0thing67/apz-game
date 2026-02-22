@@ -1061,47 +1061,15 @@ function renderLevelMenuStats() {
     if (q) q.textContent = (stats['quiz']?.bestScore ?? '—');
 }
 
-async function resetAllStats() {
+function resetAllStats() {
     // Кнопка "Сбросить статистику" должна работать из меню уровней.
     // Поэтому здесь НЕ используем переменные текущего уровня (levelId/score и т.п.),
     // которые могут быть не определены и ломают обработчик.
-
-    // 1) Сначала пытаемся сбросить статистику на сервере (в БД) — у конкретного пользователя.
-    let serverOk = false;
-    let serverError = "";
-
-    try {
-        const initData = tg?.initData || "";
-        if (!initData) {
-            serverError = "no_initData";
-        } else {
-            const res = await fetch(apiUrl('/api/reset_my_stats'), {
-                method: 'POST',
-                cache: 'no-store',
-                // text/plain = "simple request" (без CORS preflight), максимально совместимо с WebView.
-                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                body: initData
-            });
-if (res.ok) {
-                const data = await res.json().catch(() => null);
-                serverOk = Boolean(data && data.ok);
-                if (!serverOk) serverError = String((data && data.error) || "server_error");
-            } else {
-                serverError = "http_" + String(res.status);
-            }
-
-            // После попытки сброса — подтянем токены и обновим интерфейс (очки/рекомендации).
-            try { syncResetAndRefreshUIThrottled(); } catch (e) {}
-        }
-    } catch (e) {
-        serverError = "network";
-    }
-
-    // 2) Локально очищаем всё, что хранится на устройстве (это нужно даже при успешном серверном сбросе).
     stats = {};
     try { localStorage.removeItem(STATS_KEY); } catch (e) {}
-
-    // При каждом запуске также сбрасываем профтест "что тебе подходит?" и рекомендации (⭐)
+// При каждом запуске также сбрасываем профтест "что тебе подходит?" и рекомендации (⭐)
+try { localStorage.removeItem(APTITUDE_STORAGE_KEY); } catch (e) {}
+    // Сброс статистики профтеста "что тебе подходит?"
     try { localStorage.removeItem(APTITUDE_STORAGE_KEY); } catch (e) {}
     try { clearAptitudeMenuRecommendations(); } catch (e) {}
 
@@ -1110,35 +1078,48 @@ if (res.ok) {
 
     saveStats(stats);
     renderLevelMenuStats();
-
-    // 3) Если сервер не подтвердил сброс — покажем понятное предупреждение (не молча).
-    if (!serverOk) {
-        const msg =
-            'Локальная статистика очищена, но сервер не подтвердил очистку в базе (' +
-            (serverError || 'unknown') +
-            ').\n\n' +
-            'Если после выхода и нажатия «Статистика» всё ещё показываются старые данные — нажми «Очистить статистику» ещё раз при стабильном интернете.';
-        try {
-            if (tg?.showPopup) {
-                tg.showPopup({ message: msg, buttons: [{ type: 'ok', text: 'Понял' }] });
-            } else {
-                notify(msg);
-            }
-        } catch (e) {
-            notify(msg);
-        }
-    } else {
-        try { notify('Готово! Статистика очищена.'); } catch (e) {}
-    }
 }
 
+// Сброс статистики пользователя на сервере (в БД), чтобы:
+// 1) админка перестала показывать старые данные
+// 2) кнопка «Статистика» в боте не показывала старый результат
+// 3) сброс не зависел от конкретного устройства
+async function resetMyStatsOnServer() {
+    try {
+        if (!tg?.initData) return { ok: false, skipped: true };
+        const res = await fetch(apiUrl('/api/user/reset_my_scores'), {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Telegram-InitData': tg.initData
+            },
+            body: JSON.stringify({})
+        });
+        if (!res.ok) {
+            return { ok: false, status: res.status };
+        }
+        const data = await res.json();
+        // Сразу синхронизируем токены, чтобы UI не «оживлял» старые результаты.
+        try {
+            const rt = String(data?.reset_token ?? '0');
+            if (rt && rt !== '0') localStorage.setItem(RESET_TOKEN_KEY, rt);
+        } catch (e) {}
+        try {
+            const urt = String(data?.user_reset_token ?? '0');
+            if (urt && urt !== '0') localStorage.setItem(USER_RESET_TOKEN_KEY, urt);
+        } catch (e) {}
+        return { ok: Boolean(data?.ok) };
+    } catch (e) {
+        return { ok: false, error: String(e) };
+    }
+}
 
 // Подтверждение очистки статистики из меню уровней.
 // Требование: перед сбросом показываем окно подтверждения.
 function confirmResetStats() {
     const msg =
         'Очистить статистику?\n\n' +
-        'Будут удалены результаты игр и данные теста «Что тебе подходит?» у твоего профиля (в базе), а также очищена локальная копия на устройстве.';
+        'Будут удалены результаты игр и данные теста «Что тебе подходит?» на этом устройстве.';
 
     // Telegram WebApp: показываем системный popup с подтверждением.
     if (tg?.showPopup) {
@@ -1152,7 +1133,14 @@ function confirmResetStats() {
                     ]
                 },
                 (btnId) => {
-                    if (btnId === 'reset') resetAllStats();
+                    if (btnId === 'reset') {
+                        // Сначала сбрасываем в БД (как в админке), затем чистим localStorage.
+                        Promise.resolve(resetMyStatsOnServer())
+                            .finally(() => {
+                                resetAllStats();
+                                notify('Статистика очищена.');
+                            });
+                    }
                 }
             );
             return;
@@ -1163,13 +1151,23 @@ function confirmResetStats() {
     try {
         if (typeof confirm === 'function') {
             const ok = confirm('Очистить статистику?\n\nЭто действие удалит результаты игр и теста на этом устройстве.');
-            if (ok) resetAllStats();
+            if (ok) {
+                Promise.resolve(resetMyStatsOnServer())
+                    .finally(() => {
+                        resetAllStats();
+                        notify('Статистика очищена.');
+                    });
+            }
             return;
         }
     } catch (e) {}
 
     // Если ни confirm ни popup недоступны — просто выполняем действие.
-    resetAllStats();
+    Promise.resolve(resetMyStatsOnServer())
+        .finally(() => {
+            resetAllStats();
+            notify('Статистика очищена.');
+        });
 }
 
 function notify(msg) {
