@@ -406,7 +406,7 @@ async def _send_stats(message: types.Message, tg_id: int) -> None:
     }
 
     lines = [
-        "📊 Твоя статистика:",
+        "📊 Твой лучший результат:",
         f"👤 {fname} {lname}",
         f"⭐️ Очки: {score}",
     ]
