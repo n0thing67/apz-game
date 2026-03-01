@@ -4,6 +4,7 @@ import hmac
 import json
 import logging
 import os
+from datetime import datetime
 from io import BytesIO
 from urllib.parse import parse_qsl
 
@@ -206,6 +207,42 @@ def _get_admin_ids() -> set[int]:
     return {int(x.strip()) for x in raw_admins.split(",") if x.strip().isdigit()}
 
 
+async def _send_admin_log(app: web.Application, text: str) -> None:
+    """Отправляет запись в канал админки (если настроен ADMIN_CHANNEL_ID).
+
+    Логирование не должно ломать основной функционал: любые ошибки проглатываем.
+    """
+    admin_channel_id_raw = (os.getenv("ADMIN_CHANNEL_ID") or "").strip()
+    if not admin_channel_id_raw:
+        return
+
+    try:
+        admin_channel_id = int(admin_channel_id_raw)
+    except Exception:
+        return
+
+    try:
+        bot: Bot = app["bot"]
+        await bot.send_message(chat_id=admin_channel_id, text=text)
+    except Exception:
+        # Канал может быть недоступен/бот не добавлен/нет прав — не блокируем админ-операции.
+        return
+
+
+async def _format_actor(admin_id: int) -> str:
+    """Человеко-читаемое представление админа по tg_id."""
+    try:
+        row = await get_user(int(admin_id))
+        if row:
+            _, first_name, last_name, _, _ = row
+            full_name = f"{first_name or ''} {last_name or ''}".strip()
+            if full_name:
+                return f"{full_name} (ID: {admin_id})"
+    except Exception:
+        pass
+    return f"ID: {admin_id}"
+
+
 @web.middleware
 async def cors_middleware(request: web.Request, handler):
     # Чтобы WebApp нормально делал fetch() из WebView.
@@ -358,6 +395,58 @@ async def _require_admin(request: web.Request) -> int:
     return user_id
 
 
+
+
+async def _require_user(request: web.Request) -> int:
+    """Проверка пользователя по initData (Telegram WebApp). Возвращает telegram_id."""
+    bot_token = os.getenv("BOT_TOKEN", "")
+    init_data = request.headers.get("X-Telegram-InitData") or request.query.get("initData") or ""
+
+    verified = _verify_telegram_webapp_init_data(init_data, bot_token)
+    if not verified:
+        raise web.HTTPUnauthorized(text="Bad initData")
+
+    user_id = _extract_user_id(verified)
+    if not user_id:
+        raise web.HTTPUnauthorized(text="No user")
+
+    return int(user_id)
+
+
+async def user_reset_my_scores(request: web.Request) -> web.Response:
+    """Сброс статистики самим пользователем (очки + профтест) на сервере.
+
+    Это должно работать так же, как сброс статистики админом у конкретного пользователя,
+    чтобы /stats и админ-панель показывали актуальные данные, а не старый localStorage.
+    """
+    tg_id = await _require_user(request)
+    # Если пользователя нет в БД — сбрасывать нечего, но ответим ок.
+    try:
+        await reset_user_scores(int(tg_id))
+    except Exception:
+        # reset_user_scores внутри уже безопасно, но на всякий случай не валим WebApp.
+        pass
+
+    # Возвращаем токены синхронизации (как /api/levels), чтобы WebApp корректно
+    # сбрасывал localStorage и не «оживлял» старые данные.
+    try:
+        reset_token = await get_stats_reset_token()
+    except Exception:
+        reset_token = "0"
+    try:
+        user_reset_token = await get_user_reset_token(int(tg_id))
+    except Exception:
+        user_reset_token = "0"
+
+    return web.json_response(
+        {
+            "ok": True,
+            "telegram_id": int(tg_id),
+            "reset_token": str(reset_token or "0"),
+            "user_reset_token": str(user_reset_token or "0"),
+        }
+    )
+
 async def admin_get_stats(request: web.Request) -> web.Response:
     await _require_admin(request)
     reset_token = await get_stats_reset_token()
@@ -386,41 +475,104 @@ async def admin_get_stats(request: web.Request) -> web.Response:
 
 
 async def admin_reset_scores(request: web.Request) -> web.Response:
-    await _require_admin(request)
+    admin_id = await _require_admin(request)
     await reset_all_scores()
+
+    actor = await _format_actor(admin_id)
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    await _send_admin_log(
+        request.app,
+        f"🧹 Очистка статистики (ВСЕ пользователи)\nАдмин: {actor}\nВремя: {ts}",
+    )
     return web.json_response({"ok": True})
 
 
 async def admin_reset_user_scores(request: web.Request) -> web.Response:
     """Сброс статистики одного пользователя (очки + профтест)."""
-    await _require_admin(request)
+    admin_id = await _require_admin(request)
     payload = await request.json()
     tg_id = int(payload.get("telegram_id"))
+
+    # Для красивого лога попробуем получить ФИО до сброса.
+    user_label = str(tg_id)
+    try:
+        user = await get_user(tg_id)
+        if user:
+            _, fn, ln, _, _ = user
+            full_name = f"{fn or ''} {ln or ''}".strip()
+            if full_name:
+                user_label = f"{full_name} (ID: {tg_id})"
+    except Exception:
+        pass
+
     await reset_user_scores(tg_id)
+
+    actor = await _format_actor(admin_id)
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    await _send_admin_log(
+        request.app,
+        f"🧹 Очистка статистики (1 пользователь)\nПользователь: {user_label}\nАдмин: {actor}\nВремя: {ts}",
+    )
     return web.json_response({"ok": True, "telegram_id": tg_id})
 
 
 async def admin_delete_user(request: web.Request) -> web.Response:
-    await _require_admin(request)
+    admin_id = await _require_admin(request)
     payload = await request.json()
     tg_id = int(payload.get("telegram_id"))
+
+    user_label = str(tg_id)
+    try:
+        user = await get_user(tg_id)
+        if user:
+            _, fn, ln, _, score = user
+            full_name = f"{fn or ''} {ln or ''}".strip()
+            if full_name:
+                user_label = f"{full_name} (ID: {tg_id})"
+            if score is not None:
+                user_label += f"; лучший счёт: {int(score)}"
+    except Exception:
+        pass
+
     await delete_user(tg_id)
+
+    actor = await _format_actor(admin_id)
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    await _send_admin_log(
+        request.app,
+        f"🗑 Удаление пользователя\nПользователь: {user_label}\nАдмин: {actor}\nВремя: {ts}",
+    )
     return web.json_response({"ok": True})
 
 
 async def admin_delete_all_users(request: web.Request) -> web.Response:
     """Полная очистка таблицы users (все пользователи + их статистика)."""
-    await _require_admin(request)
+    admin_id = await _require_admin(request)
     await delete_all_users()
+
+    actor = await _format_actor(admin_id)
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    await _send_admin_log(
+        request.app,
+        f"🗑 Удаление ВСЕХ пользователей\nАдмин: {actor}\nВремя: {ts}",
+    )
     return web.json_response({"ok": True})
 
 
 async def admin_set_level(request: web.Request) -> web.Response:
-    await _require_admin(request)
+    admin_id = await _require_admin(request)
     payload = await request.json()
     level_key = str(payload.get("level_key"))
     is_active = bool(payload.get("is_active"))
     await set_level_active(level_key, is_active)
+
+    actor = await _format_actor(admin_id)
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    state = "включил(а)" if is_active else "отключил(а)"
+    await _send_admin_log(
+        request.app,
+        f"🎮 {state} игру/уровень\nУровень: {level_key}\nАдмин: {actor}\nВремя: {ts}",
+    )
     return web.json_response({"ok": True})
 
 
@@ -519,6 +671,9 @@ def create_app() -> web.Application:
     # API
     app.router.add_get("/api/levels", handle_levels)
     app.router.add_get("/api/me", handle_me)
+    app.router.add_post("/api/user/reset_my_scores", user_reset_my_scores)
+    # Совместимость со старыми/неправильно собранными клиентами.
+    app.router.add_post("/api/reset_my_scores", user_reset_my_scores)
 
     app.router.add_get("/api/admin/stats", admin_get_stats)
     app.router.add_post("/api/admin/reset_scores", admin_reset_scores)
