@@ -619,12 +619,8 @@ function startAptitudeTest() {
     aptitudeIndex = 0;
     aptitudeScores = newAptitudeScores();
 
-    // Каждый запуск теста — новый порядок вопросов
-    try {
-        aptitudeQuestionOrder = shuffleArrayInPlace(APTITUDE_QUESTIONS.slice());
-    } catch (e) {
-        aptitudeQuestionOrder = APTITUDE_QUESTIONS;
-    }
+    // Вопросы должны идти строго в пронумерованном порядке (1..24)
+    aptitudeQuestionOrder = APTITUDE_QUESTIONS;
 
     // На время перепрохождения убираем старые рекомендации (⭐) из меню
     try { clearAptitudeMenuRecommendations(); } catch (e) {}
@@ -661,9 +657,8 @@ function renderAptitudeQuestion() {
     qEl.textContent = item.q;
 
     aEl.innerHTML = '';
-    // Чуть разнообразим: ответы перемешиваем, чтобы не было «угадывания».
-    const answers = shuffleArrayInPlace(item.a.slice());
-    for (const ans of answers) {
+    // Варианты ответов показываем в исходном порядке (а/б/в)
+    for (const ans of (item.a || [])) {
         const btn = document.createElement('button');
         btn.className = 'btn btn-secondary';
         btn.type = 'button';
