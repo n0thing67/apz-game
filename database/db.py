@@ -1,7 +1,6 @@
 import os
 import time
 import asyncio
-import logging
 from pathlib import Path
 
 
@@ -513,37 +512,19 @@ else:
             ssl_ctx = _make_ssl_ctx(DATABASE_URL)
 
             # На некоторых хостингах/сетях соединение с пулером Postgres может "зависать" надолго.
-            # Дополнительно делаем ретраи, чтобы переживать "холодный старт" Supabase/пулера.
-            timeout = int(os.getenv("DB_CONNECT_TIMEOUT", "30"))
-            retries = int(os.getenv("DB_CONNECT_RETRIES", "10"))
-            delay = 2
-
-            last_exc: Exception | None = None
-            for attempt in range(1, retries + 1):
-                try:
-                    _pool = await asyncio.wait_for(
-                        asyncpg.create_pool(
-                            dsn=DATABASE_URL,
-                            ssl=ssl_ctx,
-                            min_size=1,
-                            max_size=5,
-                        ),
-                        timeout=timeout,
-                    )
-                    last_exc = None
-                    break
-                except Exception as e:
-                    last_exc = e
-                    # Не спамим, но оставляем след в логах.
-                    logging.warning(
-                        "PostgreSQL connect attempt %s/%s failed: %s; retry in %ss",
-                        attempt, retries, repr(e), delay
-                    )
-                    await asyncio.sleep(delay)
-                    delay = min(delay * 2, 30)
-
-            if _pool is None:
-                raise RuntimeError("Timeout connecting to PostgreSQL (create_pool)") from last_exc
+            # Чтобы админка/бот не висели бесконечно, ограничиваем время создания пула.
+            try:
+                _pool = await asyncio.wait_for(
+                    asyncpg.create_pool(
+                        dsn=DATABASE_URL,
+                        ssl=ssl_ctx,
+                        min_size=1,
+                        max_size=5,
+                    ),
+                    timeout=12,
+                )
+            except asyncio.TimeoutError as e:
+                raise RuntimeError("Timeout connecting to PostgreSQL (create_pool)") from e
         return _pool
 
     async def close_db() -> None:
