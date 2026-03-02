@@ -8,7 +8,6 @@ from database.db import create_table, close_db
 from web_server import run_web_server
 
 load_dotenv()
-
 from handlers import user_reg
 
 TOKEN = os.getenv("BOT_TOKEN")
