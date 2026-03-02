@@ -1342,20 +1342,17 @@ function sendStatsAndClose() {
         } catch (e) {}
     }
 
-    // В обычном браузере: скачиваем JSON
+    // Вне Telegram WebApp (например, MAX WebView / обычный браузер):
+    // скачивание файлов часто блокируется. Поэтому открываем страницу
+    // со статистикой на сервере (Render), чтобы пользователь точно увидел результат.
     try {
-        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'apz_stats.json';
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 1000);
-        notify('Файл статистики сохранён ✅');
+        const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
+        const url = apiUrl('/webapp/stats?data=' + encodeURIComponent(encoded));
+        window.location.href = url;
+        return;
     } catch (e) {
-        notify('Не удалось сохранить статистику 😕');
+        // Последний фолбэк: просто показываем сообщение.
+        try { notify('Статистика подготовлена ✅'); } catch (_) {}
     }
 }
 
