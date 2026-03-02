@@ -9,7 +9,6 @@ from io import BytesIO
 from urllib.parse import parse_qsl
 
 from aiohttp import web
-import aiohttp
 
 from aiogram import Bot
 from aiogram.types import BufferedInputFile
@@ -36,44 +35,6 @@ WEBAPP_DIR = os.path.join(os.path.dirname(__file__), "webapp")
 
 # Шаблоны грамот/дипломов (вариант A: PNG + наложение текста)
 CERT_TEMPLATES_DIR = os.path.join(WEBAPP_DIR, "assets", "cert_templates")
-
-
-# -------------------------
-# MAX bot webhook integration
-# -------------------------
-
-
-async def handle_max_webhook(request: web.Request) -> web.Response:
-    """Webhook endpoint for MAX Bot API.
-
-    Если MAX не настроен (нет MAX_BOT_TOKEN) — просто возвращаем 200 OK.
-    Если задан MAX_WEBHOOK_SECRET — проверяем заголовок X-Max-Bot-Api-Secret.
-    """
-
-    token = (request.app.get("max_token") or "").strip()
-    if not token:
-        return web.json_response({"ok": True})
-
-    secret = (request.app.get("max_secret") or "").strip()
-    if secret:
-        their = (request.headers.get("X-Max-Bot-Api-Secret") or "").strip()
-        if their != secret:
-            return web.Response(status=401, text="bad secret")
-
-    try:
-        update = await request.json()
-    except Exception:
-        return web.Response(status=400, text="bad json")
-
-    try:
-        from max_bot import handle_update
-        await handle_update(request.app, update)
-    except Exception as e:
-        logging.getLogger(__name__).exception("MAX webhook handler error: %s", e)
-        # Важно вернуть 200, чтобы MAX не делал ретраи из-за наших внутренних исключений.
-        return web.json_response({"ok": True})
-
-    return web.json_response({"ok": True})
 
 
 def _resolve_font_paths(font_key: str):
@@ -707,22 +668,80 @@ def create_app() -> web.Application:
 
     app.on_cleanup.append(_close_bot)
 
-    # --- MAX bot ---
-    # Токен MAX бота (для webhook / отправки сообщений)
-    app["max_token"] = (os.getenv("MAX_BOT_TOKEN") or "").strip()
-    app["max_secret"] = (os.getenv("MAX_WEBHOOK_SECRET") or "").strip()
-    app["max_state"] = {}  # простой in-memory FSM для регистрации
-    app["max_session"] = aiohttp.ClientSession()  # общий session для MAX API
-
-    async def _close_max(app_: web.Application):
-        try:
-            await app_["max_session"].close()
-        except Exception:
-            pass
-
-    app.on_cleanup.append(_close_max)
-
     # API
+    async def health(_: web.Request) -> web.Response:
+        return web.Response(text="ok")
+
+    async def webapp_stats_view(request: web.Request) -> web.Response:
+        """Страница просмотра статистики для окружений без Telegram.WebApp.sendData().
+
+        Клиент (webapp/script.js) передаёт base64-строку JSON через query: ?data=...
+        Мы декодируем и показываем пользователю читабельный результат.
+        """
+        data_b64 = (request.query.get("data") or "").strip()
+        if not data_b64:
+            raise web.HTTPBadRequest(text="Missing data")
+
+        try:
+            import base64
+
+            raw = base64.b64decode(data_b64).decode("utf-8", errors="replace")
+            # raw — это JSON строка
+            payload = json.loads(raw)
+            pretty = json.dumps(payload, ensure_ascii=False, indent=2)
+        except Exception:
+            raise web.HTTPBadRequest(text="Bad data")
+
+        html = f"""<!doctype html>
+<html lang=\"ru\">
+<head>
+  <meta charset=\"utf-8\" />
+  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />
+  <title>Статистика</title>
+  <style>
+    body {{ font-family: Arial, sans-serif; margin: 16px; background:#0f1720; color:#e5e7eb; }}
+    .card {{ background:#111827; border:1px solid #1f2937; border-radius:12px; padding:16px; max-width:900px; margin:0 auto; }}
+    pre {{ white-space: pre-wrap; word-break: break-word; background:#0b1220; padding:12px; border-radius:10px; border:1px solid #1f2937; }}
+    button {{ padding:10px 14px; border-radius:10px; border:1px solid #334155; background:#111827; color:#e5e7eb; }}
+    .row {{ display:flex; gap:10px; flex-wrap:wrap; margin-top:12px; }}
+    a {{ color:#93c5fd; }}
+  </style>
+</head>
+<body>
+  <div class=\"card\">
+    <h2 style=\"margin-top:0\">Статистика подготовлена ✅</h2>
+    <div>Если вы открывали игру не как Telegram WebApp (например, в MAX), данные не могут быть отправлены автоматически в чат.</div>
+    <div class=\"row\">
+      <button id=\"copy\">Скопировать JSON</button>
+      <button id=\"back\">Вернуться в игру</button>
+    </div>
+    <pre id=\"json\">{pretty}</pre>
+    <div style=\"opacity:.8; margin-top:10px\">Можно просто вернуться в чат и открыть «Статистика» кнопкой бота.</div>
+  </div>
+
+  <script>
+    const txt = document.getElementById('json').innerText;
+    document.getElementById('copy').addEventListener('click', async () => {{
+      try {{
+        await navigator.clipboard.writeText(txt);
+        alert('Скопировано ✅');
+      }} catch (e) {{
+        alert('Не удалось скопировать 😕');
+      }}
+    }});
+    document.getElementById('back').addEventListener('click', () => {{
+      // Возвращаемся назад в историю (в игру).
+      history.back();
+    }});
+  </script>
+</body>
+</html>"""
+
+        return web.Response(text=html, content_type="text/html")
+
+    app.router.add_get("/health", health)
+    app.router.add_get("/webapp/stats", webapp_stats_view)
+
     app.router.add_get("/api/levels", handle_levels)
     app.router.add_get("/api/me", handle_me)
     app.router.add_post("/api/user/reset_my_scores", user_reset_my_scores)
@@ -736,9 +755,6 @@ def create_app() -> web.Application:
     app.router.add_post("/api/admin/delete_all_users", admin_delete_all_users)
     app.router.add_post("/api/admin/set_level", admin_set_level)
     app.router.add_post("/api/admin/send_award", admin_send_award)
-
-    # MAX webhook
-    app.router.add_post("/max/webhook", handle_max_webhook)
 
     # Static webapp
     app.router.add_static("/", WEBAPP_DIR, show_index=True)
