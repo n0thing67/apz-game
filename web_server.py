@@ -8,8 +8,8 @@ from datetime import datetime
 from io import BytesIO
 from urllib.parse import parse_qsl
 
-from aiohttp import web
 import aiohttp
+from aiohttp import web
 
 from aiogram import Bot
 from aiogram.types import BufferedInputFile
@@ -22,6 +22,8 @@ from database.db import (
     get_all_users,
     get_user,
     get_user_profile,
+    update_score,
+    update_aptitude_top,
     delete_user,
     delete_all_users,
     reset_all_scores,
@@ -36,44 +38,6 @@ WEBAPP_DIR = os.path.join(os.path.dirname(__file__), "webapp")
 
 # Шаблоны грамот/дипломов (вариант A: PNG + наложение текста)
 CERT_TEMPLATES_DIR = os.path.join(WEBAPP_DIR, "assets", "cert_templates")
-
-
-# -------------------------
-# MAX bot webhook integration
-# -------------------------
-
-
-async def handle_max_webhook(request: web.Request) -> web.Response:
-    """Webhook endpoint for MAX Bot API.
-
-    Если MAX не настроен (нет MAX_BOT_TOKEN) — просто возвращаем 200 OK.
-    Если задан MAX_WEBHOOK_SECRET — проверяем заголовок X-Max-Bot-Api-Secret.
-    """
-
-    token = (request.app.get("max_token") or "").strip()
-    if not token:
-        return web.json_response({"ok": True})
-
-    secret = (request.app.get("max_secret") or "").strip()
-    if secret:
-        their = (request.headers.get("X-Max-Bot-Api-Secret") or "").strip()
-        if their != secret:
-            return web.Response(status=401, text="bad secret")
-
-    try:
-        update = await request.json()
-    except Exception:
-        return web.Response(status=400, text="bad json")
-
-    try:
-        from max_bot import handle_update
-        await handle_update(request.app, update)
-    except Exception as e:
-        logging.getLogger(__name__).exception("MAX webhook handler error: %s", e)
-        # Важно вернуть 200, чтобы MAX не делал ретраи из-за наших внутренних исключений.
-        return web.json_response({"ok": True})
-
-    return web.json_response({"ok": True})
 
 
 def _resolve_font_paths(font_key: str):
@@ -692,6 +656,145 @@ async def admin_send_award(request: web.Request) -> web.Response:
     return web.json_response({"ok": True, "sent_to": tg_id})
 
 
+# ==========================
+# MAX WebApp fallback (браузер)
+# ==========================
+
+
+def _max_sign(secret: str, uid: str) -> str:
+    """HMAC-SHA256(uid) -> hex."""
+    return hmac.new(secret.encode("utf-8"), uid.encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+async def _max_send_message(app: web.Application, user_id: int, text: str) -> None:
+    """Отправка сообщения пользователю в MAX.
+
+    Используется как подтверждение сохранения статистики из WebApp,
+    когда нет Telegram.WebApp.sendData().
+    """
+    token = (app.get("max_bot_token") or "").strip()
+    if not token:
+        return
+
+    url = "https://platform-api.max.ru/messages"
+    payload = {
+        "recipient": {"type": "user", "user_id": user_id},
+        "message": {"type": "text", "text": text},
+    }
+    headers = {"Authorization": token, "Content-Type": "application/json"}
+
+    try:
+        async with app["http"].post(url, headers=headers, json=payload) as resp:
+            if resp.status >= 400:
+                _ = await resp.text()
+    except Exception:
+        pass
+
+
+async def max_webapp_submit_stats(request: web.Request) -> web.StreamResponse:
+    """Приём статистики из WebApp, открытого НЕ в Telegram.
+
+    Ожидаем query:
+      - uid: MAX user_id
+      - sig: подпись HMAC(uid)
+
+    Body: JSON payload (как buildStatsPayload()). Клиент отправляет его
+    с Content-Type text/plain, чтобы не вызывать CORS-preflight в WebView.
+    """
+    app = request.app
+    uid = (request.query.get("uid") or "").strip()
+    sig = (request.query.get("sig") or "").strip()
+
+    if not uid or not uid.isdigit():
+        return web.json_response({"ok": False, "error": "uid_required"}, status=400)
+
+    secret = (app.get("max_webapp_secret") or "").strip()
+    if not secret:
+        return web.json_response({"ok": False, "error": "server_secret_not_configured"}, status=500)
+
+    expected = _max_sign(secret, uid)
+    if not sig or not hmac.compare_digest(sig, expected):
+        return web.json_response({"ok": False, "error": "bad_signature"}, status=403)
+
+    raw = await request.text()
+    try:
+        data = json.loads(raw or "{}")
+    except Exception:
+        return web.json_response({"ok": False, "error": "bad_json"}, status=400)
+
+    max_user_id = int(uid)
+    db_user_id = -max_user_id  # чтобы не пересекаться с Telegram ID
+
+    # Проверяем, что пользователь зарегистрирован
+    try:
+        user = await get_user(db_user_id)
+    except Exception:
+        user = None
+    if not user:
+        await _max_send_message(
+            app,
+            max_user_id,
+            "⚠️ Профиль не найден. Напишите боту /start и пройдите регистрацию, затем зайдите в игру снова.",
+        )
+        return web.json_response({"ok": False, "error": "not_registered"}, status=200)
+
+    # Поля как в Telegram WebApp payload
+    score_raw = data.get("score", None)
+    score = 0
+    if score_raw is not None:
+        try:
+            score = int(score_raw or 0)
+        except Exception:
+            score = 0
+
+    aptitude_top = data.get("aptitude_top") or data.get("aptitudeTop") or None
+    if isinstance(aptitude_top, str):
+        aptitude_top = aptitude_top.strip() or None
+
+    if aptitude_top is not None:
+        try:
+            await update_aptitude_top(db_user_id, aptitude_top)
+        except Exception:
+            pass
+
+    if score_raw is not None:
+        try:
+            await update_score(db_user_id, score)
+        except Exception:
+            pass
+
+    APT_LABEL = {
+        "PEOPLE": "🤝 Работа с людьми",
+        "RESEARCH": "🔬 Исследовательская деятельность",
+        "PRODUCTION": "🏭 Работа на производстве",
+        "AESTHETIC": "🎨 Эстетические виды деятельности",
+        "EXTREME": "🧗 Экстремальные виды деятельности",
+        "PLAN_ECON": "📊 Планово‑экономические виды деятельности",
+    }
+
+    if score_raw is not None and aptitude_top is not None:
+        text = (
+            f"🚀 Результат получен! Твой счёт: {score}⭐️.\n"
+            f"🧠 Профиль сохранён: {APT_LABEL.get(aptitude_top, aptitude_top)}.\n"
+            "Напиши «Статистика», чтобы посмотреть результаты."
+        )
+    elif score_raw is not None:
+        text = (
+            f"🚀 Результат получен! Твой счёт: {score}⭐️.\n"
+            "Напиши «Статистика», чтобы посмотреть результаты."
+        )
+    elif aptitude_top is not None:
+        text = (
+            f"🧠 Профиль сохранён: {APT_LABEL.get(aptitude_top, aptitude_top)}.\n"
+            "Напиши «Статистика», чтобы посмотреть результаты."
+        )
+    else:
+        text = "✅ Данные сохранены. Напиши «Статистика», чтобы посмотреть результаты."
+
+    await _max_send_message(app, max_user_id, text)
+    return web.json_response({"ok": True})
+
+
 def create_app() -> web.Application:
     app = web.Application(middlewares=[cors_middleware])
 
@@ -699,30 +802,32 @@ def create_app() -> web.Application:
     token = os.getenv("BOT_TOKEN", "")
     app["bot"] = Bot(token=token) if token else Bot(token="0")
 
+    # MAX Bot token (для отправки сообщений пользователю из WebApp)
+    app["max_bot_token"] = (os.getenv("MAX_BOT_TOKEN", "") or "").strip()
+    # Секрет для подписи параметров WebApp (используем отдельный, либо берём MAX_WEBHOOK_SECRET)
+    app["max_webapp_secret"] = (
+        os.getenv("MAX_WEBAPP_SECRET", "")
+        or os.getenv("MAX_WEBHOOK_SECRET", "")
+        or ""
+    ).strip()
+
+    # Общий HTTP-клиент (aiohttp) — пригодится для MAX API
+    app["http"] = aiohttp.ClientSession()
+
     async def _close_bot(app_: web.Application):
         try:
             await app_["bot"].session.close()
         except Exception:
             pass
-
-    app.on_cleanup.append(_close_bot)
-
-    # --- MAX bot ---
-    # Токен MAX бота (для webhook / отправки сообщений)
-    app["max_token"] = (os.getenv("MAX_BOT_TOKEN") or "").strip()
-    app["max_secret"] = (os.getenv("MAX_WEBHOOK_SECRET") or "").strip()
-    app["max_state"] = {}  # простой in-memory FSM для регистрации
-    app["max_session"] = aiohttp.ClientSession()  # общий session для MAX API
-
-    async def _close_max(app_: web.Application):
         try:
-            await app_["max_session"].close()
+            await app_["http"].close()
         except Exception:
             pass
 
-    app.on_cleanup.append(_close_max)
+    app.on_cleanup.append(_close_bot)
 
     # API
+    app.router.add_get("/health", lambda _r: web.Response(text="ok"))
     app.router.add_get("/api/levels", handle_levels)
     app.router.add_get("/api/me", handle_me)
     app.router.add_post("/api/user/reset_my_scores", user_reset_my_scores)
@@ -737,8 +842,8 @@ def create_app() -> web.Application:
     app.router.add_post("/api/admin/set_level", admin_set_level)
     app.router.add_post("/api/admin/send_award", admin_send_award)
 
-    # MAX webhook
-    app.router.add_post("/max/webhook", handle_max_webhook)
+    # MAX WebApp: сохранение статистики из браузера (без Telegram.WebApp.sendData)
+    app.router.add_post("/api/max/webapp/submit_stats", max_webapp_submit_stats)
 
     # Static webapp
     app.router.add_static("/", WEBAPP_DIR, show_index=True)
