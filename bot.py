@@ -14,36 +14,52 @@ from handlers import user_reg
 TOKEN = os.getenv("BOT_TOKEN")
 MAX_TOKEN = os.getenv("MAX_BOT_TOKEN")
 
+
+async def _init_db_forever() -> None:
+    """Инициализация БД с ретраями.
+    Важно: не валим весь процесс, если Postgres/Supabase временно недоступен."""
+    backoff = 2
+    while True:
+        try:
+            await create_table()
+            logging.info("DB is ready")
+            return
+        except Exception as e:
+            logging.exception("DB init failed, will retry: %s", e)
+            await asyncio.sleep(backoff)
+            backoff = min(backoff * 2, 30)
+
+
 async def main():
     logging.basicConfig(level=logging.INFO)
 
-    await create_table()
+    # 1) Всегда поднимаем веб-сервер (webapp + webhook-и). Render должен увидеть открытый порт.
+    web_task = asyncio.create_task(run_web_server())
 
-    # Telegram бот запускаем только если задан BOT_TOKEN.
-    bot = None
-    dp = None
+    # 2) Инициализацию БД делаем в фоне, чтобы не падать при временной недоступности Supabase.
+    db_task = asyncio.create_task(_init_db_forever())
+
+    # 3) Telegram polling запускаем только если задан BOT_TOKEN.
+    tg_task = None
     if TOKEN:
         bot = Bot(token=TOKEN)
         dp = Dispatcher()
         dp.include_router(user_reg.router)
+        tg_task = asyncio.create_task(dp.start_polling(bot))
+        logging.info("Telegram polling started")
+    else:
+        logging.info("BOT_TOKEN not set -> Telegram disabled")
 
-    # Поднимаем мини-веб-приложение (игра + админ-панель) вместе с polling.
-    # Внешний URL нужно прокинуть в .env (WEBAPP_URL), а порт - WEB_PORT/PORT.
-    web_task = asyncio.create_task(run_web_server())
-
-    print("Сервис запущен...")
+    # 4) Живём, пока жив веб-сервер (или tg_task, если он есть).
     try:
-        # Если Telegram включён — работаем как раньше (polling).
-        # MAX работает через webhook внутри web_server.py (если задан MAX_BOT_TOKEN).
-        if dp and bot:
-            await dp.start_polling(bot)
+        if tg_task:
+            await tg_task
         else:
-            # Только web_server (webapp + MAX webhook)
-            while True:
-                await asyncio.sleep(3600)
+            await web_task
     finally:
-        web_task.cancel()
-        # Закрываем shared-соединение с SQLite
+        for t in (tg_task, db_task, web_task):
+            if t and not t.done():
+                t.cancel()
         await close_db()
 
 
