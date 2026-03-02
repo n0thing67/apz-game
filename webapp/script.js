@@ -3313,6 +3313,7 @@ window.addEventListener('DOMContentLoaded', () => {
             closeApp();
         }
     };
+
     // click + pointerup для надёжности
     document.addEventListener('click', handleAction, true);
 });
