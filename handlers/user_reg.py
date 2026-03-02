@@ -417,7 +417,7 @@ async def _send_stats(message: types.Message, tg_id: int) -> None:
     lines = [
         "📊 Твоя статистика:",
         f"👤 {fname} {lname}",
-        f"⭐️ Очки: {score}",
+        f"⭐️ Лучший счёт: {score}",
     ]
 
     if rank_info:
