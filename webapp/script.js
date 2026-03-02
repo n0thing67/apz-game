@@ -827,6 +827,24 @@ function apiUrl(path) {
     return API_BASE + path;
 }
 
+// MAX WebApp (браузер): бот открывает игру ссылкой с параметрами uid/sig,
+// чтобы мы могли отправить статистику на сервер без Telegram.WebApp.sendData.
+let MAX_UID = '';
+let MAX_SIG = '';
+try {
+    const u = new URL(window.location.href);
+    // поддерживаем оба варианта имён параметров
+    MAX_UID = (u.searchParams.get('uid') || u.searchParams.get('mx_uid') || '').trim();
+    MAX_SIG = (u.searchParams.get('sig') || u.searchParams.get('mx_sig') || '').trim();
+} catch (e) {
+    MAX_UID = '';
+    MAX_SIG = '';
+}
+
+function hasMaxWebAppAuth() {
+    return !!(MAX_UID && MAX_SIG);
+}
+
 
 
 // Синхронизация профтеста ("Что тебе больше подходит") с сервером.
@@ -1342,6 +1360,32 @@ function sendStatsAndClose() {
         } catch (e) {}
     }
 
+    // MAX / обычный браузер: если есть uid+sig, отправляем статистику на сервер.
+    // Это нужно, потому что скачивание файла (Blob + <a download>) часто блокируется в WebView.
+    if (hasMaxWebAppAuth()) {
+        (async () => {
+            try {
+                const url = apiUrl('/api/max/webapp/submit_stats?uid=' + encodeURIComponent(MAX_UID) + '&sig=' + encodeURIComponent(MAX_SIG));
+                const resp = await fetch(url, {
+                    method: 'POST',
+                    cache: 'no-store',
+                    // text/plain => simple request без CORS preflight
+                    headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+                    body: JSON.stringify(payload),
+                });
+                let data = null;
+                try { data = await resp.json(); } catch (e) {}
+                if (!resp.ok || !data || data.ok !== true) {
+                    throw new Error(data?.error || ('http_' + resp.status));
+                }
+                notify('Статистика сохранена ✅\nВернись в чат бота — там появится сообщение со статистикой.');
+            } catch (e) {
+                notify('Не удалось отправить статистику 😕\nПроверь интернет и попробуй ещё раз.');
+            }
+        })();
+        return;
+    }
+
     // В обычном браузере: скачиваем JSON
     try {
         const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
@@ -1391,8 +1435,8 @@ function confirmSendStatsAndClose() {
     try {
         if (typeof confirm === 'function') {
             const ok = confirm(
-                'Сейчас будет переход к статистике.\n\n' +
-                'Нажмите OK, чтобы продолжить, или Cancel, чтобы вернуться в игру.'
+                'Сохранить статистику?\n\n' +
+                'Нажмите OK, чтобы сохранить и отправить статистику в чат бота, или Cancel, чтобы вернуться в игру.'
             );
             if (ok) sendStatsAndClose();
             return;
