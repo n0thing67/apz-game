@@ -3,7 +3,6 @@ import time
 import asyncio
 from pathlib import Path
 
-
 def _format_person_name(value: str | None) -> str | None:
     """Нормализует имя/фамилию для отображения.
 
