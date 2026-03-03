@@ -1,5 +1,14 @@
 const tg = window.Telegram?.WebApp;
 if (tg?.expand) tg.expand();
+
+// ===== PLATFORM DETECTION =====
+const __urlParams = new URLSearchParams(window.location.search);
+const PLATFORM = (__urlParams.get('platform') || (tg ? 'telegram' : 'browser')).toLowerCase();
+const IS_MAX = PLATFORM === 'max';
+const MAX_UID = __urlParams.get('uid');
+const MAX_SIG = __urlParams.get('sig');
+const IS_YANDEX = /YaBrowser/i.test(navigator.userAgent || '');
+if (IS_MAX) document.documentElement.classList.add('platform-max');
 // ===== ASSETS: ускоряем загрузку через WebP (с fallback) =====
 function supportsWebP() {
     try {
@@ -1343,6 +1352,33 @@ function sendStatsAndClose() {
     }
 
     // В обычном браузере: скачиваем JSON
+    // В MAX WebApp (внешний браузер): отправляем на бекенд, чтобы сохранить в общей БД.
+    if (IS_MAX && MAX_UID) {
+        try {
+            fetch('/api/max/webapp_data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    uid: Number(MAX_UID),
+                    sig: String(MAX_SIG || ''),
+                    payload
+                })
+            })
+            .then(r => r.json().catch(() => ({ ok: false })))
+            .then((res) => {
+                if (res && res.ok) {
+                    notify('Статистика сохранена ✅\nВернись в MAX и нажми «Статистика».');
+                } else {
+                    notify('Не удалось сохранить статистику 😕');
+                }
+            })
+            .catch(() => notify('Не удалось сохранить статистику 😕'));
+            return;
+        } catch (e) {
+            // если fetch недоступен — упадём в скачивание
+        }
+    }
+
     try {
         const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
@@ -1962,6 +1998,11 @@ let canvasHeight = 480;
 // но значительно разгружает GPU/CPU. Логику и картинки не меняем.
 const MAX_DPR = 2;
 
+// Для некоторых WebView (в частности YaBrowser внутри MAX) убираем субпиксели,
+// чтобы не появлялись "швы"/чёрные линии на спрайтах.
+let DOODLE_PIXEL_SNAP = false;
+const px = (v) => (DOODLE_PIXEL_SNAP ? Math.round(v) : v);
+
 const imgHero = new Image(); imgHero.src = assetPath('hero', 'png');
 const imgPlatform = new Image(); imgPlatform.src = assetPath('platform', 'png');
 const imgSpring = new Image(); imgSpring.src = assetPath('spring', 'png');
@@ -2129,7 +2170,13 @@ function initJumper() {
 
     const canvas = document.getElementById('doodle-canvas');
     doodleCanvasRef = canvas;
-    ctx = canvas.getContext('2d', { alpha: true, desynchronized: true });
+    // YaBrowser / некоторые WebView дают артефакты (чёрные линии) с desynchronized.
+    // Для MAX и YaBrowser выключаем этот флаг и делаем "pixel snap" при рисовании.
+    const ctxOpts = { alpha: true };
+    if (!(IS_MAX || IS_YANDEX)) ctxOpts.desynchronized = true;
+    ctx = canvas.getContext('2d', ctxOpts);
+
+    DOODLE_PIXEL_SNAP = (IS_MAX || IS_YANDEX);
 
     // 2. Узнаем плотность пикселей устройства (на ПК = 1, на iPhone = 2 или 3)
     const dpr = Math.min((window.devicePixelRatio || 1), MAX_DPR);
@@ -2449,22 +2496,22 @@ function draw() {
         const p = platforms[i];
         if (imgPlatform.complete && imgPlatform.naturalWidth !== 0) {
             const c = PLATFORM_SPRITE_CROP;
-            ctx.drawImage(imgPlatform, c.sx, c.sy, c.sw, c.sh, p.x, p.y, p.width, p.height);
+            ctx.drawImage(imgPlatform, c.sx, c.sy, c.sw, c.sh, px(p.x), px(p.y), p.width, p.height);
         } else {
             ctx.fillStyle = '#27ae60';
-            ctx.fillRect(p.x, p.y, p.width, p.height);
+            ctx.fillRect(px(p.x), px(p.y), p.width, p.height);
         }
 
-        if (p.bonus === 'spring') { const bx = p.x + (PLATFORM_WIDTH - SPRING_WIDTH) / 2; const by = p.y - SPRING_HEIGHT + 40; drawBonus(imgSpring, bx, by, SPRING_WIDTH, SPRING_HEIGHT); }
-        else if (p.bonus === 'propeller') { const bx = p.x + (PLATFORM_WIDTH - PROPELLER_WIDTH) / 2; const by = p.y - PROPELLER_HEIGHT + 15; drawBonus(imgPropeller, bx, by, PROPELLER_WIDTH, PROPELLER_HEIGHT); }
-        else if (p.bonus === 'jetpack') { const bx = p.x + (PLATFORM_WIDTH - JETPACK_WIDTH) / 2; const by = p.y - JETPACK_HEIGHT + 20; drawBonus(imgJetpack, bx, by, JETPACK_WIDTH, JETPACK_HEIGHT); }
+        if (p.bonus === 'spring') { const bx = p.x + (PLATFORM_WIDTH - SPRING_WIDTH) / 2; const by = p.y - SPRING_HEIGHT + 40; drawBonus(imgSpring, px(bx), px(by), SPRING_WIDTH, SPRING_HEIGHT); }
+        else if (p.bonus === 'propeller') { const bx = p.x + (PLATFORM_WIDTH - PROPELLER_WIDTH) / 2; const by = p.y - PROPELLER_HEIGHT + 15; drawBonus(imgPropeller, px(bx), px(by), PROPELLER_WIDTH, PROPELLER_HEIGHT); }
+        else if (p.bonus === 'jetpack') { const bx = p.x + (PLATFORM_WIDTH - JETPACK_WIDTH) / 2; const by = p.y - JETPACK_HEIGHT + 20; drawBonus(imgJetpack, px(bx), px(by), JETPACK_WIDTH, JETPACK_HEIGHT); }
     }
 
     // Детали
     for (let i = 0; i < items.length; i++) {
         const item = items[i];
         if (item.collected) continue;
-        if (imgPart.complete && imgPart.naturalWidth !== 0) ctx.drawImage(imgPart, item.x - 30, item.y - 30, 60, 60);
+        if (imgPart.complete && imgPart.naturalWidth !== 0) ctx.drawImage(imgPart, px(item.x - 30), px(item.y - 30), 60, 60);
         else { ctx.beginPath(); ctx.arc(item.x, item.y, 20, 0, Math.PI * 2); ctx.fillStyle = '#3498db'; ctx.fill(); }
     }
 
@@ -2479,7 +2526,7 @@ function draw() {
             const jpX = player.x + (player.width - jpWidth) / 2;
             const jpY = player.y + 10; // Чуть ниже плеч
 
-            ctx.drawImage(imgJetpack, jpX, jpY, jpWidth, jpHeight);
+            ctx.drawImage(imgJetpack, px(jpX), px(jpY), jpWidth, jpHeight);
 
             // Огонь (по центру джетпака)
             ctx.fillStyle = 'orange';
@@ -2491,19 +2538,19 @@ function draw() {
 
         // ГЕРОЙ (Рисуется ПОВЕРХ джетпака)
         const hc = HERO_SPRITE_CROP;
-        ctx.drawImage(imgHero, hc.sx, hc.sy, hc.sw, hc.sh, player.x, player.y, player.width, player.height);
+        ctx.drawImage(imgHero, hc.sx, hc.sy, hc.sw, hc.sh, px(player.x), px(player.y), player.width, player.height);
 
         if (player.equipment === 'propeller') {
             // Пропеллер тоже опускаем
-            ctx.drawImage(imgPropeller, player.x + 11, player.y - 25, 60, 50);
+            ctx.drawImage(imgPropeller, px(player.x + 11), px(player.y - 25), 60, 50);
         }
     } else {
         ctx.fillStyle = '#e67e22';
         // Если картинки нет, рисуем ровно по хитбоксу
-        ctx.fillRect(player.x, player.y, player.width, player.height);
+        ctx.fillRect(px(player.x), px(player.y), player.width, player.height);
     }
 }
-function drawBonus(img, x, y, w, h) { if (img.complete && img.naturalWidth !== 0) ctx.drawImage(img, x, y, w, h); else { ctx.fillStyle = 'red'; ctx.fillRect(x, y, w, h); } }
+function drawBonus(img, x, y, w, h) { if (img.complete && img.naturalWidth !== 0) ctx.drawImage(img, px(x), px(y), w, h); else { ctx.fillStyle = 'red'; ctx.fillRect(px(x), px(y), w, h); } }
 function showGameOver() {
     playSfx('jumper-loss');
     gameActive = false;
