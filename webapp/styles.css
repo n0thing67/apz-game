@@ -744,6 +744,16 @@ body.admin-body {
     contain: layout paint;
 }
 
+/* MAX (YaBrowser/WebView): contain/backdrop-filter иногда дают артефакты и ломают отрисовку */
+html.platform-max #doodle-container {
+    contain: none;
+}
+
+html.platform-max .doodle-control {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+}
+
 /* Интуитивные кнопки управления для уровня 2 (телефон) */
 #doodle-controls {
     position: absolute;
