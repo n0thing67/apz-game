@@ -4,7 +4,6 @@ import logging
 from aiogram import Bot, Dispatcher
 from dotenv import load_dotenv
 from database.db import create_table, close_db
-
 from web_server import run_web_server
 
 load_dotenv()
