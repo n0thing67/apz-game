@@ -34,7 +34,6 @@ from database.db import (
 
 from max_bot import MaxApi, handle_max_update
 
-
 WEBAPP_DIR = os.path.join(os.path.dirname(__file__), "webapp")
 
 # Шаблоны грамот/дипломов (вариант A: PNG + наложение текста)
