@@ -1,4 +1,6 @@
 const tg = window.Telegram?.WebApp;
+// MAX mini‑apps expose window.WebApp via max-web-app.js
+const mx = window.WebApp;
 if (tg?.expand) tg.expand();
 // ===== ASSETS: ускоряем загрузку через WebP (с fallback) =====
 function supportsWebP() {
@@ -1331,7 +1333,7 @@ if (statLine && statMain && savedApt && savedApt.main) {
     showScreen('screen-final');
 }
 
-function sendStatsAndClose() {
+async function sendStatsAndClose() {
     const payload = buildStatsPayload();
 
     // В Telegram WebApp: отправляем данные и закрываем WebApp
@@ -1342,6 +1344,33 @@ function sendStatsAndClose() {
             tg.close();
             return;
         } catch (e) {}
+    }
+
+    // MAX mini‑app: отправляем данные на наш backend (по initData) и закрываем мини‑приложение.
+    // В MAX нет аналога tg.sendData, поэтому используем HTTPS API и серверную валидацию initData.
+    if (mx?.initData && typeof fetch === 'function') {
+        try {
+            await fetch(apiUrl('/api/max/webapp_data'), {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Max-InitData': mx.initData
+                },
+                body: JSON.stringify(payload)
+            });
+        } catch (e) {
+            // даже если сеть упала — всё равно попробуем закрыть, чтобы пользователь вернулся в MAX
+        }
+
+        try {
+            if (typeof mx.close === 'function') {
+                mx.close();
+                return;
+            }
+        } catch (e) {}
+        // Фолбэк: если bridge недоступен — пробуем закрыть вкладку.
+        try { window.close(); } catch (e) {}
+        return;
     }
 
     // НЕ Telegram (например, MAX/обычный браузер):
