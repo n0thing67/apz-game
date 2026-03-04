@@ -12,7 +12,6 @@ from web_server import run_web_server
 
 load_dotenv()
 
-
 async def start_telegram_bot() -> None:
     """Запускает Telegram-бота (polling) если задан BOT_TOKEN."""
     token = (os.getenv("BOT_TOKEN") or "").strip()
