@@ -1176,7 +1176,9 @@ function confirmResetStats() {
                     ]
                 },
                 (btnId) => {
-                    if (btnId === 'reset') resetAllStatsForUser();
+                    // Telegram вернёт 'reset'/'cancel'. В не‑Telegram WebView возможны 'ok'/true/undefined.
+                    if (btnId === 'cancel') return;
+                    resetAllStatsForUser();
                 }
             );
             return;
@@ -1369,6 +1371,9 @@ function confirmSendStatsAndClose() {
         'После перехода веб‑приложение будет закрыто.';
 
     // Telegram WebApp: показываем системный popup с 2 кнопками.
+    // В некоторых не‑Telegram WebView (например, MAX/Yandex) может быть объект Telegram.WebApp
+    // или частичная реализация showPopup, которая всегда возвращает 'ok' или не возвращает id.
+    // Чтобы логика работала везде, трактуем любое подтверждение кроме явного cancel как «перейти».
     if (tg?.showPopup) {
         try {
             tg.showPopup(
@@ -1380,7 +1385,10 @@ function confirmSendStatsAndClose() {
                     ]
                 },
                 (btnId) => {
-                    if (btnId === 'go') sendStatsAndClose();
+                    // Telegram вернёт 'go'/'cancel'.
+                    // Не‑Telegram WebView может вернуть 'ok'/true/undefined.
+                    if (btnId === 'cancel') return;
+                    sendStatsAndClose();
                 }
             );
             return;
