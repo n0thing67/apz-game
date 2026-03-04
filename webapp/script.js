@@ -1480,7 +1480,6 @@ function showStatsExportModal(prettyJson) {
 
     document.body.appendChild(wrap);
 }
-}
 
 // Подтверждение перед закрытием WebApp и переходом в Telegram к статистике.
 // Требование: при нажатии «Отмена» пользователь остаётся в WebApp и может продолжать играть.
