@@ -1,50 +1,49 @@
 import asyncio
-import logging
 import os
-
+import logging
 from aiogram import Bot, Dispatcher
 from dotenv import load_dotenv
+from database.db import create_table, close_db
 
-from database.db import close_db, create_table
-from handlers import user_reg
-from max_bot import start_max_bot
 from web_server import run_web_server
 
 load_dotenv()
 
-async def start_telegram_bot() -> None:
-    """Запускает Telegram-бота (polling) если задан BOT_TOKEN."""
-    token = (os.getenv("BOT_TOKEN") or "").strip()
-    if not token:
-        logging.getLogger(__name__).info("BOT_TOKEN is empty: Telegram bot is disabled")
-        return
+from handlers import user_reg
 
-    bot = Bot(token=token)
-    dp = Dispatcher()
-    dp.include_router(user_reg.router)
-    await dp.start_polling(bot)
-
+TOKEN = os.getenv("BOT_TOKEN")
+MAX_TOKEN = os.getenv("MAX_BOT_TOKEN")
 
 async def main():
     logging.basicConfig(level=logging.INFO)
 
     await create_table()
 
-    # WebApp + Admin + MAX webhook
+    # Telegram бот запускаем только если задан BOT_TOKEN.
+    bot = None
+    dp = None
+    if TOKEN:
+        bot = Bot(token=TOKEN)
+        dp = Dispatcher()
+        dp.include_router(user_reg.router)
+
+    # Поднимаем мини-веб-приложение (игра + админ-панель) вместе с polling.
+    # Внешний URL нужно прокинуть в .env (WEBAPP_URL), а порт - WEB_PORT/PORT.
     web_task = asyncio.create_task(run_web_server())
 
-    # MAX bot service (subscription/webhook handled by web_server; this task keeps helpers alive)
-    max_task = asyncio.create_task(start_max_bot())
-
-    # Telegram polling
-    tg_task = asyncio.create_task(start_telegram_bot())
-
+    print("Сервис запущен...")
     try:
-        await asyncio.gather(web_task, max_task, tg_task)
+        # Если Telegram включён — работаем как раньше (polling).
+        # MAX работает через webhook внутри web_server.py (если задан MAX_BOT_TOKEN).
+        if dp and bot:
+            await dp.start_polling(bot)
+        else:
+            # Только web_server (webapp + MAX webhook)
+            while True:
+                await asyncio.sleep(3600)
     finally:
-        for t in (web_task, max_task, tg_task):
-            if not t.done():
-                t.cancel()
+        web_task.cancel()
+        # Закрываем shared-соединение с SQLite
         await close_db()
 
 
