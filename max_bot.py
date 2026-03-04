@@ -1,177 +1,303 @@
-import hashlib
-import hmac
+import os
+import re
 import json
 import logging
-import os
-import asyncio
-from urllib.parse import urlencode, urlparse, urlunparse, parse_qsl
+from urllib.parse import quote
 
 import aiohttp
 
-
-log = logging.getLogger("max_bot")
-
-
-MAX_API_BASE = "https://platform-api.max.ru"
-
-
-def is_max_enabled() -> bool:
-    return bool((os.getenv("MAX_BOT_TOKEN") or "").strip())
+from database.db import (
+    register_user,
+    get_user,
+    get_user_profile,
+)
 
 
-def _sign(uid: int, secret: str) -> str:
-    # hex digest is safe for URL and simple to validate
-    return hmac.new(secret.encode("utf-8"), str(uid).encode("utf-8"), hashlib.sha256).hexdigest()
+MAX_API_BASE = os.getenv("MAX_API_BASE", "https://platform-api.max.ru").rstrip("/")
 
 
-def build_max_game_url(uid: int) -> str:
-    """Добавляет к GAME_URL параметры для MAX, чтобы WebApp мог сохранить статистику.
+def _max_to_db_id(max_user_id: int) -> int:
+    """MAX user_id -> внутренний id в общей БД.
 
-    Telegram получает user id через initData, а в MAX (внешний браузер) — нет.
-    Поэтому передаем uid + sig в query.
+    БД исторически использует telegram_id (INTEGER PRIMARY KEY). Чтобы не менять схему
+    и исключить коллизии с Telegram ID, MAX пользователей сохраняем как отрицательные числа.
     """
-    base = (os.getenv("GAME_URL") or "").strip()
-    if not base:
-        return ""
-
-    secret = (os.getenv("MAX_WEBHOOK_SECRET") or "").strip()
-    if not secret:
-        # без секрета тоже работаем, но менее безопасно
-        sig = ""
-    else:
-        sig = _sign(uid, secret)
-
-    u = urlparse(base)
-    q = dict(parse_qsl(u.query, keep_blank_values=True))
-    q.update({"platform": "max", "uid": str(uid)})
-    if sig:
-        q["sig"] = sig
-    new_u = u._replace(query=urlencode(q))
-    return urlunparse(new_u)
+    return -int(max_user_id)
 
 
-class MaxApi:
-    def __init__(self, token: str, session: aiohttp.ClientSession):
-        self.token = token
-        self.session = session
-
-    @property
-    def headers(self) -> dict:
-        return {"Authorization": self.token, "Content-Type": "application/json"}
-
-    async def send_message(self, user_id: int, text: str, keyboard: list | None = None) -> None:
-        payload: dict = {"user_id": user_id, "text": text}
-        if keyboard:
-            payload["attachments"] = [{"type": "inline_keyboard", "keyboard": keyboard}]
-        async with self.session.post(f"{MAX_API_BASE}/messages", headers=self.headers, data=json.dumps(payload)) as r:
-            if r.status >= 300:
-                body = await r.text()
-                log.warning("MAX send_message failed: %s %s", r.status, body[:300])
-
-    async def answer_callback(self, callback_id: str, text: str | None = None) -> None:
-        payload: dict = {"callback_id": callback_id}
-        if text:
-            payload["text"] = text
-        async with self.session.post(f"{MAX_API_BASE}/answers", headers=self.headers, data=json.dumps(payload)) as r:
-            if r.status >= 300:
-                body = await r.text()
-                log.warning("MAX answer_callback failed: %s %s", r.status, body[:300])
+def _get_admin_ids() -> set[int]:
+    raw = os.getenv("ADMIN_IDS", "")
+    return {int(x.strip()) for x in raw.split(",") if x.strip().lstrip("-").isdigit()}
 
 
-def _keyboard_main(uid: int) -> list:
-    url = build_max_game_url(uid)
-    return [
-        [
-            {"text": "Зайти на завод", "type": "link", "url": url},
-            {"text": "Статистика", "type": "callback", "callback_data": "stats"},
-        ]
+def _is_admin(db_user_id: int) -> bool:
+    return int(db_user_id) in _get_admin_ids()
+
+
+def _game_url() -> str:
+    game_url = os.getenv("GAME_URL", "https://n0thing67.github.io/APZ-games/").rstrip("/")
+    admin_url = os.getenv("ADMIN_URL", os.getenv("WEBAPP_URL", "")).rstrip("/")
+    api_part = f"?api={quote(admin_url, safe='')}" if admin_url else ""
+    return f"{game_url}/" + api_part
+
+
+def _admin_url() -> str:
+    return (os.getenv("ADMIN_URL", os.getenv("WEBAPP_URL", "")) or "").rstrip("/")
+
+
+def _inline_keyboard(buttons: list[list[dict]]) -> list[dict]:
+    return [{"type": "inline_keyboard", "payload": {"buttons": buttons}}]
+
+
+async def _max_api_post(
+    session: aiohttp.ClientSession,
+    token: str,
+    path: str,
+    *,
+    params: dict | None = None,
+    json_body: dict | None = None,
+):
+    url = f"{MAX_API_BASE}{path}"
+    headers = {"Authorization": token, "Content-Type": "application/json"}
+    async with session.post(url, headers=headers, params=params, json=json_body) as resp:
+        text = await resp.text()
+        if resp.status >= 400:
+            raise RuntimeError(f"MAX API {path} failed: {resp.status} {text}")
+        try:
+            return json.loads(text) if text else {}
+        except Exception:
+            return {}
+
+
+async def send_message(
+    session: aiohttp.ClientSession,
+    token: str,
+    *,
+    user_id: int,
+    text: str,
+    attachments: list[dict] | None = None,
+    fmt: str | None = None,
+):
+    body: dict = {"text": text}
+    if attachments is not None:
+        body["attachments"] = attachments
+    if fmt:
+        body["format"] = fmt
+    return await _max_api_post(session, token, "/messages", params={"user_id": int(user_id)}, json_body=body)
+
+
+async def answer_callback(
+    session: aiohttp.ClientSession,
+    token: str,
+    *,
+    callback_id: str,
+    message: dict | None = None,
+    notification: str | None = None,
+):
+    body: dict = {}
+    if message is not None:
+        body["message"] = message
+    if notification is not None:
+        body["notification"] = notification
+    return await _max_api_post(session, token, "/answers", params={"callback_id": callback_id}, json_body=body)
+
+
+def _apt_label(value: str | None) -> str | None:
+    if not value:
+        return None
+    m = {
+        "PEOPLE": "🤝 Работа с людьми",
+        "RESEARCH": "🔬 Исследовательская деятельность",
+        "PRODUCTION": "🏭 Работа на производстве",
+        "AESTHETIC": "🎨 Эстетические виды деятельности",
+        "EXTREME": "🧗 Экстремальные виды деятельности",
+        "PLAN_ECON": "📊 Планово‑экономические виды деятельности",
+    }
+    return m.get(value, str(value))
+
+
+async def _send_stats_max(app, *, max_user_id: int):
+    token = app.get("max_token") or ""
+    session: aiohttp.ClientSession = app["max_session"]
+
+    db_id = _max_to_db_id(max_user_id)
+    user = await get_user(db_id)
+    if not user:
+        await send_message(session, token, user_id=max_user_id, text="📊 Статистика пока недоступна.")
+        return
+
+    profile = None
+    try:
+        profile = await get_user_profile(db_id)
+    except Exception:
+        profile = None
+
+    _tid, fname, lname, _age, score = user
+    aptitude_top = profile[5] if profile and len(profile) >= 6 else None
+
+    lines = [
+        "📊 Твоя статистика:",
+        f"👤 {fname} {lname}",
+        f"⭐️ Лучший счёт: {score}",
     ]
+    a = _apt_label(aptitude_top)
+    if a:
+        lines.append(a)
+
+    await send_message(session, token, user_id=max_user_id, text="\n".join(lines))
 
 
-async def handle_max_update(app, update: dict) -> None:
-    """Обрабатывает входящее событие MAX.
-
-    Поддерживаем минимум: /start, текстовые команды, callback "stats".
-    """
-    token = (os.getenv("MAX_BOT_TOKEN") or "").strip()
+async def handle_update(app, update: dict) -> None:
+    """Единая обработка MAX Update (webhook)."""
+    token = (app.get("max_token") or "").strip()
     if not token:
         return
 
-    api: MaxApi = app["max_api"]
+    session: aiohttp.ClientSession = app["max_session"]
+    state: dict = app["max_state"]
 
-    utype = update.get("type") or update.get("update_type")
-    data = update.get("data") or update
+    utype = update.get("update_type")
 
-    # message_created
-    if utype == "message_created":
-        msg = data.get("message") or data
-        text = (msg.get("text") or "").strip()
-        user = msg.get("from") or msg.get("user") or {}
-        uid = int(user.get("user_id") or user.get("id") or msg.get("user_id") or 0)
-        if not uid:
+    # bot_started
+    if utype == "bot_started":
+        user = update.get("user") or {}
+        max_user_id = user.get("user_id")
+        if max_user_id is None:
             return
 
-        if text.startswith("/start") or text.lower() in ("start", "привет", "начать"):
-            await api.send_message(uid, "Привет! Нажми «Зайти на завод», чтобы начать.", _keyboard_main(uid))
+        db_id = _max_to_db_id(int(max_user_id))
+        existing = await get_user(db_id)
+        if existing:
+            fname = existing[1]
+            kb = _inline_keyboard([
+                [{"type": "link", "text": "🏭 Зайти на завод (Играть)", "url": _game_url()}]
+            ])
+            await send_message(session, token, user_id=int(max_user_id), text=f"С возвращением, {fname}! Нажми кнопку ниже, чтобы начать испытание.", attachments=kb)
             return
 
-        if text.lower() in ("статистика", "/stats"):
-            # пусть пользователь жмет кнопку; но ответим тоже
-            await api.send_message(uid, "Нажми «Статистика».", _keyboard_main(uid))
-            return
-
+        await send_message(
+            session,
+            token,
+            user_id=int(max_user_id),
+            text=(
+                "Добро пожаловать на АПЗ! Для начала работы, пожалуйста, представьтесь.\n"
+                "✍️ Введите Имя и Фамилию одним сообщением (через пробел).\n"
+                "Пример: Иван Иванов"
+            ),
+        )
+        state[str(max_user_id)] = {"step": "waiting_for_fullname"}
         return
 
     # message_callback
     if utype == "message_callback":
-        cb = data.get("callback") or data
-        callback_id = cb.get("callback_id") or cb.get("id")
-        cb_data = cb.get("callback_data") or cb.get("data")
-        user = cb.get("from") or cb.get("user") or {}
-        uid = int(user.get("user_id") or user.get("id") or cb.get("user_id") or 0)
-        if not uid:
+        callback = update.get("callback") or {}
+        callback_id = callback.get("callback_id") or update.get("callback_id")
+        payload = callback.get("payload") or update.get("payload")
+        user = callback.get("user") or update.get("user") or {}
+        max_user_id = user.get("user_id")
+        if not callback_id or max_user_id is None:
             return
 
-        # обработка статистики (по максимуму похоже на TG)
-        if cb_data == "stats":
-            # Читаем из общей БД (MAX uid хранится как отрицательный)
-            from database.db import get_user_profile
-
-            db_uid = -uid
-            prof = await get_user_profile(db_uid)
-            if not prof:
-                await api.answer_callback(callback_id, "Сначала напиши /start и пройди регистрацию")
-                return
-
-            # profile tuple: (id, first, last, age, score, aptitude_top)
-            _, first_name, last_name, age, score, aptitude_top = prof
-            full_name = f"{first_name or ''} {last_name or ''}".strip()
-            txt = (
-                f"📊 Статистика\n"
-                f"👤 {full_name or 'Игрок'} ({age} лет)\n"
-                f"⭐ Лучший счёт: {score or 0}\n"
-            )
-            if aptitude_top:
-                txt += f"🧠 Профиль: {aptitude_top}\n"
-
-            await api.answer_callback(callback_id, "Ок")
-            await api.send_message(uid, txt, _keyboard_main(uid))
+        if str(payload) == "stats":
+            try:
+                await answer_callback(session, token, callback_id=str(callback_id), message={"text": "Открываю статистику…"})
+            except Exception:
+                pass
+            await _send_stats_max(app, max_user_id=int(max_user_id))
             return
 
-        await api.answer_callback(callback_id, "Ок")
+        try:
+            await answer_callback(session, token, callback_id=str(callback_id), notification="✅")
+        except Exception:
+            return
         return
 
+    # message_created
+    if utype == "message_created":
+        msg = update.get("message") or {}
+        sender = msg.get("sender") or {}
+        max_user_id = sender.get("user_id")
+        if max_user_id is None:
+            return
 
-async def start_max_bot() -> None:
-    """Фоновая задача. В webhook-схеме MAX не требует отдельного polling.
+        body = msg.get("body") or {}
+        text = (body.get("text") or "").strip()
 
-    Но мы держим задачу живой, чтобы приложение работало одинаково в одном процессе.
-    """
-    if not is_max_enabled():
-        log.info("MAX_BOT_TOKEN is empty: MAX bot is disabled")
-        # никогда не завершаться, чтобы gather не падал
-        while True:
-            await asyncio.sleep(3600)
+        if text == "/start":
+            await handle_update(app, {"update_type": "bot_started", "user": {"user_id": int(max_user_id)}})
+            return
 
-    while True:
-        await asyncio.sleep(3600)
+        if text == "/admin":
+            if not _is_admin(_max_to_db_id(int(max_user_id))):
+                await send_message(session, token, user_id=int(max_user_id), text="Нет доступа")
+                return
+            au = _admin_url()
+            if not au:
+                await send_message(session, token, user_id=int(max_user_id), text="Админ-панель не настроена (ADMIN_URL/WEBAPP_URL).")
+                return
+            kb = _inline_keyboard([
+                [{"type": "link", "text": "Админ-панель", "url": f"{au}/admin.html"}]
+            ])
+            await send_message(session, token, user_id=int(max_user_id), text="⚙️ Панель администратора", attachments=kb)
+            return
+
+        # FSM регистрация
+        st = state.get(str(max_user_id))
+        if st and st.get("step") == "waiting_for_fullname":
+            parts = [p for p in text.split() if p]
+            if len(parts) < 2:
+                await send_message(session, token, user_id=int(max_user_id), text="❌ Нужно ввести Имя и Фамилию через пробел.\nПример: Иван Иванов")
+                return
+
+            ru_token = re.compile(r"^[А-ЯЁа-яё]+(?:-[А-ЯЁа-яё]+)*$")
+            if not ru_token.fullmatch(parts[0]) or any(not ru_token.fullmatch(p) for p in parts[1:]):
+                await send_message(session, token, user_id=int(max_user_id), text=(
+                    "❌ Имя и фамилия должны быть написаны только русскими буквами.\n"
+                    "Можно использовать дефис.\n"
+                    "Пример: Иван Иванов / Анна-Мария Петрова"
+                ))
+                return
+
+            st["first_name"] = parts[0]
+            st["last_name"] = " ".join(parts[1:])
+            st["step"] = "waiting_for_age"
+            await send_message(session, token, user_id=int(max_user_id), text="Сколько вам лет?")
+            return
+
+        if st and st.get("step") == "waiting_for_age":
+            try:
+                age = int(text)
+            except Exception:
+                await send_message(session, token, user_id=int(max_user_id), text="Возраст должен быть числом. Попробуйте ещё раз.")
+                return
+
+            if age < 3 or age > 100:
+                await send_message(session, token, user_id=int(max_user_id), text="Возраст должен быть от 3 до 100. Попробуйте ещё раз.")
+                return
+
+            db_id = _max_to_db_id(int(max_user_id))
+            await register_user(db_id, st.get("first_name"), st.get("last_name"), age)
+            state.pop(str(max_user_id), None)
+
+            kb = _inline_keyboard([
+                [{"type": "link", "text": "🏭 Зайти на завод (Играть)", "url": _game_url()}]
+            ])
+            await send_message(session, token, user_id=int(max_user_id), text=f"Регистрация пройдена, {st.get('first_name')}! Нажми кнопку ниже, чтобы начать испытание.", attachments=kb)
+            return
+
+        # зарегистрированным даём кнопку статистики и ссылку на игру
+        if text.lower() in {"статистика", "/stats"}:
+            kb = _inline_keyboard([
+                [{"type": "callback", "text": "📊 Статистика", "payload": "stats"}]
+            ])
+            await send_message(session, token, user_id=int(max_user_id), text="Нажми кнопку ниже:", attachments=kb)
+            return
+
+        kb = _inline_keyboard([
+            [{"type": "link", "text": "🏭 Зайти на завод (Играть)", "url": _game_url()}],
+            [{"type": "callback", "text": "📊 Статистика", "payload": "stats"}],
+        ])
+        await send_message(session, token, user_id=int(max_user_id), text="Выбери действие:", attachments=kb)
+        return
+
+    return
