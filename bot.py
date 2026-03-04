@@ -10,7 +10,6 @@ from handlers import user_reg
 from max_bot import start_max_bot
 from web_server import run_web_server
 
-
 load_dotenv()
 
 
