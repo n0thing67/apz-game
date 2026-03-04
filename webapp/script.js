@@ -1,6 +1,4 @@
 const tg = window.Telegram?.WebApp;
-// MAX mini‑apps expose window.WebApp via max-web-app.js
-const mx = window.WebApp;
 if (tg?.expand) tg.expand();
 // ===== ASSETS: ускоряем загрузку через WebP (с fallback) =====
 function supportsWebP() {
@@ -1178,9 +1176,7 @@ function confirmResetStats() {
                     ]
                 },
                 (btnId) => {
-                    // Telegram вернёт 'reset'/'cancel'. В не‑Telegram WebView возможны 'ok'/true/undefined.
-                    if (btnId === 'cancel') return;
-                    resetAllStatsForUser();
+                    if (btnId === 'reset') resetAllStatsForUser();
                 }
             );
             return;
@@ -1333,7 +1329,7 @@ if (statLine && statMain && savedApt && savedApt.main) {
     showScreen('screen-final');
 }
 
-async function sendStatsAndClose() {
+function sendStatsAndClose() {
     const payload = buildStatsPayload();
 
     // В Telegram WebApp: отправляем данные и закрываем WebApp
@@ -1346,168 +1342,21 @@ async function sendStatsAndClose() {
         } catch (e) {}
     }
 
-    // MAX mini‑app: отправляем данные на наш backend (по initData) и закрываем мини‑приложение.
-    // В MAX нет аналога tg.sendData, поэтому используем HTTPS API и серверную валидацию initData.
-    if (mx?.initData && typeof fetch === 'function') {
-        try {
-            await fetch(apiUrl('/api/max/webapp_data'), {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Max-InitData': mx.initData
-                },
-                body: JSON.stringify(payload)
-            });
-        } catch (e) {
-            // даже если сеть упала — всё равно попробуем закрыть, чтобы пользователь вернулся в MAX
-        }
-
-        try {
-            if (typeof mx.close === 'function') {
-                mx.close();
-                return;
-            }
-        } catch (e) {}
-        // Фолбэк: если bridge недоступен — пробуем закрыть вкладку.
-        try { window.close(); } catch (e) {}
-        return;
-    }
-
-    // НЕ Telegram (например, MAX/обычный браузер):
-    // 1) Пытаемся скачать JSON (если браузер разрешает),
-    // 2) Всегда показываем окно с данными и кнопкой «Скопировать» как надёжный фолбэк.
+    // В обычном браузере: скачиваем JSON
     try {
-        const pretty = JSON.stringify(payload, null, 2);
-
-        // Пробуем скачать файл (может быть заблокировано в некоторых WebView)
-        try {
-            const blob = new Blob([pretty], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'apz_stats.json';
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
-            setTimeout(() => URL.revokeObjectURL(url), 1000);
-        } catch (e) {}
-
-        showStatsExportModal(pretty);
-        notify('Статистика подготовлена ✅');
-        return;
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'apz_stats.json';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        notify('Файл статистики сохранён ✅');
     } catch (e) {
-        notify('Не удалось подготовить статистику 😕');
+        notify('Не удалось сохранить статистику 😕');
     }
-}
-
-// Показать окно с экспортом статистики (надёжный фолбэк для WebView, где скачивание может не работать).
-function showStatsExportModal(prettyJson) {
-    // Если уже открыто — обновим содержимое
-    const existing = document.getElementById('stats-export-modal');
-    if (existing) {
-        const ta = existing.querySelector('textarea');
-        if (ta) ta.value = prettyJson;
-        existing.style.display = 'flex';
-        return;
-    }
-
-    const wrap = document.createElement('div');
-    wrap.id = 'stats-export-modal';
-    wrap.style.position = 'fixed';
-    wrap.style.inset = '0';
-    wrap.style.zIndex = '9999';
-    wrap.style.display = 'flex';
-    wrap.style.alignItems = 'center';
-    wrap.style.justifyContent = 'center';
-    wrap.style.padding = '16px';
-    wrap.style.background = 'rgba(0,0,0,0.6)';
-
-    const box = document.createElement('div');
-    box.style.width = 'min(640px, 100%)';
-    box.style.maxHeight = '80vh';
-    box.style.background = '#1f2a33';
-    box.style.borderRadius = '16px';
-    box.style.boxShadow = '0 10px 30px rgba(0,0,0,0.35)';
-    box.style.padding = '14px';
-    box.style.display = 'flex';
-    box.style.flexDirection = 'column';
-    box.style.gap = '10px';
-
-    const title = document.createElement('div');
-    title.textContent = 'Статистика (JSON)';
-    title.style.fontWeight = '700';
-    title.style.fontSize = '16px';
-
-    const hint = document.createElement('div');
-    hint.textContent = 'Если скачивание не сработало, нажмите «Скопировать» и отправьте JSON администратору/себе.';
-    hint.style.opacity = '0.85';
-    hint.style.fontSize = '13px';
-    hint.style.lineHeight = '1.25';
-
-    const ta = document.createElement('textarea');
-    ta.value = prettyJson;
-    ta.readOnly = true;
-    ta.style.width = '100%';
-    ta.style.height = '40vh';
-    ta.style.resize = 'none';
-    ta.style.borderRadius = '12px';
-    ta.style.border = '1px solid rgba(255,255,255,0.12)';
-    ta.style.background = '#0f151a';
-    ta.style.color = '#e8eef3';
-    ta.style.padding = '10px';
-    ta.style.fontSize = '12px';
-    ta.style.fontFamily = 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace';
-
-    const row = document.createElement('div');
-    row.style.display = 'flex';
-    row.style.gap = '10px';
-    row.style.justifyContent = 'flex-end';
-    row.style.flexWrap = 'wrap';
-
-    const btnCopy = document.createElement('button');
-    btnCopy.className = 'btn';
-    btnCopy.textContent = 'Скопировать';
-    btnCopy.onclick = async () => {
-        try {
-            if (navigator.clipboard?.writeText) {
-                await navigator.clipboard.writeText(ta.value);
-            } else {
-                ta.focus();
-                ta.select();
-                document.execCommand('copy');
-            }
-            notify('Скопировано ✅');
-        } catch (e) {
-            // На некоторых WebView clipboard запрещён — оставим выделение, чтобы можно было скопировать вручную
-            try {
-                ta.focus();
-                ta.select();
-            } catch (e2) {}
-            notify('Не удалось скопировать автоматически 😕');
-        }
-    };
-
-    const btnClose = document.createElement('button');
-    btnClose.className = 'btn btn-secondary';
-    btnClose.textContent = 'Закрыть';
-    btnClose.onclick = () => { wrap.style.display = 'none'; };
-
-    row.appendChild(btnClose);
-    row.appendChild(btnCopy);
-
-    box.appendChild(title);
-    box.appendChild(hint);
-    box.appendChild(ta);
-    box.appendChild(row);
-
-    wrap.appendChild(box);
-
-    // Закрытие по клику на затемнение
-    wrap.addEventListener('click', (e) => {
-        if (e.target === wrap) wrap.style.display = 'none';
-    });
-
-    document.body.appendChild(wrap);
 }
 
 // Подтверждение перед закрытием WebApp и переходом в Telegram к статистике.
@@ -1520,9 +1369,6 @@ function confirmSendStatsAndClose() {
         'После перехода веб‑приложение будет закрыто.';
 
     // Telegram WebApp: показываем системный popup с 2 кнопками.
-    // В некоторых не‑Telegram WebView (например, MAX/Yandex) может быть объект Telegram.WebApp
-    // или частичная реализация showPopup, которая всегда возвращает 'ok' или не возвращает id.
-    // Чтобы логика работала везде, трактуем любое подтверждение кроме явного cancel как «перейти».
     if (tg?.showPopup) {
         try {
             tg.showPopup(
@@ -1534,10 +1380,7 @@ function confirmSendStatsAndClose() {
                     ]
                 },
                 (btnId) => {
-                    // Telegram вернёт 'go'/'cancel'.
-                    // Не‑Telegram WebView может вернуть 'ok'/true/undefined.
-                    if (btnId === 'cancel') return;
-                    sendStatsAndClose();
+                    if (btnId === 'go') sendStatsAndClose();
                 }
             );
             return;
