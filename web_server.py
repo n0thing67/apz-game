@@ -22,8 +22,6 @@ from database.db import (
     get_all_users,
     get_user,
     get_user_profile,
-    update_score,
-    update_aptitude_top,
     delete_user,
     delete_all_users,
     reset_all_scores,
@@ -228,139 +226,6 @@ def _verify_telegram_webapp_init_data(init_data: str, bot_token: str) -> dict | 
         return None
 
     return params
-
-
-def _verify_max_webapp_init_data(init_data: str, bot_token: str) -> dict | None:
-    """Проверка initData из MAX mini‑app (HMAC SHA‑256).
-
-    Алгоритм описан в документации MAX (WebAppData + bot token).
-    Возвращает dict параметров initData при успехе, иначе None.
-    """
-    if not init_data or not bot_token:
-        return None
-
-    try:
-        params = dict(parse_qsl(init_data, strict_parsing=True))
-    except Exception:
-        return None
-
-    their_hash = params.pop("hash", None)
-    if not their_hash:
-        return None
-
-    data_check_string = "\n".join(f"{k}={params[k]}" for k in sorted(params.keys()))
-
-    try:
-        secret_key = hmac.new(b"WebAppData", bot_token.encode("utf-8"), hashlib.sha256).digest()
-        calc = hmac.new(secret_key, data_check_string.encode("utf-8"), hashlib.sha256).hexdigest()
-    except Exception:
-        return None
-
-    if not hmac.compare_digest(str(calc), str(their_hash)):
-        return None
-
-    return params
-
-
-async def handle_max_webapp_data(request: web.Request) -> web.Response:
-    """Приём результатов игры из MAX mini‑app.
-
-    Клиент присылает JSON payload и заголовок X-Max-InitData.
-    Мы валидируем initData, сохраняем результат в БД и отправляем пользователю
-    в MAX сообщение с кнопкой «📊 Статистика».
-    """
-
-    init_data = (request.headers.get("X-Max-InitData") or "").strip()
-    max_token = (request.app.get("max_token") or "").strip()
-    bot_token = (os.getenv("MAX_BOT_TOKEN") or "").strip()
-
-    if not init_data or not bot_token or not max_token:
-        # MAX не настроен или запрос не из mini‑app.
-        return web.json_response({"ok": False})
-
-    verified = _verify_max_webapp_init_data(init_data, bot_token)
-    if not verified:
-        return web.json_response({"ok": False}, status=401)
-
-    # user приходит строкой JSON
-    try:
-        user_raw = verified.get("user") or "{}"
-        user_obj = json.loads(user_raw) if isinstance(user_raw, str) else (user_raw or {})
-        max_user_id = int(user_obj.get("id"))
-    except Exception:
-        return web.json_response({"ok": False}, status=400)
-
-    try:
-        payload = await request.json()
-    except Exception:
-        return web.json_response({"ok": False}, status=400)
-
-    # MAX users in общей БД храним как отрицательные значения.
-    db_user_id = -int(max_user_id)
-
-    # Если пользователя удалили — не сохраняем, просим пройти регистрацию.
-    try:
-        user = await get_user(db_user_id)
-    except Exception:
-        user = None
-
-    from max_bot import send_message  # локальный импорт, чтобы избежать циклов
-
-    session: aiohttp.ClientSession = request.app["max_session"]
-
-    if not user:
-        await send_message(
-            session,
-            max_token,
-            user_id=int(max_user_id),
-            text=(
-                "⚠️ Ваш профиль не найден (возможно, он был удалён администратором).\n"
-                "Напишите /start, чтобы зарегистрироваться заново."
-            ),
-        )
-        return web.json_response({"ok": True})
-
-    # 1) Очки
-    score_raw = payload.get("score", None)
-    score = None
-    if score_raw is not None:
-        try:
-            score = int(score_raw or 0)
-        except Exception:
-            score = 0
-
-    # 2) Профориентация
-    aptitude_top = payload.get("aptitude_top") or payload.get("aptitudeTop") or None
-    if isinstance(aptitude_top, str):
-        aptitude_top = aptitude_top.strip() or None
-
-    try:
-        if aptitude_top is not None:
-            await update_aptitude_top(db_user_id, aptitude_top)
-        if score is not None:
-            await update_score(db_user_id, score)
-    except Exception:
-        # Не падаем — главное вернуть пользователя в чат.
-        pass
-
-    kb = [
-        {
-            "type": "inline_keyboard",
-            "payload": {
-                "buttons": [[{"type": "callback", "text": "📊 Статистика", "payload": "stats"}]]
-            },
-        }
-    ]
-
-    await send_message(
-        session,
-        max_token,
-        user_id=int(max_user_id),
-        text="✅ Результат получен. Нажми кнопку «📊 Статистика», чтобы посмотреть итоги.",
-        attachments=kb,
-    )
-
-    return web.json_response({"ok": True})
 
 
 def _extract_user_id(verified_params: dict) -> int | None:
@@ -863,9 +728,6 @@ def create_app() -> web.Application:
     app.router.add_post("/api/user/reset_my_scores", user_reset_my_scores)
     # Совместимость со старыми/неправильно собранными клиентами.
     app.router.add_post("/api/reset_my_scores", user_reset_my_scores)
-
-    # MAX mini‑app: приём результатов игры
-    app.router.add_post("/api/max/webapp_data", handle_max_webapp_data)
 
     app.router.add_get("/api/admin/stats", admin_get_stats)
     app.router.add_post("/api/admin/reset_scores", admin_reset_scores)
