@@ -452,39 +452,6 @@ async def _require_user(request: web.Request) -> int:
     return int(user_id)
 
 
-async def user_reset_my_scores(request: web.Request) -> web.Response:
-    """Сброс статистики самим пользователем (очки + профтест) на сервере.
-
-    Это должно работать так же, как сброс статистики админом у конкретного пользователя,
-    чтобы /stats и админ-панель показывали актуальные данные, а не старый localStorage.
-    """
-    tg_id = await _require_user(request)
-    # Если пользователя нет в БД — сбрасывать нечего, но ответим ок.
-    try:
-        await reset_user_scores(int(tg_id))
-    except Exception:
-        # reset_user_scores внутри уже безопасно, но на всякий случай не валим WebApp.
-        pass
-
-    # Возвращаем токены синхронизации (как /api/levels), чтобы WebApp корректно
-    # сбрасывал localStorage и не «оживлял» старые данные.
-    try:
-        reset_token = await get_stats_reset_token()
-    except Exception:
-        reset_token = "0"
-    try:
-        user_reset_token = await get_user_reset_token(int(tg_id))
-    except Exception:
-        user_reset_token = "0"
-
-    return web.json_response(
-        {
-            "ok": True,
-            "telegram_id": int(tg_id),
-            "reset_token": str(reset_token or "0"),
-            "user_reset_token": str(user_reset_token or "0"),
-        }
-    )
 
 async def admin_get_stats(request: web.Request) -> web.Response:
     await _require_admin(request)
@@ -725,9 +692,6 @@ def create_app() -> web.Application:
     # API
     app.router.add_get("/api/levels", handle_levels)
     app.router.add_get("/api/me", handle_me)
-    app.router.add_post("/api/user/reset_my_scores", user_reset_my_scores)
-    # Совместимость со старыми/неправильно собранными клиентами.
-    app.router.add_post("/api/reset_my_scores", user_reset_my_scores)
 
     app.router.add_get("/api/admin/stats", admin_get_stats)
     app.router.add_post("/api/admin/reset_scores", admin_reset_scores)
