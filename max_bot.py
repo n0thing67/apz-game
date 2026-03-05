@@ -12,6 +12,7 @@ from database.db import (
     get_user_profile,
 )
 
+
 MAX_API_BASE = os.getenv("MAX_API_BASE", "https://platform-api.max.ru").rstrip("/")
 
 
@@ -39,6 +40,22 @@ def _game_url() -> str:
     api_part = f"?api={quote(admin_url, safe='')}" if admin_url else ""
     return f"{game_url}/" + api_part
 
+
+
+def _factory_entry_url() -> str:
+    """URL для кнопки «Зайти на завод» в MAX.
+
+    Если настроено мини‑приложение в MAX, правильнее открывать его через диплинк
+    https://max.ru/<botName>?startapp=<param> — тогда страница откроется внутри MAX,
+    и будет доступен window.WebApp.close().
+
+    Если botName не задан (MAX_BOT_NAME), оставляем старое поведение: обычная ссылка на сайт
+    (откроется во внешнем браузере).
+    """
+    bot_name = (os.getenv("MAX_BOT_NAME", "") or "").strip().lstrip("@")
+    if bot_name:
+        return f"https://max.ru/{bot_name}?startapp=game"
+    return _game_url()
 
 def _admin_url() -> str:
     return (os.getenv("ADMIN_URL", os.getenv("WEBAPP_URL", "")) or "").rstrip("/")
@@ -169,7 +186,7 @@ async def handle_update(app, update: dict) -> None:
         if existing:
             fname = existing[1]
             kb = _inline_keyboard([
-                [{"type": "link", "text": "🏭 Зайти на завод (Играть)", "url": _game_url()}]
+                [{"type": "link", "text": "🏭 Зайти на завод (Играть)", "url": _factory_entry_url()}]
             ])
             await send_message(session, token, user_id=int(max_user_id), text=f"С возвращением, {fname}! Нажми кнопку ниже, чтобы начать испытание.", attachments=kb)
             return
@@ -279,7 +296,7 @@ async def handle_update(app, update: dict) -> None:
             state.pop(str(max_user_id), None)
 
             kb = _inline_keyboard([
-                [{"type": "link", "text": "🏭 Зайти на завод (Играть)", "url": _game_url()}]
+                [{"type": "link", "text": "🏭 Зайти на завод (Играть)", "url": _factory_entry_url()}]
             ])
             await send_message(session, token, user_id=int(max_user_id), text=f"Регистрация пройдена, {st.get('first_name')}! Нажми кнопку ниже, чтобы начать испытание.", attachments=kb)
             return
@@ -293,7 +310,7 @@ async def handle_update(app, update: dict) -> None:
             return
 
         kb = _inline_keyboard([
-            [{"type": "link", "text": "🏭 Зайти на завод (Играть)", "url": _game_url()}],
+            [{"type": "link", "text": "🏭 Зайти на завод (Играть)", "url": _factory_entry_url()}],
             [{"type": "callback", "text": "📊 Статистика", "payload": "stats"}],
         ])
         await send_message(session, token, user_id=int(max_user_id), text="Выбери действие:", attachments=kb)
