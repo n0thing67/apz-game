@@ -1,12 +1,7 @@
 const tg = window.Telegram?.WebApp;
 if (tg?.expand) tg.expand();
-
-// MAX Mini Apps Bridge (window.WebApp). В Telegram это поле отсутствует и не мешает.
 const mx = window.WebApp;
-try {
-    // Сообщаем MAX, что приложение готово (если запущено внутри MAX).
-    if (mx?.ready) mx.ready();
-} catch (e) {}
+if (mx?.ready) mx.ready();
 // ===== ASSETS: ускоряем загрузку через WebP (с fallback) =====
 function supportsWebP() {
     try {
@@ -1244,14 +1239,25 @@ function sendStatsAndClose() {
         } catch (e) {}
     }
 
-    // В MAX Mini App: закрываем мини‑приложение, чтобы вернуться в MAX.
-    // (Передачу данных в бота MAX тут не делаем — текущая механика проекта её не использует.)
+    // В MAX Mini App (MAX Bridge): просто закрываем мини‑приложение.
+    // ВАЖНО: close() работает только внутри MAX. Если страница открыта во внешнем браузере — этого метода нет.
     if (mx?.close) {
         try {
             mx.close();
             return;
         } catch (e) {}
     }
+
+    // Если мы оказались во внешнем браузере (часто так бывает в MAX, когда бот отправляет обычную ссылку),
+    // то "закрыть" и вернуться в MAX программно нельзя. Единственный рабочий путь — открыть диплинк MAX.
+    // Ссылка https://max.ru обычно подхватывается приложением MAX (если установлено).
+    try {
+        const returnUrl = (new URL(window.location.href)).searchParams.get('return') || '';
+        const target = returnUrl && /^https:\/\/max\.ru\//.test(returnUrl) ? returnUrl : 'https://max.ru';
+        window.location.href = target;
+        return;
+    } catch (e) {}
+
 
     // В обычном браузере: скачиваем JSON
     try {
@@ -2926,9 +2932,6 @@ function closeApp() {
     let totalScore = levelScores[1] + levelScores[2] + levelScores[3] + levelScores[4];
     if (tg?.sendData) tg.sendData(JSON.stringify({score: totalScore}));
     if (tg?.close) tg.close();
-    if (mx?.close) {
-        try { mx.close(); } catch (e) {}
-    }
 }
 
 // Инициализация меню уровней
@@ -3182,4 +3185,3 @@ else if (action === 'save-stats') {
     // click + pointerup для надёжности
     document.addEventListener('click', handleAction, true);
 });
-
