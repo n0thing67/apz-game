@@ -828,7 +828,6 @@ function apiUrl(path) {
 }
 
 
-
 // Синхронизация профтеста ("Что тебе больше подходит") с сервером.
 // Если админ удалил пользователя/сбросил статистику, локальный localStorage может
 // «сохранить» старый результат и показывать его после повторной регистрации.
@@ -1047,11 +1046,11 @@ const USER_DELETED_TOKEN_KEY = 'apzUserDeletedTokenV1';
 const USER_RESET_TOKEN_KEY = 'apzUserResetTokenV1';
 
 // Локальная статистика хранится в localStorage и должна сохраняться между запусками WebApp.
-// Сброс выполняется только по явному действию пользователя (кнопка "Сбросить статистику").
+// Локальная статистика хранится в localStorage и должна сохраняться между запусками WebApp.
 
 // Результаты профтеста "что тебе подходит?" и рекомендации (⭐)
 // должны сохраняться между запусками WebApp.
-// Сброс выполняется только по явному действию пользователя (кнопка "Сбросить статистику" или "Пройти ещё раз" в тесте).
+// Сброс результата теста выполняется при перепрохождении (кнопка «Пройти ещё раз» в тесте) или при админском сбросе/удалении пользователя.
 
 function loadStats() {
     try {
@@ -1090,110 +1089,6 @@ function renderLevelMenuStats() {
     if (j) j.textContent = (stats['jumper']?.bestScore ?? '—');
     if (g) g.textContent = (stats['factory-2048']?.bestScore ?? '—');
     if (q) q.textContent = (stats['quiz']?.bestScore ?? '—');
-}
-
-function resetAllStatsLocal() {
-    // Локальная очистка (localStorage).
-    // ВАЖНО: реальный сброс в БД делается через /api/reset_my_scores.
-    stats = {};
-    try { localStorage.removeItem(STATS_KEY); } catch (e) {}
-    // Сброс статистики профтеста "что тебе подходит?" + рекомендаций
-    try { localStorage.removeItem(APTITUDE_STORAGE_KEY); } catch (e) {}
-    try { clearAptitudeMenuRecommendations(); } catch (e) {}
-
-    // Сбросим совместимую со старым финалом статистику (очки по уровням)
-    levelScores = { 1: 0, 2: 0, 3: 0, 4: 0 };
-
-    saveStats(stats);
-    renderLevelMenuStats();
-}
-
-async function resetAllStatsForUser() {
-    // ДЕЛАЕМ ТАК ЖЕ, КАК В АДМИНКЕ:
-    // сначала сбрасываем статистику пользователя в БД через reset_user_scores(tg_id),
-    // затем чистим localStorage, чтобы UI сразу показал 0.
-    const initData = tg?.initData || '';
-    if (!initData) {
-        // Если запуск не из Telegram WebApp — чистим только локально.
-        resetAllStatsLocal();
-        return;
-    }
-
-    try {
-        // ВАЖНО (почему раньше «не работало»):
-        // Если WebApp открыт с ?api= (т.е. API на другом домене), то запрос с JSON + кастомным заголовком
-        // (X-Telegram-InitData) почти всегда вызывает CORS-preflight (OPTIONS). В некоторых Telegram WebView
-        // он может отрабатываться нестабильно/блокироваться, из‑за чего реальный POST до сервера не доходит.
-        //
-        // Поэтому делаем надёжнее: передаём initData через query-параметр,
-        // а Content-Type ставим "text/plain" (simple request без preflight).
-        // Сервер уже умеет читать initData из query (см. _require_user).
-        const url = apiUrl('/api/user/reset_my_scores?initData=' + encodeURIComponent(initData));
-        const resp = await fetch(url, {
-            method: 'POST',
-            cache: 'no-store',
-            headers: {
-                'Content-Type': 'text/plain;charset=UTF-8'
-            },
-            body: '',
-        });
-
-        let data = null;
-        try { data = await resp.json(); } catch (e) {}
-
-        if (!resp.ok || !data || data.ok !== true) {
-            throw new Error(data?.error || `http_${resp.status}`);
-        }
-
-        // Сохраняем токены, чтобы синхронизация с сервером была стабильной.
-        try { localStorage.setItem(RESET_TOKEN_KEY, String(data.reset_token ?? '0')); } catch (e) {}
-        try { localStorage.setItem(USER_RESET_TOKEN_KEY, String(data.user_reset_token ?? '0')); } catch (e) {}
-
-        resetAllStatsLocal();
-        notify('Статистика очищена.');
-    } catch (e) {
-        // Не чистим локально, если серверный сброс не прошёл — иначе будет рассинхрон.
-        notify('Не удалось очистить статистику. Проверь интернет и попробуй ещё раз.');
-    }
-}
-
-// Подтверждение очистки статистики из меню уровней.
-// Требование: перед сбросом показываем окно подтверждения.
-function confirmResetStats() {
-    const msg =
-        'Очистить статистику?\n\n' +
-        'Будут удалены результаты игр и данные теста «Что тебе подходит?» у твоего профиля.';
-
-    // Telegram WebApp: показываем системный popup с подтверждением.
-    if (tg?.showPopup) {
-        try {
-            tg.showPopup(
-                {
-                    message: msg,
-                    buttons: [
-                        { id: 'reset', type: 'default', text: 'Очистить' },
-                        { id: 'cancel', type: 'cancel', text: 'Отмена' }
-                    ]
-                },
-                (btnId) => {
-                    if (btnId === 'reset') resetAllStatsForUser();
-                }
-            );
-            return;
-        } catch (e) {}
-    }
-
-    // Фолбэк (браузер/не Telegram): стандартный confirm.
-    try {
-        if (typeof confirm === 'function') {
-            const ok = confirm('Очистить статистику?\n\nЭто действие удалит результаты игр и теста на этом устройстве.');
-            if (ok) resetAllStatsForUser();
-            return;
-        }
-    } catch (e) {}
-
-    // Если ни confirm ни popup недоступны — просто выполняем действие.
-    resetAllStatsForUser();
 }
 
 function notify(msg) {
@@ -1440,7 +1335,6 @@ function showScreen(screenId) {
         soundBtn.classList.toggle('hidden', !showSound);
     }
 }
-
 
 
 function showLevels() {
@@ -1764,7 +1658,6 @@ function finishLevel({ score = null, timeMs = null } = {}) {
     const active = document.querySelector('.screen.active');
     if (active && active.id) showScreen(active.id);
 }
-
 
 
 // Совместимость со старым финальным экраном
@@ -2901,8 +2794,6 @@ function prepareQuizQuestions(sourceQuestions) {
 }
 
 
-
-
 let currentQuestionIndex = 0;
 let questionStartTime = 0;
 
@@ -3252,9 +3143,8 @@ window.addEventListener('DOMContentLoaded', () => {
             exitToLevels();
         } else if (action === 'show-levels') {
             exitToLevels();
-        } else if (action === 'reset-stats') {
-            confirmResetStats();
-        } else if (action === 'save-stats') {
+        }
+else if (action === 'save-stats') {
             exportStats();
         } else if (action === 'final-send-stats') {
             confirmSendStatsAndClose();
