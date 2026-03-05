@@ -1,5 +1,12 @@
 const tg = window.Telegram?.WebApp;
 if (tg?.expand) tg.expand();
+
+// MAX Mini Apps Bridge (window.WebApp). В Telegram это поле отсутствует и не мешает.
+const mx = window.WebApp;
+try {
+    // Сообщаем MAX, что приложение готово (если запущено внутри MAX).
+    if (mx?.ready) mx.ready();
+} catch (e) {}
 // ===== ASSETS: ускоряем загрузку через WebP (с fallback) =====
 function supportsWebP() {
     try {
@@ -1233,6 +1240,15 @@ function sendStatsAndClose() {
             tg.sendData(JSON.stringify(payload));
             // Закрываем, чтобы пользователь вернулся в Telegram и увидел сообщение бота
             tg.close();
+            return;
+        } catch (e) {}
+    }
+
+    // В MAX Mini App: закрываем мини‑приложение, чтобы вернуться в MAX.
+    // (Передачу данных в бота MAX тут не делаем — текущая механика проекта её не использует.)
+    if (mx?.close) {
+        try {
+            mx.close();
             return;
         } catch (e) {}
     }
@@ -2910,6 +2926,9 @@ function closeApp() {
     let totalScore = levelScores[1] + levelScores[2] + levelScores[3] + levelScores[4];
     if (tg?.sendData) tg.sendData(JSON.stringify({score: totalScore}));
     if (tg?.close) tg.close();
+    if (mx?.close) {
+        try { mx.close(); } catch (e) {}
+    }
 }
 
 // Инициализация меню уровней
