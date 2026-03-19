@@ -33,12 +33,14 @@
             <div class="preload-bar-wrap" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
                 <div id="preload-bar" class="preload-bar" style="width: 0%"></div>
             </div>
+
             <div class="preload-meta">
                 <div id="preload-percent" class="preload-percent">0%</div>
                 <div id="preload-current" class="preload-current">Сейчас загружается: —</div>
             </div>
         </div>
     </div>
+
     <!-- Всплывающая подсказка для шкал теста (появляется по тапу) -->
     <div id="aptitude-tooltip" class="apt-tooltip hidden" role="status" aria-live="polite"></div>
 
@@ -58,22 +60,22 @@
 
     <!-- Экран 1: Приветствие -->
     <div id="screen-welcome" class="screen active">
-        <h1>🏭 АПЗ КВЕСТ</h1>
-        <p>Пройди испытания и собери призы!</p>
+        <h1>🏭 Создаем будущее вместе с АО "АПЗ"</h1>
+        <p>Начнем путь вместе!</p>
         <!-- В Telegram WebView inline onclick может блокироваться CSP, поэтому обработчик клика вешаем в script.js -->
-        <button id="btn-choose-level" class="btn">Выбрать уровень</button>
+        <button id="btn-choose-level" class="btn">Начать смену</button>
         <!-- Персонажи (Макс и Ася) -->
         <div class="welcome-characters" aria-label="Персонажи приветствия">
             <div class="welcome-character">
                 <div class="speech speech-left">
-                    <div class="speech-text"><strong>Макс:</strong> «Стань<br>лучше вместе с АПЗ.»</div>
+                    <div class="speech-text"><strong>Макс:</strong> «Привет! Давайте знакомиться, я Макс»</div>
                 </div>
                 <img class="character-img" src="assets/max.webp" alt="Макс">
             </div>
 
             <div class="welcome-character">
                 <div class="speech speech-right">
-                    <div class="speech-text"><strong>Ася:</strong><br>«Рост начинается с<br>первого шага.»</div>
+                    <div class="speech-text"><strong>Ася:</strong><br>«А я Ася, мы<br> сотрудники завода»</div>
                 </div>
                 <img class="character-img" src="assets/asya.webp" alt="Ася">
             </div>
@@ -82,8 +84,8 @@
     </div>
     <!-- Экран: Выбор уровня -->
     <div id="screen-levels" class="screen">
-        <h2>🎛️ Выбор уровня</h2>
-        <p class="muted">Выбирай любой уровень — статистика хранится отдельно.</p>
+        <h2>🎛️ Смена на АПЗ началась</h2>
+        <p class="muted">Пройди испытания и собери призы!</p>
 
         <div class="levels-aptitude-wrap">
             <button id="btn-aptitude-test" class="btn btn-secondary" type="button" data-level="aptitude">🧠 Узнать, что мне подходит</button>
@@ -298,7 +300,7 @@
 <!-- Экран 5: Финал (Общий итог) -->
     <div id="screen-final" class="screen">
         <h1>🎉 ФИНИШ!</h1>
-        <p>Твоя смена на заводе окончена.</p>
+        <p>Твоя смена на заводе окончена</p>
         <p class="muted" id="aptitude-stat-line" style="margin-top:6px; display:none;">🧠 Твой профиль: <span id="stat-aptitude-main">—</span></p>
 
         <!-- Динамический список: показываем только сыгранные уровни -->
