@@ -148,12 +148,13 @@ async def _send_stats_max(app, *, max_user_id: int):
     except Exception:
         profile = None
 
-    _tid, fname, lname, _age, score = user
-    aptitude_top = profile[5] if profile and len(profile) >= 6 else None
+    _tid, fname, lname, _age, city, score = user
+    aptitude_top = profile[6] if profile and len(profile) >= 7 else None
 
     lines = [
         "📊 Твоя статистика:",
         f"👤 {fname} {lname}",
+        f"🏙 Город: {city or '—'}",
         f"⭐️ Лучший счёт: {score}",
     ]
     a = _apt_label(aptitude_top)
@@ -291,8 +292,19 @@ async def handle_update(app, update: dict) -> None:
                 await send_message(session, token, user_id=int(max_user_id), text="Возраст должен быть от 3 до 100. Попробуйте ещё раз.")
                 return
 
+            st["age"] = age
+            st["step"] = "waiting_for_city"
+            await send_message(session, token, user_id=int(max_user_id), text="Укажите ваш город проживания.")
+            return
+
+        if st and st.get("step") == "waiting_for_city":
+            city = text.strip()
+            if len(city) < 2 or len(city) > 100 or not re.fullmatch(r"[А-ЯЁа-яёA-Za-z0-9 .,-]+", city):
+                await send_message(session, token, user_id=int(max_user_id), text="Укажите корректный город проживания. Например: Арзамас")
+                return
+
             db_id = _max_to_db_id(int(max_user_id))
-            await register_user(db_id, st.get("first_name"), st.get("last_name"), age)
+            await register_user(db_id, st.get("first_name"), st.get("last_name"), st.get("age"), city)
             state.pop(str(max_user_id), None)
 
             kb = _inline_keyboard([
