@@ -27,6 +27,14 @@ def _format_person_name(value: str | None) -> str | None:
 
     return " ".join(_cap_token(p) for p in parts)
 
+
+def _format_city_name(value: str | None) -> str | None:
+    """Нормализует название города.
+
+    Примеры: "арзамас" -> "Арзамас", "санкт-петербург" -> "Санкт-Петербург".
+    """
+    return _format_person_name(value)
+
 # Поддерживаем ДВА режима:
 # 1) PostgreSQL (рекомендуется) — если задана переменная окружения DATABASE_URL.
 #    Это даёт сохранность данных между полными перезапусками (в т.ч. на хостинге с эфемерной FS).
@@ -175,6 +183,7 @@ if not _using_postgres:
     async def register_user(tg_id, f_name, l_name, age, city=None):
         f_name = _format_person_name(f_name)
         l_name = _format_person_name(l_name)
+        city = _format_city_name(city)
         db = await get_db()
         await db.execute(
             '''
@@ -602,6 +611,7 @@ else:
     async def register_user(tg_id, f_name, l_name, age, city=None):
         f_name = _format_person_name(f_name)
         l_name = _format_person_name(l_name)
+        city = _format_city_name(city)
         pool = await get_db()
         async with pool.acquire() as conn:
             await conn.execute(
