@@ -1328,6 +1328,7 @@ function showScreen(screenId) {
     const isLevelScreen = (screenId === 'screen-level1' || screenId === 'screen-level2' || screenId === 'screen-level3' || screenId === 'screen-level4');
     const isAptitudeTest = (screenId === 'screen-aptitude');
     const isAptitudeResult = (screenId === 'screen-aptitude-result');
+    const isProfessionsScreen = (screenId === 'screen-professions');
 
     // Верхняя кнопка "К уровням":
     // - во время прохождения уровня: видна сверху
@@ -1336,7 +1337,7 @@ function showScreen(screenId) {
     // - на приветствии и в меню уровней: скрыта
     const topbar = document.getElementById('global-topbar');
     if (topbar) {
-        const showTop = ((isLevelScreen && !levelCompleted) || isAptitudeTest);
+        const showTop = ((isLevelScreen && !levelCompleted) || isAptitudeTest || isProfessionsScreen);
         topbar.classList.toggle('hidden', !showTop);
     }
 
@@ -1353,7 +1354,7 @@ function showScreen(screenId) {
     const soundBtn = document.getElementById('btn-sound-toggle');
     if (soundBtn) {
         const isLevelScreen = /^screen-level[1-4]$/.test(screenId);
-        const showSound = (screenId === 'screen-welcome' || screenId === 'screen-levels' || isAptitudeTest || isAptitudeResult || isLevelScreen);
+        const showSound = (screenId === 'screen-welcome' || screenId === 'screen-levels' || isAptitudeTest || isAptitudeResult || isProfessionsScreen || isLevelScreen);
         soundBtn.classList.toggle('hidden', !showSound);
     }
 }
@@ -3143,6 +3144,8 @@ window.addEventListener('DOMContentLoaded', () => {
 
         if (action === 'show-aptitude-test') {
             openAptitudeMode();
+        } else if (action === 'show-professions') {
+            showScreen('screen-professions');
         } else if (action === 'aptitude-hint') {
             // подсказка по шкале (по тапу)
             showAptitudeTooltip(el.dataset.hint || '', el);
