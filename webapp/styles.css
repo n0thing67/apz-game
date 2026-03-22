@@ -1315,12 +1315,24 @@ hr {
 
 /* Кнопка теста на экране выбора уровней */
 .levels-aptitude-wrap{
-    display:flex;
-    justify-content:center;
-    margin: 10px 0 14px;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    width: 100%;
+    max-width: 420px;
+    margin: 10px auto 14px;
 }
 .levels-aptitude-wrap .btn{
-    width: min(520px, 92vw);
+    width: 100%;
+    margin-top: 0;
+    padding: 12px 10px;
+    font-size: 16px;
+    line-height: 1.2;
+    min-height: 74px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
 }
 
 #screen-professions{
@@ -1329,8 +1341,12 @@ hr {
     box-sizing: border-box;
     margin-left: auto;
     margin-right: auto;
-    padding-top: calc(env(safe-area-inset-top, 0px) + 84px);
+    padding-top: calc(env(safe-area-inset-top, 0px) + 26px);
     padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 24px);
+}
+
+#screen-professions h2{
+    margin-top: 0;
 }
 
 .profession-list{
