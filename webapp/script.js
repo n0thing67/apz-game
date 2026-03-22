@@ -1357,7 +1357,7 @@ function confirmSendStatsAndClose() {
         if (typeof confirm === 'function') {
             const ok = confirm(
                 'Сейчас будет переход к статистике.\n\n' +
-                'Нажмите OK, чтобы продолжить, или Cancel, чтобы вернуться в игру.'
+                'Нажмите OK, чтобы продолжить, или Отмена, чтобы вернуться в игру.'
             );
             if (ok) sendStatsAndClose();
             return;
