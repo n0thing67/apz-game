@@ -16,6 +16,7 @@ const USE_WEBP = supportsWebP();
 function assetPath(name, fallbackExt) {
     return `assets/${name}.${USE_WEBP ? 'webp' : fallbackExt}`;
 }
+
 // ==========================================
 // PRELOADER: при входе загружаем ТОЛЬКО изображения (assets/*)
 // Требование: показать прогресс (ползунок + %)...
@@ -269,6 +270,42 @@ const LEVEL_DEFS = {
 // ==========================================
 // APTITUDE_TEST (профориентационный тест)
 // ==========================================
+
+function scorePuzzleByTime(size, timeMs) {
+    const sec = Math.max(1, Math.ceil((Number(timeMs) || 0) / 1000));
+    if (size === 2) {
+        if (sec <= 1) return 5;
+        if (sec === 2) return 4;
+        if (sec === 3) return 3;
+        if (sec === 4) return 2;
+        return 1;
+    }
+    if (size === 3) {
+        if (sec <= 5) return 5;
+        if (sec <= 8) return 4;
+        if (sec <= 12) return 3;
+        if (sec <= 16) return 2;
+        return 1;
+    }
+    if (size === 4) {
+        if (sec <= 12) return 5;
+        if (sec <= 18) return 4;
+        if (sec <= 25) return 3;
+        if (sec <= 35) return 2;
+        return 1;
+    }
+    return 0;
+}
+
+function scoreJumperByTime(timeMs) {
+    const sec = Math.max(1, Math.ceil((Number(timeMs) || 0) / 1000));
+    if (sec <= 25) return 5;
+    if (sec <= 30) return 4;
+    if (sec <= 36) return 3;
+    if (sec <= 45) return 2;
+    return 1;
+}
+
 const APTITUDE_STORAGE_KEY = 'apzAptitudeResultV2';
 
 const APTITUDE_AXES = {
@@ -1074,50 +1111,6 @@ function formatTime(ms) {
     return m > 0 ? `${m}м ${s}с` : `${s}с`;
 }
 
-
-function scorePuzzleByTime(size, timeMs) {
-    const sec = Math.max(1, Math.round((timeMs || 0) / 1000));
-
-    if (size === 2) {
-        if (sec <= 1) return 5;
-        if (sec === 2) return 4;
-        if (sec === 3) return 3;
-        if (sec === 4) return 2;
-        return 1;
-    }
-
-    if (size === 3) {
-        if (sec <= 5) return 5;
-        if (sec <= 8) return 4;
-        if (sec <= 12) return 3;
-        if (sec <= 16) return 2;
-        return 1;
-    }
-
-    if (size === 4) {
-        if (sec <= 12) return 5;
-        if (sec <= 18) return 4;
-        if (sec <= 25) return 3;
-        if (sec <= 35) return 2;
-        return 1;
-    }
-
-    return 0;
-}
-
-function scoreJumperByTime(timeMs) {
-    const sec = Math.max(1, Math.round((timeMs || 0) / 1000));
-    if (sec <= 25) return 5;
-    if (sec <= 30) return 4;
-    if (sec <= 36) return 3;
-    if (sec <= 45) return 2;
-    return 1;
-}
-
-function score2048Victory() {
-    return 5;
-}
-
 function renderLevelMenuStats() {
     // Пазлы (время)
     const p22 = document.getElementById('stat-puzzle-2x2');
@@ -1156,7 +1149,7 @@ function exportStats() {
 // Это значение отправляем боту в поле `score`, чтобы команда /stats показывала корректные данные.
 function computeTotalScore() {
     try {
-        const order = ['puzzle-2x2', 'puzzle-3x3', 'puzzle-4x4', 'jumper', 'factory-2048', 'quiz'];
+        const order = ['puzzle-2x2', 'puzzle-3x3', 'puzzle-4x4', 'jumper', 'factory-2048'];
         let total = 0;
         for (const id of order) {
             const s = stats?.[id];
@@ -1196,7 +1189,7 @@ function showFinalScreenFromStats() {
     const playedIds = Object.keys(LEVEL_DEFS).filter(id => (stats[id]?.plays || 0) > 0);
 
     // Удобный порядок показа
-    const order = ['puzzle-2x2', 'puzzle-3x3', 'puzzle-4x4', 'jumper', 'factory-2048', 'quiz'];
+    const order = ['puzzle-2x2', 'puzzle-3x3', 'puzzle-4x4', 'jumper', 'factory-2048'];
     const ids = order.filter(id => playedIds.includes(id));
 
     if (ids.length === 0 && list) {
@@ -1888,7 +1881,6 @@ function checkPuzzleWin() {
 
     const timeMs = Date.now() - levelStartTime;
 
-    // Баллы пазла: новая шкала 1–5 в зависимости от времени прохождения.
     const score = scorePuzzleByTime(puzzleSize, timeMs);
 
     // Сохраняем статистику именно этого варианта пазла
@@ -2482,7 +2474,6 @@ function showVictoryLevel2() {
 
     const timeMs = Date.now() - levelStartTime;
 
-    // Баллы Jumper: новая шкала 1–5 в зависимости от времени прохождения.
     const score = scoreJumperByTime(timeMs);
     levelScores[2] = score;
     finishLevel({ score, timeMs });
@@ -2758,8 +2749,7 @@ function showVictory2048() {
 
     const timeMs = Date.now() - levelStartTime;
 
-    // За полное прохождение 2048 всегда даём 5 баллов.
-    const score = score2048Victory();
+    const score = 5;
     levelScores[3] = score;
     finishLevel({ score, timeMs });
 
