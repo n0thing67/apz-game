@@ -370,7 +370,7 @@ async def handle_web_app_data(message: types.Message):
     }
     if score_raw is not None or aptitude_top is not None:
         await message.answer(
-            "🚀 Результат получен!"
+            "🚀 Результат получен!\n"
             "Нажми кнопку «Статистика», чтобы посмотреть результаты.",
             reply_markup=stats_inline_keyboard(),
         )
