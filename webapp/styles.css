@@ -1462,7 +1462,11 @@ hr {
 
 /* На экране результата не нужна большая "пустая шапка" */
 #screen-aptitude-result{
-    padding-top: calc(env(safe-area-inset-top, 0px) + 24px);
+    padding-top: calc(env(safe-area-inset-top, 0px) + 6px);
+}
+
+#screen-aptitude-result > h2{
+    margin-top: 0;
 }
 
 
