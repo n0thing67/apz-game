@@ -368,27 +368,11 @@ async def handle_web_app_data(message: types.Message):
         "EXTREME": "🧗 Экстремальные виды деятельности",
         "PLAN_ECON": "📊 Планово‑экономические виды деятельности",
     }
-
-    if score_raw is not None and aptitude_top is not None:
+    if score_raw is not None or aptitude_top is not None:
         await message.answer(
-            f"🚀 Результат получен! Твой счёт: {score}⭐️.\n"
-            f"🧠 Профиль сохранён: {APT_LABEL.get(aptitude_top, aptitude_top)}.\n"
-            f"Нажми кнопку «Статистика», чтобы посмотреть результаты."
-            ,
-            reply_markup=stats_inline_keyboard(),
-        )
-    elif score_raw is not None:
-        await message.answer(
-            f"🚀 Результат получен! Твой счёт: {score}⭐️.\n"
-            f"Нажми кнопку «Статистика», чтобы посмотреть результаты."
-            ,
-            reply_markup=stats_inline_keyboard(),
-        )
-    elif aptitude_top is not None:
-        await message.answer(
-            f"🧠 Результат теста сохранён: {APT_LABEL.get(aptitude_top, aptitude_top)}.\n"
-            f"Нажми кнопку «Статистика», чтобы посмотреть результаты."
-            ,
+            "🚀 Результат получен!
+"
+            "Нажми кнопку «Статистика», чтобы посмотреть результаты.",
             reply_markup=stats_inline_keyboard(),
         )
     else:
@@ -480,10 +464,13 @@ async def cb_stats(callback: types.CallbackQuery):
     # Статистика открывается по инлайн-кнопке.
     await callback.answer()
 
-    # Убираем кнопку с исходного сообщения (чтобы не появлялись «лишние» кнопки после нажатия)
+    # После нажатия убираем исходное сообщение целиком и отдельным сообщением показываем статистику.
     if callback.message:
         try:
-            await callback.message.edit_reply_markup(reply_markup=None)
+            await callback.message.delete()
         except Exception:
-            pass
+            try:
+                await callback.message.edit_reply_markup(reply_markup=None)
+            except Exception:
+                pass
         await _send_stats(callback.message, callback.from_user.id)
