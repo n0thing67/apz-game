@@ -258,11 +258,11 @@ initSfxPool();
 // УРОВНИ + СТАТИСТИКА (по каждому уровню отдельно)
 // ==========================================
 const LEVEL_DEFS = {
-    'puzzle-2x2': { title: 'Логотип 2×2', type: 'puzzle', puzzleSize: 2, stat: 'time' },
-    'puzzle-3x3': { title: 'Логотип 3×3', type: 'puzzle', puzzleSize: 3, stat: 'time' },
-    'puzzle-4x4': { title: 'Логотип 4×4', type: 'puzzle', puzzleSize: 4, stat: 'time' },
+    'puzzle-2x2': { title: 'Цех сборки логотипа (2×2)', type: 'puzzle', puzzleSize: 2, stat: 'time' },
+    'puzzle-3x3': { title: 'Цех сборки логотипа (3×3)', type: 'puzzle', puzzleSize: 3, stat: 'time' },
+    'puzzle-4x4': { title: 'Цех сборки логотипа (4×4)', type: 'puzzle', puzzleSize: 4, stat: 'time' },
     'jumper':      { title: 'Цех проверки ловкости', type: 'jumper', stat: 'score' },
-    'factory-2048':{ title: 'Сборочный цех', type: '2048',   stat: 'score' },
+    'factory-2048':{ title: 'Цех сборки деталей', type: '2048',   stat: 'score' },
     'quiz':        { title: 'Квиз',          type: 'quiz',   stat: 'score' }
 };
 
