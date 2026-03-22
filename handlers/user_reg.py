@@ -90,9 +90,11 @@ async def _notify_admins_about_technical(message: types.Message, user_id: int) -
         user = None
 
     reg_name = ""
+    city_name = ""
     if user:
         _tid, fname, lname, _age, _city, _score = user
         reg_name = f"{fname} {lname}".strip()
+        city_name = (_city or "").strip()
 
     tg_username = getattr(message.from_user, "username", None)
     if tg_username:
@@ -103,9 +105,12 @@ async def _notify_admins_about_technical(message: types.Message, user_id: int) -
 
     name_part = reg_name or (getattr(message.from_user, "full_name", "") or "").strip() or "(имя не указано)"
 
+    city_part = f"🏙️ <b>{html.escape(city_name)}</b>" if city_name else ""
+
     text = (
         "🧠 Профориентация: <b>техническое направление</b>"
         f"👤 <b>{html.escape(name_part)}</b>"
+        f"{city_part}"
         f"🔗 <b>{html.escape(tg_part)}</b>"
         f"🆔 <code>{user_id}</code>"
     )
