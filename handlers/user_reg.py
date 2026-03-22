@@ -78,7 +78,7 @@ async def _notify_admins_about_technical(message: types.Message, user_id: int) -
 
     reg_name = ""
     if user:
-        _tid, fname, lname, _age, _score = user
+        _tid, fname, lname, _age, _city, _score = user
         reg_name = f"{fname} {lname}".strip()
 
     tg_username = getattr(message.from_user, "username", None)
@@ -120,6 +120,7 @@ async def _notify_admins_about_technical(message: types.Message, user_id: int) -
 class RegState(StatesGroup):
     waiting_for_fullname = State()
     waiting_for_age = State()
+    waiting_for_city = State()
 
 
 # --- URL'ы ---
@@ -185,7 +186,7 @@ async def cmd_start(message: types.Message, state: FSMContext):
 
     user = await get_user(message.from_user.id)
     if user:
-        _, first_name, last_name, age, score = user
+        _, first_name, last_name, age, city, score = user
         await message.answer(
             f"С возвращением, {first_name}! Нажми кнопку ниже, чтобы начать испытание.",
             reply_markup=game_keyboard(),
@@ -253,7 +254,29 @@ async def process_age(message: types.Message, state: FSMContext):
     name = data["first_name"]
     surname = data["last_name"]
 
-    await register_user(user_id, name, surname, age)
+    await state.update_data(age=age)
+    await message.answer("Укажите ваш город проживания.")
+    await state.set_state(RegState.waiting_for_city)
+
+
+@router.message(RegState.waiting_for_city)
+async def process_city(message: types.Message, state: FSMContext):
+    city = (message.text or "").strip()
+    if len(city) < 2 or len(city) > 100:
+        await message.answer("Город проживания должен быть от 2 до 100 символов. Попробуйте ещё раз.")
+        return
+
+    if not re.fullmatch(r"[А-ЯЁа-яёA-Za-z0-9 .,-]+", city):
+        await message.answer("Укажите город проживания без лишних символов. Например: Арзамас")
+        return
+
+    data = await state.get_data()
+    user_id = message.from_user.id
+    name = data["first_name"]
+    surname = data["last_name"]
+    age = int(data["age"])
+
+    await register_user(user_id, name, surname, age, city)
     await state.clear()
 
     await message.answer(
@@ -305,7 +328,7 @@ async def handle_web_app_data(message: types.Message):
         from database.db import get_user_profile
         prof = await get_user_profile(user_id)
         if prof:
-            prev_aptitude = prof[5]  # aptitude_top
+            prev_aptitude = prof[6]  # aptitude_top
     except Exception:
         prev_aptitude = None
 
@@ -390,7 +413,7 @@ async def _send_stats(message: types.Message, tg_id: int) -> None:
         await message.answer("📊 Статистика пока недоступна.")
         return
 
-    _tid, fname, lname, _age, score = user
+    _tid, fname, lname, _age, _city, score = user
 
     # Рейтинг (место среди всех пользователей по очкам)
     rank_info = None
@@ -402,7 +425,7 @@ async def _send_stats(message: types.Message, tg_id: int) -> None:
 
     aptitude_top = None
     if profile and len(profile) >= 6:
-        aptitude_top = profile[5]
+        aptitude_top = profile[6]
 
     # Формат вывода (как просили)
     APT_LABEL = {
