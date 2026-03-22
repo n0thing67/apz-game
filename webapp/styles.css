@@ -1586,9 +1586,9 @@ hr {
     position: sticky;
     top: 0;
     z-index: 2;
-    background: rgba(44,62,80,0.92);
-    backdrop-filter: blur(6px);
-    -webkit-backdrop-filter: blur(6px);
+    background: #5f6062;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
     margin-left: auto;
     margin-right: auto;
     text-align: center;
