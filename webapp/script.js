@@ -3184,7 +3184,6 @@ else if (action === 'save-stats') {
             closeApp();
         }
     };
-
     // click + pointerup для надёжности
     document.addEventListener('click', handleAction, true);
 });
