@@ -41,6 +41,19 @@ def is_admin(user_id: int) -> bool:
     return user_id in ADMIN_IDS
 
 
+def _format_person_name(value: str | None) -> str:
+    s = (value or '').strip()
+    if not s:
+        return s
+    parts = [p for p in s.replace("	", " ").split(" ") if p]
+
+    def _cap_token(tok: str) -> str:
+        sub = [t[:1].upper() + t[1:].lower() if t else '' for t in tok.split('-')]
+        return '-'.join(sub)
+
+    return ' '.join(_cap_token(p) for p in parts)
+
+
 def _is_technical_aptitude(value: str | None) -> bool:
     if not value:
         return False
@@ -215,8 +228,8 @@ async def process_fullname(message: types.Message, state: FSMContext):
         )
         return
 
-    first_name = parts[0]
-    last_name = " ".join(parts[1:])
+    first_name = _format_person_name(parts[0])
+    last_name = _format_person_name(" ".join(parts[1:]))
 
     # Валидация: имя/фамилия только на русском.
     # Разрешаем буквы (в т.ч. Ё/ё) и дефис. Фамилия может быть из нескольких слов.
