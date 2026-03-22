@@ -33,7 +33,7 @@ function isoToRu(iso) {
 }
 
 function fmtUser(u) {
-  return `${u.telegram_id} — ${u.first_name} ${u.last_name} (${u.age}) | ${u.score}`;
+  return `${u.telegram_id} — ${u.first_name} ${u.last_name} (${u.age}) | ${u.city || "—"} | ${u.score}`;
 }
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -340,7 +340,7 @@ async function init() {
       row.className = "admin-useritem" + (id === selectedId ? " selected" : "");
       row.innerHTML = `
         <div class="admin-useritem-name">${esc(userTitle(u))}</div>
-        <div class="admin-useritem-meta">ID: ${esc(id)} • Очки: ${esc(u.score ?? 0)}</div>
+        <div class="admin-useritem-meta">ID: ${esc(id)} • Город: ${esc(u.city || "—")} • Очки: ${esc(u.score ?? 0)}</div>
       `;
       row.addEventListener("click", () => onSelect?.(u));
       container.appendChild(row);
@@ -505,7 +505,7 @@ function renderAwardsListFromCache() {
       .map((u, i) => {
         const n = i + 1;
         const medal = n === 1 ? "🥇" : n === 2 ? "🥈" : n === 3 ? "🥉" : `${n}.`;
-        return `${medal} ${u.first_name} ${u.last_name} — ${u.score}`;
+        return `${medal} ${u.first_name} ${u.last_name} (${u.city || "—"}) — ${u.score}`;
       })
       .join("\n");
   }
