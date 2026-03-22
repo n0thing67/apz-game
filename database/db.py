@@ -3,6 +3,7 @@ import time
 import asyncio
 from pathlib import Path
 
+
 def _format_person_name(value: str | None) -> str | None:
     """Нормализует имя/фамилию для отображения.
 
@@ -99,6 +100,7 @@ if not _using_postgres:
                 first_name TEXT,
                 last_name TEXT,
                 age INTEGER,
+                city TEXT,
                 score INTEGER DEFAULT 0,
                 aptitude_top TEXT
             )
@@ -109,6 +111,8 @@ if not _using_postgres:
         try:
             async with db.execute("PRAGMA table_info(users)") as cur:
                 cols = [row[1] for row in await cur.fetchall()]
+            if "city" not in cols:
+                await db.execute("ALTER TABLE users ADD COLUMN city TEXT")
             if "aptitude_top" not in cols:
                 await db.execute("ALTER TABLE users ADD COLUMN aptitude_top TEXT")
         except Exception:
@@ -168,16 +172,16 @@ if not _using_postgres:
 
         await db.commit()
 
-    async def register_user(tg_id, f_name, l_name, age):
+    async def register_user(tg_id, f_name, l_name, age, city=None):
         f_name = _format_person_name(f_name)
         l_name = _format_person_name(l_name)
         db = await get_db()
         await db.execute(
             '''
-            INSERT OR IGNORE INTO users (telegram_id, first_name, last_name, age)
-            VALUES (?, ?, ?, ?)
+            INSERT OR IGNORE INTO users (telegram_id, first_name, last_name, age, city)
+            VALUES (?, ?, ?, ?, ?)
             ''',
-            (tg_id, f_name, l_name, age),
+            (tg_id, f_name, l_name, age, city),
         )
         # Если пользователя ранее удаляли — убираем метку удаления.
         try:
@@ -206,7 +210,7 @@ if not _using_postgres:
     async def get_user(tg_id: int):
         db = await get_db()
         async with db.execute(
-            "SELECT telegram_id, first_name, last_name, age, score FROM users WHERE telegram_id = ?",
+            "SELECT telegram_id, first_name, last_name, age, city, score FROM users WHERE telegram_id = ?",
             (tg_id,),
         ) as cursor:
             return await cursor.fetchone()
@@ -215,7 +219,7 @@ if not _using_postgres:
         """Расширенные данные пользователя для webapp (в т.ч. результат профтеста)."""
         db = await get_db()
         async with db.execute(
-            "SELECT telegram_id, first_name, last_name, age, score, aptitude_top FROM users WHERE telegram_id = ?",
+            "SELECT telegram_id, first_name, last_name, age, city, score, aptitude_top FROM users WHERE telegram_id = ?",
             (tg_id,),
         ) as cursor:
             return await cursor.fetchone()
@@ -453,7 +457,7 @@ if not _using_postgres:
     async def get_top_users_stats(limit: int = 10):
         db = await get_db()
         async with db.execute(
-            "SELECT telegram_id, first_name, last_name, score, aptitude_top "
+            "SELECT telegram_id, first_name, last_name, city, score, aptitude_top "
             "FROM users ORDER BY score DESC LIMIT ?",
             (limit,),
         ) as cursor:
@@ -542,11 +546,18 @@ else:
                     first_name TEXT,
                     last_name TEXT,
                     age INTEGER,
+                    city TEXT,
                     score INTEGER DEFAULT 0,
                     aptitude_top TEXT
                 );
                 '''
             )
+            # Миграция: старые базы могли быть без city.
+            try:
+                await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS city TEXT")
+            except Exception:
+                pass
+
             await conn.execute(
                 '''
                 CREATE TABLE IF NOT EXISTS levels (
@@ -588,18 +599,18 @@ else:
                     key,
                 )
 
-    async def register_user(tg_id, f_name, l_name, age):
+    async def register_user(tg_id, f_name, l_name, age, city=None):
         f_name = _format_person_name(f_name)
         l_name = _format_person_name(l_name)
         pool = await get_db()
         async with pool.acquire() as conn:
             await conn.execute(
                 '''
-                INSERT INTO users (telegram_id, first_name, last_name, age)
-                VALUES ($1, $2, $3, $4)
+                INSERT INTO users (telegram_id, first_name, last_name, age, city)
+                VALUES ($1, $2, $3, $4, $5)
                 ON CONFLICT (telegram_id) DO NOTHING
                 ''',
-                int(tg_id), f_name, l_name, age,
+                int(tg_id), f_name, l_name, age, city,
             )
             # Если пользователя ранее удаляли — убираем метку удаления.
             try:
@@ -628,19 +639,19 @@ else:
         pool = await get_db()
         async with pool.acquire() as conn:
             row = await conn.fetchrow(
-                "SELECT telegram_id, first_name, last_name, age, score FROM users WHERE telegram_id = $1",
+                "SELECT telegram_id, first_name, last_name, age, city, score FROM users WHERE telegram_id = $1",
                 int(tg_id),
             )
         if row is None:
             return None
-        return (row["telegram_id"], row["first_name"], row["last_name"], row["age"], row["score"])
+        return (row["telegram_id"], row["first_name"], row["last_name"], row["age"], row["city"], row["score"])
 
     async def get_user_profile(tg_id: int):
         """Расширенные данные пользователя для webapp (в т.ч. результат профтеста)."""
         pool = await get_db()
         async with pool.acquire() as conn:
             row = await conn.fetchrow(
-                "SELECT telegram_id, first_name, last_name, age, score, aptitude_top FROM users WHERE telegram_id = $1",
+                "SELECT telegram_id, first_name, last_name, age, city, score, aptitude_top FROM users WHERE telegram_id = $1",
                 int(tg_id),
             )
         if row is None:
@@ -650,6 +661,7 @@ else:
             row["first_name"],
             row["last_name"],
             row["age"],
+            row["city"],
             row["score"],
             row.get("aptitude_top"),
         )
@@ -846,11 +858,11 @@ else:
         pool = await get_db()
         async with pool.acquire() as conn:
             rows = await conn.fetch(
-                "SELECT telegram_id, first_name, last_name, age, score "
+                "SELECT telegram_id, first_name, last_name, age, city, score "
                 "FROM users ORDER BY telegram_id ASC LIMIT $1",
                 int(limit),
             )
-        return [(r["telegram_id"], r["first_name"], r["last_name"], r["age"], r["score"]) for r in rows]
+        return [(r["telegram_id"], r["first_name"], r["last_name"], r["age"], r["city"], r["score"]) for r in rows]
 
     async def delete_user(tg_id: int) -> None:
         # Сначала ставим метку удаления (для WebApp), затем удаляем запись.
@@ -904,11 +916,11 @@ else:
         pool = await get_db()
         async with pool.acquire() as conn:
             rows = await conn.fetch(
-                "SELECT telegram_id, first_name, last_name, score, aptitude_top "
+                "SELECT telegram_id, first_name, last_name, city, score, aptitude_top "
                 "FROM users ORDER BY score DESC LIMIT $1",
                 int(limit),
             )
         return [
-            (r["telegram_id"], r["first_name"], r["last_name"], r["score"], r["aptitude_top"])
+            (r["telegram_id"], r["first_name"], r["last_name"], r["city"], r["score"], r["aptitude_top"])
             for r in rows
         ]
