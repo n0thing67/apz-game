@@ -261,7 +261,7 @@ const LEVEL_DEFS = {
     'puzzle-2x2': { title: 'Логотип 2×2', type: 'puzzle', puzzleSize: 2, stat: 'time' },
     'puzzle-3x3': { title: 'Логотип 3×3', type: 'puzzle', puzzleSize: 3, stat: 'time' },
     'puzzle-4x4': { title: 'Логотип 4×4', type: 'puzzle', puzzleSize: 4, stat: 'time' },
-    'jumper':      { title: 'Jumper',        type: 'jumper', stat: 'score' },
+    'jumper':      { title: 'Цех проверки ловкости', type: 'jumper', stat: 'score' },
     'factory-2048':{ title: 'Сборочный цех', type: '2048',   stat: 'score' },
     'quiz':        { title: 'Квиз',          type: 'quiz',   stat: 'score' }
 };
@@ -1111,6 +1111,18 @@ function formatTime(ms) {
     return m > 0 ? `${m}м ${s}с` : `${s}с`;
 }
 
+function formatPoints(score) {
+    if (typeof score !== 'number' || !Number.isFinite(score)) return '—';
+    const abs = Math.abs(score) % 100;
+    const last = abs % 10;
+    let word = 'баллов';
+    if (abs < 11 || abs > 14) {
+        if (last === 1) word = 'балл';
+        else if (last >= 2 && last <= 4) word = 'балла';
+    }
+    return `${score} ${word}`;
+}
+
 function renderLevelMenuStats() {
     // Пазлы (время)
     const p22 = document.getElementById('stat-puzzle-2x2');
@@ -1124,9 +1136,9 @@ function renderLevelMenuStats() {
     const j = document.getElementById('stat-jumper');
     const g = document.getElementById('stat-2048');
     const q = document.getElementById('stat-quiz');
-    if (j) j.textContent = (stats['jumper']?.bestScore ?? '—');
-    if (g) g.textContent = (stats['factory-2048']?.bestScore ?? '—');
-    if (q) q.textContent = (stats['quiz']?.bestScore ?? '—');
+    if (j) j.textContent = formatPoints(stats['jumper']?.bestScore);
+    if (g) g.textContent = formatPoints(stats['factory-2048']?.bestScore);
+    if (q) q.textContent = formatPoints(stats['quiz']?.bestScore);
 }
 
 function notify(msg) {
