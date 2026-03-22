@@ -396,7 +396,7 @@ async def handle_me(request: web.Request) -> web.Response:
             }
         )
 
-    telegram_id, first_name, last_name, age, score, aptitude_top = row
+    telegram_id, first_name, last_name, age, city, score, aptitude_top = row
     return web.json_response(
         {
             "ok": True,
@@ -410,6 +410,7 @@ async def handle_me(request: web.Request) -> web.Response:
                 "first_name": first_name,
                 "last_name": last_name,
                 "age": age,
+                "city": city,
                 "score": score,
                 "aptitude_top": aptitude_top,
             },
@@ -472,9 +473,10 @@ async def admin_get_stats(request: web.Request) -> web.Response:
                     "first_name": fn,
                     "last_name": ln,
                     "age": age,
+                    "city": city,
                     "score": score,
                 }
-                for (tid, fn, ln, age, score) in users
+                for (tid, fn, ln, age, city, score) in users
             ],
         }
     )
@@ -504,10 +506,12 @@ async def admin_reset_user_scores(request: web.Request) -> web.Response:
     try:
         user = await get_user(tg_id)
         if user:
-            _, fn, ln, _, _ = user
+            _, fn, ln, _, city, _ = user
             full_name = f"{fn or ''} {ln or ''}".strip()
             if full_name:
                 user_label = f"{full_name} (ID: {tg_id})"
+            if city:
+                user_label += f"; город: {city}"
     except Exception:
         pass
 
@@ -531,10 +535,12 @@ async def admin_delete_user(request: web.Request) -> web.Response:
     try:
         user = await get_user(tg_id)
         if user:
-            _, fn, ln, _, score = user
+            _, fn, ln, _, city, score = user
             full_name = f"{fn or ''} {ln or ''}".strip()
             if full_name:
                 user_label = f"{full_name} (ID: {tg_id})"
+            if city:
+                user_label += f"; город: {city}"
             if score is not None:
                 user_label += f"; лучший счёт: {int(score)}"
     except Exception:
@@ -603,7 +609,7 @@ async def admin_send_award(request: web.Request) -> web.Response:
     user = await get_user(tg_id)
     if not user:
         raise web.HTTPNotFound(text="User not found")
-    _, first_name, last_name, _, score = user
+    _, first_name, last_name, _, _city, score = user
     full_name = f"{first_name or ''} {last_name or ''}".strip() or str(tg_id)
 
     template_map = {
