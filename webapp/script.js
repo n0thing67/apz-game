@@ -1161,7 +1161,7 @@ function exportStats() {
 // Это значение отправляем боту в поле `score`, чтобы команда /stats показывала корректные данные.
 function computeTotalScore() {
     try {
-        const order = ['puzzle-2x2', 'puzzle-3x3', 'puzzle-4x4', 'jumper', 'factory-2048'];
+        const order = ['puzzle-2x2', 'puzzle-3x3', 'puzzle-4x4', 'jumper', 'factory-2048', 'quiz'];
         let total = 0;
         for (const id of order) {
             const s = stats?.[id];
@@ -1201,7 +1201,7 @@ function showFinalScreenFromStats() {
     const playedIds = Object.keys(LEVEL_DEFS).filter(id => (stats[id]?.plays || 0) > 0);
 
     // Удобный порядок показа
-    const order = ['puzzle-2x2', 'puzzle-3x3', 'puzzle-4x4', 'jumper', 'factory-2048'];
+    const order = ['puzzle-2x2', 'puzzle-3x3', 'puzzle-4x4', 'jumper', 'factory-2048', 'quiz'];
     const ids = order.filter(id => playedIds.includes(id));
 
     if (ids.length === 0 && list) {
@@ -2914,14 +2914,13 @@ function handleAnswerClick(btn, index, correctIndex) {
     if (isAnswering) return;
     isAnswering = true;
 
-    let timeSpent = (Date.now() - questionStartTime) / 1000;
-
     if (index === correctIndex) {
         playSfx('answer-correct');
         btn.classList.add('correct');
         btn.innerHTML += ' ✅';
-        let speedBonus = Math.max(0, 100 - timeSpent * 10);
-        levelScores[4] += (200 + Math.floor(speedBonus));
+        // Новый подсчёт для уровня "Цех умных решений":
+        // 1 правильный ответ = 1 балл, неправильный = 0.
+        levelScores[4] += 1;
     } else {
         playSfx('answer-uncorrect');
         btn.classList.add('wrong');
