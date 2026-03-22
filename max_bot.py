@@ -34,6 +34,19 @@ def _is_admin(db_user_id: int) -> bool:
     return int(db_user_id) in _get_admin_ids()
 
 
+def _format_person_name(value: str | None) -> str:
+    s = (value or '').strip()
+    if not s:
+        return s
+    parts = [p for p in s.replace("	", " ").split(" ") if p]
+
+    def _cap_token(tok: str) -> str:
+        sub = [t[:1].upper() + t[1:].lower() if t else '' for t in tok.split('-')]
+        return '-'.join(sub)
+
+    return ' '.join(_cap_token(p) for p in parts)
+
+
 def _game_url() -> str:
     game_url = os.getenv("GAME_URL", "https://n0thing67.github.io/APZ-games/").rstrip("/")
     admin_url = os.getenv("ADMIN_URL", os.getenv("WEBAPP_URL", "")).rstrip("/")
@@ -275,8 +288,8 @@ async def handle_update(app, update: dict) -> None:
                 ))
                 return
 
-            st["first_name"] = parts[0]
-            st["last_name"] = " ".join(parts[1:])
+            st["first_name"] = _format_person_name(parts[0])
+            st["last_name"] = _format_person_name(" ".join(parts[1:]))
             st["step"] = "waiting_for_age"
             await send_message(session, token, user_id=int(max_user_id), text="Сколько вам лет?")
             return
