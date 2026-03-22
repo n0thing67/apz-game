@@ -1075,6 +1075,50 @@ function formatTime(ms) {
     return m > 0 ? `${m}м ${s}с` : `${s}с`;
 }
 
+
+function scorePuzzleByTime(size, timeMs) {
+    const sec = Math.max(1, Math.round((timeMs || 0) / 1000));
+
+    if (size === 2) {
+        if (sec <= 1) return 5;
+        if (sec === 2) return 4;
+        if (sec === 3) return 3;
+        if (sec === 4) return 2;
+        return 1;
+    }
+
+    if (size === 3) {
+        if (sec <= 5) return 5;
+        if (sec <= 8) return 4;
+        if (sec <= 12) return 3;
+        if (sec <= 16) return 2;
+        return 1;
+    }
+
+    if (size === 4) {
+        if (sec <= 12) return 5;
+        if (sec <= 18) return 4;
+        if (sec <= 25) return 3;
+        if (sec <= 35) return 2;
+        return 1;
+    }
+
+    return 0;
+}
+
+function scoreJumperByTime(timeMs) {
+    const sec = Math.max(1, Math.round((timeMs || 0) / 1000));
+    if (sec <= 25) return 5;
+    if (sec <= 30) return 4;
+    if (sec <= 36) return 3;
+    if (sec <= 45) return 2;
+    return 1;
+}
+
+function score2048Victory() {
+    return 5;
+}
+
 function renderLevelMenuStats() {
     // Пазлы (время)
     const p22 = document.getElementById('stat-puzzle-2x2');
@@ -1845,10 +1889,8 @@ function checkPuzzleWin() {
 
     const timeMs = Date.now() - levelStartTime;
 
-    // Небольшой "скор" тоже посчитаем (для красивого финала/Telegram), но статистика пазла — по времени
-    const base = (puzzleSize === 2) ? 600 : (puzzleSize === 3) ? 1000 : 1500;
-    const penalty = (puzzleSize === 2) ? 8 : (puzzleSize === 3) ? 6 : 5; // штраф за секунду
-    const score = Math.max(100, Math.floor(base - (timeMs / 1000) * penalty));
+    // Баллы пазла: новая шкала 1–5 в зависимости от времени прохождения.
+    const score = scorePuzzleByTime(puzzleSize, timeMs);
 
     // Сохраняем статистику именно этого варианта пазла
     finishLevel({ score, timeMs });
@@ -2441,8 +2483,8 @@ function showVictoryLevel2() {
 
     const timeMs = Date.now() - levelStartTime;
 
-    // "Счёт" уровня 2 — по времени (как было), но теперь сохраняем как bestScore
-    const score = Math.max(100, Math.floor(1500 - (timeMs / 1000) * 5));
+    // Баллы Jumper: новая шкала 1–5 в зависимости от времени прохождения.
+    const score = scoreJumperByTime(timeMs);
     levelScores[2] = score;
     finishLevel({ score, timeMs });
 
@@ -2717,8 +2759,8 @@ function showVictory2048() {
 
     const timeMs = Date.now() - levelStartTime;
 
-    // Счёт 2048 — реальный игровой счёт
-    const score = score2048;
+    // За полное прохождение 2048 всегда даём 5 баллов.
+    const score = score2048Victory();
     levelScores[3] = score;
     finishLevel({ score, timeMs });
 
@@ -3184,6 +3226,7 @@ else if (action === 'save-stats') {
             closeApp();
         }
     };
+
     // click + pointerup для надёжности
     document.addEventListener('click', handleAction, true);
 });
