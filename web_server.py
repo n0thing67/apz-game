@@ -614,12 +614,9 @@ async def admin_send_award(request: web.Request) -> web.Response:
 
     template_map = {
         "participation": "sertificat.png",
-        "1": "1mesto.png",
-        "2": "2mesto.png",
-        "3": "3mesto.png",
     }
     if template_key not in template_map:
-        raise web.HTTPBadRequest(text="Bad template_key")
+        raise web.HTTPBadRequest(text="Only participation certificate is allowed")
 
     png_bytes = _render_award_png(
         template_filename=template_map[template_key],
