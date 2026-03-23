@@ -136,6 +136,7 @@ async def _notify_admins_about_technical(message: types.Message, user_id: int) -
 
 # --- FSM регистрация ---
 class RegState(StatesGroup):
+    waiting_for_consent = State()
     waiting_for_fullname = State()
     waiting_for_age = State()
     waiting_for_city = State()
@@ -198,6 +199,26 @@ def stats_inline_keyboard() -> InlineKeyboardMarkup:
     )
 
 
+def consent_inline_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[[
+            InlineKeyboardButton(
+                text="Я ознакомлен(а) с Политикой обработки персональных данных и даю согласие на обработку моих персональных данных",
+                callback_data="pd_consent_accept",
+                style="success",
+            )
+        ]]
+    )
+
+
+async def _ask_for_pd_consent(message: types.Message, state: FSMContext) -> None:
+    await message.answer(
+        "Перед регистрацией необходимо подтвердить согласие на обработку персональных данных.",
+        reply_markup=consent_inline_keyboard(),
+    )
+    await state.set_state(RegState.waiting_for_consent)
+
+
 @router.message(Command("start"))
 async def cmd_start(message: types.Message, state: FSMContext):
     await state.clear()
@@ -211,13 +232,30 @@ async def cmd_start(message: types.Message, state: FSMContext):
         )
         return
 
-    await message.answer(
-        "Добро пожаловать на АПЗ! Для начала работы, пожалуйста, представьтесь.\n"
-        "✍️ Введите <b>Имя и Фамилию</b> одним сообщением (через пробел).\n"
-        "Пример: Иван Иванов",
-        parse_mode="HTML",
-    )
+    await _ask_for_pd_consent(message, state)
+
+
+@router.callback_query(RegState.waiting_for_consent, F.data == "pd_consent_accept")
+async def cb_pd_consent_accept(callback: types.CallbackQuery, state: FSMContext):
+    await callback.answer()
+    if callback.message:
+        try:
+            await callback.message.edit_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+        await callback.message.answer(
+            "Добро пожаловать на АПЗ! Для начала работы, пожалуйста, представьтесь.\n"
+            "✍️ Введите <b>Имя и Фамилию</b> одним сообщением (через пробел).\n"
+            "Пример: Иван Иванов",
+            parse_mode="HTML",
+        )
+    await state.update_data(pd_consent=True)
     await state.set_state(RegState.waiting_for_fullname)
+
+
+@router.message(RegState.waiting_for_consent)
+async def process_waiting_for_pd_consent(message: types.Message, state: FSMContext):
+    await _ask_for_pd_consent(message, state)
 
 
 @router.message(RegState.waiting_for_fullname)
@@ -294,7 +332,14 @@ async def process_city(message: types.Message, state: FSMContext):
     surname = data["last_name"]
     age = int(data["age"])
 
-    await register_user(user_id, name, surname, age, city)
+    await register_user(
+        user_id,
+        name,
+        surname,
+        age,
+        city,
+        pd_consent=bool(data.get("pd_consent")),
+    )
     await state.clear()
 
     await message.answer(
