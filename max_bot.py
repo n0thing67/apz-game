@@ -177,6 +177,13 @@ async def _send_stats_max(app, *, max_user_id: int):
     await send_message(session, token, user_id=max_user_id, text="\n".join(lines))
 
 
+_PD_CONSENT_TEXT = "Я ознакомлен(а) с Политикой обработки персональных данных и даю согласие на обработку моих персональных данных"
+
+
+def _pd_consent_keyboard():
+    return _inline_keyboard([[{"type": "callback", "text": _PD_CONSENT_TEXT, "payload": "pd_consent_accept"}]])
+
+
 async def handle_update(app, update: dict) -> None:
     """Единая обработка MAX Update (webhook)."""
     token = (app.get("max_token") or "").strip()
@@ -209,13 +216,10 @@ async def handle_update(app, update: dict) -> None:
             session,
             token,
             user_id=int(max_user_id),
-            text=(
-                "Добро пожаловать на АПЗ! Для начала работы, пожалуйста, представьтесь.\n"
-                "✍️ Введите Имя и Фамилию одним сообщением (через пробел).\n"
-                "Пример: Иван Иванов"
-            ),
+            text="Перед регистрацией необходимо подтвердить согласие на обработку персональных данных.",
+            attachments=_pd_consent_keyboard(),
         )
-        state[str(max_user_id)] = {"step": "waiting_for_fullname"}
+        state[str(max_user_id)] = {"step": "waiting_for_consent"}
         return
 
     # message_callback
@@ -234,6 +238,24 @@ async def handle_update(app, update: dict) -> None:
             except Exception:
                 pass
             await _send_stats_max(app, max_user_id=int(max_user_id))
+            return
+
+        if str(payload) == "pd_consent_accept":
+            state[str(max_user_id)] = {"step": "waiting_for_fullname", "pd_consent": True}
+            try:
+                await answer_callback(session, token, callback_id=str(callback_id), message={"text": "Согласие принято"})
+            except Exception:
+                pass
+            await send_message(
+                session,
+                token,
+                user_id=int(max_user_id),
+                text=(
+                    "Добро пожаловать на АПЗ! Для начала работы, пожалуйста, представьтесь.\n"
+                    "✍️ Введите Имя и Фамилию одним сообщением (через пробел).\n"
+                    "Пример: Иван Иванов"
+                ),
+            )
             return
 
         try:
@@ -273,6 +295,16 @@ async def handle_update(app, update: dict) -> None:
 
         # FSM регистрация
         st = state.get(str(max_user_id))
+        if st and st.get("step") == "waiting_for_consent":
+            await send_message(
+                session,
+                token,
+                user_id=int(max_user_id),
+                text="Перед регистрацией необходимо подтвердить согласие на обработку персональных данных.",
+                attachments=_pd_consent_keyboard(),
+            )
+            return
+
         if st and st.get("step") == "waiting_for_fullname":
             parts = [p for p in text.split() if p]
             if len(parts) < 2:
@@ -317,7 +349,14 @@ async def handle_update(app, update: dict) -> None:
                 return
 
             db_id = _max_to_db_id(int(max_user_id))
-            await register_user(db_id, st.get("first_name"), st.get("last_name"), st.get("age"), city)
+            await register_user(
+                db_id,
+                st.get("first_name"),
+                st.get("last_name"),
+                st.get("age"),
+                city,
+                pd_consent=bool(st.get("pd_consent")),
+            )
             state.pop(str(max_user_id), None)
 
             kb = _inline_keyboard([
