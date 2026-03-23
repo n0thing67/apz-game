@@ -1968,10 +1968,17 @@ hr {
     color: #111;
     text-align: center;
     white-space: normal;
-    overflow-wrap: anywhere;
+    overflow-wrap: break-word;
     word-break: normal;
+    hyphens: auto;
     transition: opacity 0.35s ease;
     opacity: 1;
+}
+
+.speech-right .speech-text{
+    width: 180px;
+    max-width: 180px;
+    margin: 0 auto 12px;
 }
 
 .speech-text.fade-out{
@@ -2021,6 +2028,11 @@ hr {
         width: 260px;
         height: 132px;
         padding: 16px 22px 42px 36px;
+    }
+    .speech-right .speech-text{
+        width: 165px;
+        max-width: 165px;
+        margin: 0 auto 10px;
     }
     .speech-text{ font-size: 12px; }
 }
