@@ -74,6 +74,15 @@ def _admin_url() -> str:
     return (os.getenv("ADMIN_URL", os.getenv("WEBAPP_URL", "")) or "").rstrip("/")
 
 
+def _privacy_policy_url() -> str:
+    explicit = (os.getenv("PRIVACY_POLICY_URL", "") or "").strip()
+    if explicit:
+        return explicit
+
+    base = _admin_url() or _game_url().rstrip("/")
+    return f"{base}/privacy.html" if base else "privacy.html"
+
+
 def _inline_keyboard(buttons: list[list[dict]]) -> list[dict]:
     return [{"type": "inline_keyboard", "payload": {"buttons": buttons}}]
 
@@ -181,7 +190,10 @@ _PD_CONSENT_TEXT = "Я ознакомлен(а) с Политикой обраб
 
 
 def _pd_consent_keyboard():
-    return _inline_keyboard([[{"type": "callback", "text": _PD_CONSENT_TEXT, "payload": "pd_consent_accept"}]])
+    return _inline_keyboard([
+        [{"type": "link", "text": "Открыть Политику обработки персональных данных", "url": _privacy_policy_url()}],
+        [{"type": "callback", "text": _PD_CONSENT_TEXT, "payload": "pd_consent_accept"}],
+    ])
 
 
 async def handle_update(app, update: dict) -> None:
@@ -216,7 +228,12 @@ async def handle_update(app, update: dict) -> None:
             session,
             token,
             user_id=int(max_user_id),
-            text="Перед регистрацией необходимо подтвердить согласие на обработку персональных данных.",
+            text=(
+                "Перед регистрацией необходимо ознакомиться с Политикой обработки персональных данных.\n\n"
+                f"Открыть документ: {_privacy_policy_url()}\n\n"
+                "После ознакомления нажмите кнопку ниже, чтобы подтвердить согласие "
+                "на обработку персональных данных."
+            ),
             attachments=_pd_consent_keyboard(),
         )
         state[str(max_user_id)] = {"step": "waiting_for_consent"}
@@ -300,7 +317,12 @@ async def handle_update(app, update: dict) -> None:
                 session,
                 token,
                 user_id=int(max_user_id),
-                text="Перед регистрацией необходимо подтвердить согласие на обработку персональных данных.",
+                text=(
+                "Перед регистрацией необходимо ознакомиться с Политикой обработки персональных данных.\n\n"
+                f"Открыть документ: {_privacy_policy_url()}\n\n"
+                "После ознакомления нажмите кнопку ниже, чтобы подтвердить согласие "
+                "на обработку персональных данных."
+            ),
                 attachments=_pd_consent_keyboard(),
             )
             return
