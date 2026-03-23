@@ -825,7 +825,7 @@ body.admin-body {
     align-items: center;
     justify-content: center;
     text-align: center;
-    font-size: 22px;
+    font-size: 24px;
     font-weight: bold;
     cursor: pointer;
     z-index: 10;
@@ -1114,7 +1114,7 @@ body.low-perf .tile-256 {
 }
 
 #question-text {
-    font-size: 20px;
+    font-size: 22px;
     font-weight: bold;
     margin-bottom: 30px;
     min-height: 50px; /* Чтобы не прыгало */
@@ -1129,7 +1129,7 @@ body.low-perf .tile-256 {
     border: none;
     border-radius: 10px;
     text-align: left;
-    font-size: 16px;
+    font-size: 18px;
     cursor: pointer;
     transition: transform 0.1s, background-color 0.2s;
     display: flex;
@@ -1232,12 +1232,12 @@ hr {
     }
 
     .score-row {
-        font-size: 15px;
+        font-size: 17px;
         margin-bottom: 7px;
     }
 
     .score-row.total {
-        font-size: 18px;
+        font-size: 20px;
     }
 
     #final-score-val {
