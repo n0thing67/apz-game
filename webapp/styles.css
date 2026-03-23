@@ -1946,26 +1946,30 @@ hr {
 /* Левое облако */
 .speech-left{
     left: 90%;
-    transform: translate(-60%,5px);
+    transform: translate(-60%,2px);
     background-image: url("assets/bubble_left.webp");
 }
 
 /* Правое облако */
 .speech-right{
     left: 5%;
-    transform: translate(-50%, 30px);  /* центрируем */
+    transform: translate(-50%, 30px);
     background-image: url("assets/bubble_right.webp");
-    width: 260px;   /* увеличили ширину */
-    height: 130px;  /* можно чуть больше */
-    padding: 18px 22px 44px 37px;
+    width: 290px;
+    height: 145px;
+    padding: 18px 26px 46px 40px;
 }
 
 .speech-text{
+    width: 100%;
+    max-width: 100%;
     font-size: 12px;
-    line-height: 1.4;
+    line-height: 1.35;
     color: #111;
     text-align: center;
-    word-break: break-word;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: normal;
     transition: opacity 0.35s ease;
     opacity: 1;
 }
@@ -2009,14 +2013,14 @@ hr {
     }
     .speech-left{
         left: 88%;
-        transform: translate(-60%, 2px);
+        transform: translate(-60%, -1px);
     }
     .speech-right{
         left: 10%;
-        transform: translate(-50%, 22px);
-        width: 240px;
-        height: 120px;
-        padding: 16px 20px 42px 34px;
+        transform: translate(-50%, 18px);
+        width: 260px;
+        height: 132px;
+        padding: 16px 22px 42px 36px;
     }
     .speech-text{ font-size: 12px; }
 }
