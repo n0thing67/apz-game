@@ -263,7 +263,7 @@ const LEVEL_DEFS = {
     'puzzle-4x4': { title: 'Цех сборки логотипа (4×4)', type: 'puzzle', puzzleSize: 4, stat: 'time' },
     'jumper':      { title: 'Цех проверки ловкости', type: 'jumper', stat: 'score' },
     'factory-2048':{ title: 'Цех сборки деталей', type: '2048',   stat: 'score' },
-    'quiz':        { title: 'Квиз',          type: 'quiz',   stat: 'score' }
+    'quiz':        { title: 'Цех умных решений', type: 'quiz',   stat: 'score' }
 };
 
 
@@ -1217,9 +1217,12 @@ function showFinalScreenFromStats() {
         let scoreForTotal = 0;
 
         if (def.stat === 'time') {
-            // Для пазлов основной показатель — лучшее время
-            valueText = formatTime(s.bestTimeMs);
+            // Для пазлов показываем лучшее время и набранные за него баллы.
+            const bestTimeText = formatTime(s.bestTimeMs);
             scoreForTotal = (typeof s.bestScore === 'number') ? s.bestScore : 0;
+            valueText = (bestTimeText !== '—' && scoreForTotal > 0)
+                ? `${bestTimeText} · ${scoreForTotal} б.`
+                : bestTimeText;
         } else {
             valueText = (s.bestScore ?? '—');
             scoreForTotal = (typeof s.bestScore === 'number') ? s.bestScore : 0;
@@ -3231,6 +3234,7 @@ else if (action === 'save-stats') {
             closeApp();
         }
     };
+
     // click + pointerup для надёжности
     document.addEventListener('click', handleAction, true);
 });
