@@ -147,6 +147,18 @@ GAME_URL = os.getenv("GAME_URL", "https://n0thing67.github.io/APZ-games/").rstri
 ADMIN_URL = os.getenv("ADMIN_URL", os.getenv("WEBAPP_URL", "")).rstrip("/")
 
 
+def _privacy_policy_url() -> str:
+    explicit = (os.getenv("PRIVACY_POLICY_URL", "") or "").strip()
+    if explicit:
+        return explicit
+
+    base = ADMIN_URL or os.getenv("WEBAPP_URL", "").rstrip("/") or GAME_URL
+    base = (base or "").rstrip("/")
+    if not base:
+        return "privacy.html"
+    return f"{base}/privacy.html"
+
+
 def game_keyboard() -> ReplyKeyboardMarkup:
     # Если игра лежит на GitHub Pages, а API (уровни/админка) на Render,
     # передаем базовый URL API параметром ?api=... чтобы механика вкл/выкл игр работала.
@@ -201,20 +213,36 @@ def stats_inline_keyboard() -> InlineKeyboardMarkup:
 
 def consent_inline_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
-        inline_keyboard=[[
-            InlineKeyboardButton(
-                text="Я ознакомлен(а) с Политикой обработки персональных данных и даю согласие на обработку моих персональных данных",
-                callback_data="pd_consent_accept",
-                style="success",
-            )
-        ]]
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="Открыть Политику обработки персональных данных",
+                    url=_privacy_policy_url(),
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="Я ознакомлен(а) с Политикой обработки персональных данных и даю согласие на обработку моих персональных данных",
+                    callback_data="pd_consent_accept",
+                    style="success",
+                )
+            ],
+        ]
     )
 
 
 async def _ask_for_pd_consent(message: types.Message, state: FSMContext) -> None:
+    policy_url = html.escape(_privacy_policy_url(), quote=True)
     await message.answer(
-        "Перед регистрацией необходимо подтвердить согласие на обработку персональных данных.",
+        (
+            "Перед регистрацией необходимо ознакомиться с "
+            f'<a href="{policy_url}">Политикой обработки персональных данных</a>.\n\n'
+            "После ознакомления нажмите зелёную кнопку ниже, чтобы подтвердить согласие "
+            "на обработку персональных данных."
+        ),
+        parse_mode="HTML",
         reply_markup=consent_inline_keyboard(),
+        disable_web_page_preview=True,
     )
     await state.set_state(RegState.waiting_for_consent)
 
