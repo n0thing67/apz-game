@@ -146,9 +146,8 @@
         <div class="level-stats muted">Выбери пользователя из списка ниже (поиск по имени/фамилии). Имя и фамилия подставляются из статистики по Telegram ID.</div>
 
         <div class="admin-row award-top-row" style="gap:10px; flex-wrap:wrap;">
-          <select id="award-template" class="admin-input" style="flex:1; min-width:180px;">
-            <option value="participation">Сертификат за участие</option>
-          </select>
+          <input id="award-template" type="hidden" value="participation" />
+          <div class="admin-input" style="flex:1; min-width:180px; display:flex; align-items:center; box-sizing:border-box;" aria-readonly="true">Сертификат за участие</div>
           <!-- Desktop: обычный select. Mobile: кастомный пикер (ниже), потому что мобильные WebView не стилизуют <option>. -->
           <select id="award-font" class="admin-input admin-font-select" style="flex:1; min-width:180px;"></select>
           <div id="award-font-mobile" class="admin-font-mobile" style="flex:1; min-width:180px; display:none;"></div>
