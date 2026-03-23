@@ -1373,10 +1373,75 @@ function confirmSendStatsAndClose() {
     sendStatsAndClose();
 }
 
+const WELCOME_DIALOGUES = {
+    max: [
+        'Макс: Привет! Давайте знакомиться, я Макс',
+        'Макс: Я покажу тебе, как у нас всё устроено',
+        'Макс: Готов пройти смену?'
+    ],
+    asya: [
+        'Ася: А я Ася, мы сотрудники завода',
+        'Ася: Поможем тебе освоиться',
+        'Ася: Будет интересно!'
+    ]
+};
+
+let welcomeDialogueTimer = null;
+let welcomeDialogueStep = 0;
+
+function setWelcomeSpeechText(el, text) {
+    if (!el) return;
+    const safeText = String(text || '');
+    const colonIndex = safeText.indexOf(':');
+    if (colonIndex !== -1) {
+        const speaker = safeText.slice(0, colonIndex + 1);
+        const phrase = safeText.slice(colonIndex + 1).trim();
+        el.innerHTML = `<strong>${speaker}</strong> ${phrase ? `«${phrase}»` : ''}`;
+        return;
+    }
+    el.textContent = safeText;
+}
+
+function switchWelcomeSpeech(el, nextText) {
+    if (!el) return;
+    el.classList.add('fade-out');
+    setTimeout(() => {
+        setWelcomeSpeechText(el, nextText);
+        el.classList.remove('fade-out');
+    }, 350);
+}
+
+function stopWelcomeDialogueRotation() {
+    if (welcomeDialogueTimer) {
+        clearInterval(welcomeDialogueTimer);
+        welcomeDialogueTimer = null;
+    }
+}
+
+function startWelcomeDialogueRotation() {
+    const maxEl = document.getElementById('max-speech-text');
+    const asyaEl = document.getElementById('asya-speech-text');
+    if (!maxEl || !asyaEl) return;
+
+    stopWelcomeDialogueRotation();
+    welcomeDialogueStep = 0;
+    setWelcomeSpeechText(maxEl, WELCOME_DIALOGUES.max[0]);
+    setWelcomeSpeechText(asyaEl, WELCOME_DIALOGUES.asya[0]);
+
+    welcomeDialogueTimer = setInterval(() => {
+        welcomeDialogueStep = (welcomeDialogueStep + 1) % WELCOME_DIALOGUES.max.length;
+        switchWelcomeSpeech(maxEl, WELCOME_DIALOGUES.max[welcomeDialogueStep]);
+        switchWelcomeSpeech(asyaEl, WELCOME_DIALOGUES.asya[welcomeDialogueStep]);
+    }, 3200);
+}
+
 function showScreen(screenId) {
     document.querySelectorAll('.screen').forEach(el => el.classList.remove('active'));
     const s = document.getElementById(screenId);
     if (s) s.classList.add('active');
+
+    if (screenId === 'screen-welcome') startWelcomeDialogueRotation();
+    else stopWelcomeDialogueRotation();
 
     const isLevelScreen = (screenId === 'screen-level1' || screenId === 'screen-level2' || screenId === 'screen-level3' || screenId === 'screen-level4');
     const isAptitudeTest = (screenId === 'screen-aptitude');
