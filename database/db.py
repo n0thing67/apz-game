@@ -110,7 +110,9 @@ if not _using_postgres:
                 age INTEGER,
                 city TEXT,
                 score INTEGER DEFAULT 0,
-                aptitude_top TEXT
+                aptitude_top TEXT,
+                pd_consent INTEGER DEFAULT 0,
+                pd_consent_at TEXT
             )
             '''
         )
@@ -123,6 +125,10 @@ if not _using_postgres:
                 await db.execute("ALTER TABLE users ADD COLUMN city TEXT")
             if "aptitude_top" not in cols:
                 await db.execute("ALTER TABLE users ADD COLUMN aptitude_top TEXT")
+            if "pd_consent" not in cols:
+                await db.execute("ALTER TABLE users ADD COLUMN pd_consent INTEGER DEFAULT 0")
+            if "pd_consent_at" not in cols:
+                await db.execute("ALTER TABLE users ADD COLUMN pd_consent_at TEXT")
         except Exception:
             pass
 
@@ -180,17 +186,18 @@ if not _using_postgres:
 
         await db.commit()
 
-    async def register_user(tg_id, f_name, l_name, age, city=None):
+    async def register_user(tg_id, f_name, l_name, age, city=None, pd_consent: bool = False):
         f_name = _format_person_name(f_name)
         l_name = _format_person_name(l_name)
         city = _format_city_name(city)
         db = await get_db()
+        consent_at = time.strftime("%Y-%m-%d %H:%M:%S") if pd_consent else None
         await db.execute(
             '''
-            INSERT OR IGNORE INTO users (telegram_id, first_name, last_name, age, city)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT OR IGNORE INTO users (telegram_id, first_name, last_name, age, city, pd_consent, pd_consent_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             ''',
-            (tg_id, f_name, l_name, age, city),
+            (tg_id, f_name, l_name, age, city, 1 if pd_consent else 0, consent_at),
         )
         # Если пользователя ранее удаляли — убираем метку удаления.
         try:
@@ -557,13 +564,23 @@ else:
                     age INTEGER,
                     city TEXT,
                     score INTEGER DEFAULT 0,
-                    aptitude_top TEXT
+                    aptitude_top TEXT,
+                    pd_consent BOOLEAN DEFAULT FALSE,
+                    pd_consent_at TEXT
                 );
                 '''
             )
             # Миграция: старые базы могли быть без city.
             try:
                 await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS city TEXT")
+            except Exception:
+                pass
+            try:
+                await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS pd_consent BOOLEAN DEFAULT FALSE")
+            except Exception:
+                pass
+            try:
+                await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS pd_consent_at TEXT")
             except Exception:
                 pass
 
@@ -608,19 +625,20 @@ else:
                     key,
                 )
 
-    async def register_user(tg_id, f_name, l_name, age, city=None):
+    async def register_user(tg_id, f_name, l_name, age, city=None, pd_consent: bool = False):
         f_name = _format_person_name(f_name)
         l_name = _format_person_name(l_name)
         city = _format_city_name(city)
+        consent_at = time.strftime("%Y-%m-%d %H:%M:%S") if pd_consent else None
         pool = await get_db()
         async with pool.acquire() as conn:
             await conn.execute(
                 '''
-                INSERT INTO users (telegram_id, first_name, last_name, age, city)
-                VALUES ($1, $2, $3, $4, $5)
+                INSERT INTO users (telegram_id, first_name, last_name, age, city, pd_consent, pd_consent_at)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
                 ON CONFLICT (telegram_id) DO NOTHING
                 ''',
-                int(tg_id), f_name, l_name, age, city,
+                int(tg_id), f_name, l_name, age, city, bool(pd_consent), consent_at,
             )
             # Если пользователя ранее удаляли — убираем метку удаления.
             try:
