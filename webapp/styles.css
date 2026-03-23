@@ -1966,6 +1966,12 @@ hr {
     color: #111;
     text-align: center;
     word-break: break-word;
+    transition: opacity 0.35s ease;
+    opacity: 1;
+}
+
+.speech-text.fade-out{
+    opacity: 0;
 }
 
 
