@@ -1403,11 +1403,11 @@ function showScreen(screenId) {
         bottombar.classList.toggle('hidden', !showBottom);
     }
 
-    // Кнопка звука показывается только на экранах меню (приветствие + выбор уровней + тест)
+    // Кнопка звука скрыта на стартовом экране и появляется после нажатия «Начать смену»
     const soundBtn = document.getElementById('btn-sound-toggle');
     if (soundBtn) {
         const isLevelScreen = /^screen-level[1-4]$/.test(screenId);
-        const showSound = (screenId === 'screen-welcome' || screenId === 'screen-levels' || isAptitudeTest || isAptitudeResult || isProfessionsScreen || isLevelScreen);
+        const showSound = (screenId === 'screen-levels' || isAptitudeTest || isAptitudeResult || isProfessionsScreen || isLevelScreen);
         soundBtn.classList.toggle('hidden', !showSound);
     }
 }
