@@ -13,6 +13,7 @@ from aiogram.types import (
     WebAppInfo,
     InlineKeyboardMarkup,
     InlineKeyboardButton,
+    ReplyKeyboardRemove,
 )
 
 from database.db import (
@@ -145,18 +146,57 @@ class RegState(StatesGroup):
 # --- URL'ы ---
 GAME_URL = os.getenv("GAME_URL", "https://n0thing67.github.io/APZ-games/").rstrip("/")
 ADMIN_URL = os.getenv("ADMIN_URL", os.getenv("WEBAPP_URL", "")).rstrip("/")
+PRIVACY_POLICY_URL = os.getenv("PRIVACY_POLICY_URL", f"{ADMIN_URL}/privacy.html" if ADMIN_URL else "")
+CONSENT_BUTTON_TEXT = "Я ознакомлен(а) с Политикой обработки персональных данных"
 
 
-def _privacy_policy_url() -> str:
-    explicit = (os.getenv("PRIVACY_POLICY_URL", "") or "").strip()
-    if explicit:
-        return explicit
+def consent_reply_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[[
+            KeyboardButton(
+                text=CONSENT_BUTTON_TEXT,
+                style="success",
+            )
+        ]],
+        resize_keyboard=True,
+        one_time_keyboard=True,
+    )
 
-    base = ADMIN_URL or os.getenv("WEBAPP_URL", "").rstrip("/") or GAME_URL
-    base = (base or "").rstrip("/")
-    if not base:
-        return "privacy.html"
-    return f"{base}/privacy.html"
+
+def consent_inline_keyboard() -> InlineKeyboardMarkup:
+    rows = []
+    if PRIVACY_POLICY_URL:
+        rows.append([
+            InlineKeyboardButton(
+                text="Открыть Политику обработки персональных данных",
+                url=PRIVACY_POLICY_URL,
+            )
+        ])
+    return InlineKeyboardMarkup(inline_keyboard=rows) if rows else InlineKeyboardMarkup(inline_keyboard=[])
+
+
+async def _send_consent_prompt(message: types.Message, state: FSMContext) -> None:
+    if PRIVACY_POLICY_URL:
+        text = (
+            "Перед регистрацией необходимо ознакомиться с\n"
+            f'<a href="{html.escape(PRIVACY_POLICY_URL)}">Политикой обработки персональных данных</a>.\n\n'
+            "После ознакомления нажмите зелёную кнопку ниже,\n"
+            "чтобы подтвердить согласие на обработку персональных\n"
+            "данных."
+        )
+        policy_msg = await message.answer(
+            text,
+            parse_mode="HTML",
+            reply_markup=consent_inline_keyboard(),
+        )
+    else:
+        policy_msg = await message.answer(
+            "Перед регистрацией необходимо ознакомиться с Политикой обработки персональных данных.\n\n"
+            "После ознакомления нажмите зелёную кнопку ниже, чтобы подтвердить согласие на обработку персональных данных."
+        )
+
+    await state.update_data(policy_message_id=policy_msg.message_id)
+    await state.set_state(RegState.waiting_for_consent)
 
 
 def game_keyboard() -> ReplyKeyboardMarkup:
@@ -211,42 +251,6 @@ def stats_inline_keyboard() -> InlineKeyboardMarkup:
     )
 
 
-def consent_inline_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="Открыть Политику обработки персональных данных",
-                    url=_privacy_policy_url(),
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="Я ознакомлен(а) с Политикой обработки персональных данных и даю согласие на обработку моих персональных данных",
-                    callback_data="pd_consent_accept",
-                    style="success",
-                )
-            ],
-        ]
-    )
-
-
-async def _ask_for_pd_consent(message: types.Message, state: FSMContext) -> None:
-    policy_url = html.escape(_privacy_policy_url(), quote=True)
-    await message.answer(
-        (
-            "Перед регистрацией необходимо ознакомиться с "
-            f'<a href="{policy_url}">Политикой обработки персональных данных</a>.\n\n'
-            "После ознакомления нажмите зелёную кнопку ниже, чтобы подтвердить согласие "
-            "на обработку персональных данных."
-        ),
-        parse_mode="HTML",
-        reply_markup=consent_inline_keyboard(),
-        disable_web_page_preview=True,
-    )
-    await state.set_state(RegState.waiting_for_consent)
-
-
 @router.message(Command("start"))
 async def cmd_start(message: types.Message, state: FSMContext):
     await state.clear()
@@ -260,30 +264,39 @@ async def cmd_start(message: types.Message, state: FSMContext):
         )
         return
 
-    await _ask_for_pd_consent(message, state)
-
-
-@router.callback_query(RegState.waiting_for_consent, F.data == "pd_consent_accept")
-async def cb_pd_consent_accept(callback: types.CallbackQuery, state: FSMContext):
-    await callback.answer()
-    if callback.message:
-        try:
-            await callback.message.edit_reply_markup(reply_markup=None)
-        except Exception:
-            pass
-        await callback.message.answer(
-            "Добро пожаловать на АПЗ! Для начала работы, пожалуйста, представьтесь.\n"
-            "✍️ Введите <b>Имя и Фамилию</b> одним сообщением (через пробел).\n"
-            "Пример: Иван Иванов",
-            parse_mode="HTML",
-        )
-    await state.update_data(pd_consent=True)
+    await message.answer(
+        "Добро пожаловать на АПЗ! Для начала работы, пожалуйста, представьтесь.\n"
+        "✍️ Введите <b>Имя и Фамилию</b> одним сообщением (через пробел).\n"
+        "Пример: Иван Иванов",
+        parse_mode="HTML",
+        reply_markup=ReplyKeyboardRemove(),
+    )
     await state.set_state(RegState.waiting_for_fullname)
 
 
 @router.message(RegState.waiting_for_consent)
-async def process_waiting_for_pd_consent(message: types.Message, state: FSMContext):
-    await _ask_for_pd_consent(message, state)
+async def process_consent(message: types.Message, state: FSMContext):
+    text = (message.text or "").strip()
+    if text != CONSENT_BUTTON_TEXT:
+        await message.answer("Пожалуйста, нажмите зелёную кнопку ниже, чтобы продолжить.")
+        return
+
+    data = await state.get_data()
+    policy_message_id = data.get("policy_message_id")
+    if policy_message_id:
+        try:
+            await message.bot.delete_message(message.chat.id, int(policy_message_id))
+        except Exception:
+            pass
+
+    await message.answer(
+        "Добро пожаловать на АПЗ! Для начала работы, пожалуйста, представьтесь.\n"
+        "✍️ Введите <b>Имя и Фамилию</b> одним сообщением (через пробел).\n"
+        "Пример: Иван Иванов",
+        parse_mode="HTML",
+        reply_markup=ReplyKeyboardRemove(),
+    )
+    await state.set_state(RegState.waiting_for_fullname)
 
 
 @router.message(RegState.waiting_for_fullname)
@@ -360,14 +373,7 @@ async def process_city(message: types.Message, state: FSMContext):
     surname = data["last_name"]
     age = int(data["age"])
 
-    await register_user(
-        user_id,
-        name,
-        surname,
-        age,
-        city,
-        pd_consent=bool(data.get("pd_consent")),
-    )
+    await register_user(user_id, name, surname, age, city)
     await state.clear()
 
     await message.answer(
