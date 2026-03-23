@@ -82,7 +82,7 @@
 
       <div class="level-card" style="margin:0;">
         <div class="level-title">Удаление пользователей</div>
-        <div class="level-stats muted">Выбери пользователя из списка ниже.</div>
+        <div class="level-stats muted">Выбери пользователя из списка ниже (можно искать по имени/фамилии).</div>
 
         <div class="admin-row" style="margin-top:10px;">
           <input id="users-search" type="text" placeholder="Поиск: имя или фамилия" class="admin-input" />
@@ -138,19 +138,16 @@
   <div id="screen-admin-awards" class="screen admin-screen" aria-hidden="true">
     <div class="admin-wrap">
       <div class="admin-page-head">
-        <div class="admin-page-title">🏅 Грамоты и дипломы</div>
+        <div class="admin-page-title">🏅 Сертификаты</div>
       </div>
 
       <div class="level-card" style="margin:0;">
         <div class="level-title">Сформировать и отправить</div>
-        <div class="level-stats muted">Выбери пользователя из списка ниже.</div>
+        <div class="level-stats muted">Выбери пользователя из списка ниже (поиск по имени/фамилии). Имя и фамилия подставляются из статистики по Telegram ID.</div>
 
         <div class="admin-row award-top-row" style="gap:10px; flex-wrap:wrap;">
           <select id="award-template" class="admin-input" style="flex:1; min-width:180px;">
             <option value="participation">Сертификат за участие</option>
-            <option value="1">Диплом — 1 место</option>
-            <option value="2">Диплом — 2 место</option>
-            <option value="3">Диплом — 3 место</option>
           </select>
           <!-- Desktop: обычный select. Mobile: кастомный пикер (ниже), потому что мобильные WebView не стилизуют <option>. -->
           <select id="award-font" class="admin-input admin-font-select" style="flex:1; min-width:180px;"></select>
@@ -180,12 +177,9 @@
         </div>
 
         <div class="level-stats" style="margin-top:10px;">
-          <div class="muted">Превью шаблонов:</div>
+          <div class="muted">Превью шаблона:</div>
           <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:8px; justify-content:center; width:100%;">
             <img src="assets/cert_templates/sertificat.png" alt="Сертификат" style="width:120px; border-radius:10px;" />
-            <img src="assets/cert_templates/1mesto.png" alt="1 место" style="width:120px; border-radius:10px;" />
-            <img src="assets/cert_templates/2mesto.png" alt="2 место" style="width:120px; border-radius:10px;" />
-            <img src="assets/cert_templates/3mesto.png" alt="3 место" style="width:120px; border-radius:10px;" />
           </div>
         </div>
       </div>
