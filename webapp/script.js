@@ -1224,8 +1224,10 @@ function showFinalScreenFromStats() {
                 ? `${bestTimeText} · ${scoreForTotal} б.`
                 : bestTimeText;
         } else {
-            valueText = (s.bestScore ?? '—');
             scoreForTotal = (typeof s.bestScore === 'number') ? s.bestScore : 0;
+            valueText = (typeof s.bestScore === 'number' && Number.isFinite(s.bestScore))
+                ? `${scoreForTotal} б.`
+                : '—';
         }
 
         totalScore += scoreForTotal;
