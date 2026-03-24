@@ -1221,12 +1221,12 @@ function showFinalScreenFromStats() {
             const bestTimeText = formatTime(s.bestTimeMs);
             scoreForTotal = (typeof s.bestScore === 'number') ? s.bestScore : 0;
             valueText = (bestTimeText !== '—' && scoreForTotal > 0)
-                ? `${bestTimeText} · ${scoreForTotal} б.`
+                ? `${bestTimeText} - ${scoreForTotal} б`
                 : bestTimeText;
         } else {
             scoreForTotal = (typeof s.bestScore === 'number') ? s.bestScore : 0;
             valueText = (typeof s.bestScore === 'number' && Number.isFinite(s.bestScore))
-                ? `${scoreForTotal} б.`
+                ? `${scoreForTotal} б`
                 : '—';
         }
 
