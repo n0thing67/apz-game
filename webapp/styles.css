@@ -695,8 +695,8 @@ body.admin-body {
 /* === УРОВЕНЬ 2: JUMPER (Детский стиль) === */
 
 #doodle-ui {
-    /* Отступ сверху, чтобы плашка таймера/очков не прилипала к fixed-кнопкам */
-    margin-top: calc(env(safe-area-inset-top, 0px) + 56px);
+    /* Небольшой зазор под fixed-кнопками: буквально несколько пикселей, без большого пустого поля */
+    margin-top: calc(env(safe-area-inset-top, 0px) + 44px);
     margin-bottom: 10px;
     background: white;
     padding: 10px;
