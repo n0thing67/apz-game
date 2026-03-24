@@ -1976,11 +1976,15 @@ hr {
 }
 
 .speech-right .speech-text{
+    transform: translate(6px, 8px);
     width: 180px;
     max-width: 180px;
     margin: 0 auto 12px;
 }
 
+.speech-left .speech-text{
+    transform: translate(0px, -8px);
+}
 .speech-text.fade-out{
     opacity: 0;
 }
