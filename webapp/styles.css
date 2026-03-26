@@ -695,8 +695,8 @@ body.admin-body {
 /* === УРОВЕНЬ 2: JUMPER (Детский стиль) === */
 
 #doodle-ui {
-    /* Небольшой зазор под fixed-кнопками: буквально несколько пикселей, без большого пустого поля */
-    margin-top: calc(env(safe-area-inset-top, 0px) + 44px);
+    /* Минимальный зазор под верхними fixed-кнопками, чтобы блок был почти вплотную */
+    margin-top: calc(env(safe-area-inset-top, 0px) + 8px);
     margin-bottom: 10px;
     background: white;
     padding: 10px;
@@ -2003,6 +2003,7 @@ hr {
         margin-top: 14px;
         transform: translateY(35px);
     }
+
     /* уменьшаем разнос персонажей, чтобы ничего не уезжало за края */
     .welcome-characters .welcome-character:first-child{ transform: translateX(-40px); }
     .welcome-characters .welcome-character:last-child{  transform: translateX(40px);  }
