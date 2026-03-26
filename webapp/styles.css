@@ -89,6 +89,11 @@ p {
     touch-action: pan-y;
 }
 
+/* Jumper: минимальный зазор между верхними кнопками и блоком счёта */
+#screen-level2{
+    padding-top: 4px;
+}
+
 /* =====================
    ADMIN PANEL
    ===================== */
@@ -695,8 +700,6 @@ body.admin-body {
 /* === УРОВЕНЬ 2: JUMPER (Детский стиль) === */
 
 #doodle-ui {
-    /* Минимальный зазор под верхними fixed-кнопками, чтобы блок был почти вплотную */
-    margin-top: calc(env(safe-area-inset-top, 0px) + 8px);
     margin-bottom: 10px;
     background: white;
     padding: 10px;
