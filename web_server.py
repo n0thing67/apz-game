@@ -390,7 +390,7 @@ async def _format_actor(admin_id: int) -> str:
     try:
         row = await get_user(int(admin_id))
         if row:
-            _, first_name, last_name, _, _ = row
+            _, first_name, last_name, *_rest = row
             full_name = f"{first_name or ''} {last_name or ''}".strip()
             if full_name:
                 return f"{full_name} (ID: {admin_id})"
@@ -412,7 +412,7 @@ async def cors_middleware(request: web.Request, handler):
     # Важно: WebApp шлёт initData в кастомном заголовке.
     # Если его не разрешить в CORS, браузер/WebView блокирует запросы (особенно /api/me),
     # и локальный localStorage потом «оживляет» старые очки/рекомендации после админского сброса.
-    resp.headers["Access-Control-Allow-Headers"] = "Content-Type, X-Telegram-InitData"
+    resp.headers["Access-Control-Allow-Headers"] = "Content-Type, X-Telegram-InitData, X-Admin-Token"
     return resp
 
 
@@ -711,7 +711,7 @@ async def admin_set_level(request: web.Request) -> web.Response:
 
 
 async def admin_send_award(request: web.Request) -> web.Response:
-    await _require_admin(request)
+    admin_id = await _require_admin(request)
     payload = await request.json()
 
     tg_id = int(payload.get("telegram_id"))
@@ -749,37 +749,56 @@ async def admin_send_award(request: web.Request) -> web.Response:
         font_key=font_key,
     )
 
-    bot: Bot = request.app["bot"]
-    filename = f"award_{template_key}_{tg_id}.png"
-    file = BufferedInputFile(png_bytes, filename=filename)
-
+    filename = f"award_{template_key}_{abs(tg_id)}.png"
     caption = (
         "Сертификат за участие" if template_key == "participation" else f"Диплом за {template_key} место"
     )
     caption = f"{caption}\n{event_name} — {event_date}\nОчки: {score if score is not None else 0}"
 
     try:
-        await bot.send_document(chat_id=tg_id, document=file, caption=caption)
+        if int(tg_id) < 0:
+            # MAX-пользователи в общей БД хранятся как отрицательные ID.
+            # Telegram Bot API не умеет отправлять документы таким пользователям,
+            # поэтому отправляем файл через MAX Bot API.
+            await _send_document_to_max_user(
+                request.app,
+                max_user_id=_max_user_id_from_db_id(int(tg_id)),
+                content=png_bytes,
+                filename=filename,
+                caption=caption,
+            )
+        else:
+            bot: Bot = request.app["bot"]
+            file = BufferedInputFile(png_bytes, filename=filename)
+            await bot.send_document(chat_id=tg_id, document=file, caption=caption)
 
-        # Дублируем админу в закрытый канал (если задано)
-        admin_channel_id_raw = (os.getenv("ADMIN_CHANNEL_ID") or "").strip()
-        if admin_channel_id_raw:
-            try:
-                admin_channel_id = int(admin_channel_id_raw)
-                admin_caption = (
-                    f"🗂 Копия: {caption}\n"
-                    f"Пользователь: {full_name}\n"
-                    f"Telegram ID: {tg_id}"
-                )
-                # BufferedInputFile нельзя надёжно переиспользовать — создаём новый объект из тех же bytes
-                file2 = BufferedInputFile(png_bytes, filename=filename)
-                await bot.send_document(chat_id=admin_channel_id, document=file2, caption=admin_caption)
-            except Exception:
-                # Не блокируем отправку пользователю, если канал недоступен/не настроен
-                pass
+            # Дублируем админу в закрытый канал (если задано)
+            admin_channel_id_raw = (os.getenv("ADMIN_CHANNEL_ID") or "").strip()
+            if admin_channel_id_raw:
+                try:
+                    admin_channel_id = int(admin_channel_id_raw)
+                    admin_caption = (
+                        f"🗂 Копия: {caption}\n"
+                        f"Пользователь: {full_name}\n"
+                        f"Telegram ID: {tg_id}"
+                    )
+                    # BufferedInputFile нельзя надёжно переиспользовать — создаём новый объект из тех же bytes
+                    file2 = BufferedInputFile(png_bytes, filename=filename)
+                    await bot.send_document(chat_id=admin_channel_id, document=file2, caption=admin_caption)
+                except Exception:
+                    # Не блокируем отправку пользователю, если канал недоступен/не настроен
+                    pass
     except Exception as e:
-        # например, пользователь не писал боту/заблокировал
+        # например, пользователь не писал боту/заблокировал или MAX upload/message завершились ошибкой
         raise web.HTTPBadRequest(text=f"Send failed: {e}")
+
+    actor = await _format_actor(admin_id)
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    user_platform = "MAX" if int(tg_id) < 0 else "Telegram"
+    await _send_admin_log(
+        request.app,
+        f"🏅 Отправка сертификата\nПользователь: {full_name} (ID: {tg_id}; платформа: {user_platform})\nАдмин: {actor}\nВремя: {ts}",
+    )
 
     return web.json_response({"ok": True, "sent_to": tg_id})
 
