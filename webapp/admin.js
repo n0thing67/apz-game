@@ -630,10 +630,26 @@ function renderAwardsListFromCache() {
         const nextActive = btn.dataset.next === "1";
         btn.disabled = true;
         try {
-          await api("/api/admin/set_level", {
-            method: "POST",
-            body: JSON.stringify({ level_key: key, is_active: nextActive }),
-          });
+          if (hasAdminToken) {
+            // Для MAX/внешнего браузера делаем переключение по GET-параметрам,
+            // как и остальные запросы доступа по admin_token. Это обходит капризные WebView,
+            // где POST+JSON для этого экрана может не доходить стабильно.
+            const qs = new URLSearchParams({
+              level_key: key,
+              is_active: nextActive ? "1" : "0",
+              admin_token: ADMIN_TOKEN,
+              _: String(Date.now()),
+            });
+            await api(`/api/admin/set_level?${qs.toString()}`, {
+              method: "GET",
+              cache: "no-store",
+            });
+          } else {
+            await api("/api/admin/set_level", {
+              method: "POST",
+              body: JSON.stringify({ level_key: key, is_active: nextActive }),
+            });
+          }
           // Обновляем только эту карточку — без полного перерендера,
           // чтобы не было рывков страницы вверх-вниз.
           active = nextActive;
@@ -871,6 +887,7 @@ function renderAwardsListFromCache() {
       btn.disabled = false;
     }
   });
+
 
   // --- USERS VIEW page actions ---
   byId("back-from-users-view")?.addEventListener("click", () => showScreen("home"));
