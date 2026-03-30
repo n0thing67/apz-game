@@ -420,7 +420,7 @@ if not _using_postgres:
     async def get_all_users(limit: int = 200):
         db = await get_db()
         async with db.execute(
-            "SELECT telegram_id, first_name, last_name, age, score FROM users ORDER BY telegram_id ASC LIMIT ?",
+            "SELECT telegram_id, first_name, last_name, age, city, score FROM users ORDER BY telegram_id ASC LIMIT ?",
             (limit,),
         ) as cursor:
             return await cursor.fetchall()
