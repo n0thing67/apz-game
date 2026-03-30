@@ -261,7 +261,12 @@ async function init() {
     const method = (fetchOpts.method || "GET").toUpperCase();
     if (method !== "GET" && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
 
-        const url = new URL(path, window.location.href).toString();
+    const finalFetchOpts = {
+      cache: fetchOpts.cache || "no-store",
+      ...fetchOpts,
+    };
+
+    const url = new URL(path, window.location.href).toString();
     // В Telegram WebView иногда бывают "вечные" подвисания запросов при плохой сети/прокси.
     // AbortController может не сработать в некоторых WebView, поэтому делаем "жёсткий" таймаут через Promise.race.
     const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
@@ -279,7 +284,7 @@ async function init() {
 
     let res;
     try {
-    const fetchPromise = fetch(url, { ...fetchOpts, headers, signal: controller?.signal });
+    const fetchPromise = fetch(url, { ...finalFetchOpts, headers, signal: controller?.signal });
     res = await Promise.race([fetchPromise, timeoutPromise]);
     } catch (err) {
     if (err?.name === "AbortError") {
@@ -565,7 +570,10 @@ function renderAwardsListFromCache() {
 
 
   async function loadLevels() {
-    const levelsResp = await api("/api/levels");
+    // Во внешних браузерах/WebView GET /api/levels может агрессивно кешироваться,
+    // из-за чего после переключения карточка тут же "откатывается" назад старым ответом.
+    // Для админки всегда перечитываем уровни без кеша и с cache-buster.
+    const levelsResp = await api(`/api/levels?_=${Date.now()}`, { cache: "no-store" });
     const levels = levelsResp.levels || {};
     const keys = Object.keys(levels).sort();
 
