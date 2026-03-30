@@ -255,6 +255,84 @@ def _get_admin_auth_secret() -> str:
     )
 
 
+def _max_user_id_from_db_id(db_user_id: int) -> int:
+    return abs(int(db_user_id))
+
+
+def _parse_boolish(value) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    s = str(value or "").strip().lower()
+    if s in {"1", "true", "yes", "on", "y"}:
+        return True
+    if s in {"0", "false", "no", "off", "n", ""}:
+        return False
+    return bool(value)
+
+
+async def _max_upload_file(app: web.Application, content: bytes, filename: str, content_type: str = "application/octet-stream") -> dict:
+    token = (app.get("max_token") or "").strip()
+    session: aiohttp.ClientSession = app["max_session"]
+    if not token:
+        raise RuntimeError("MAX bot token is not configured")
+
+    headers = {"Authorization": token}
+    async with session.post(f"{(os.getenv('MAX_API_BASE', 'https://platform-api.max.ru').rstrip('/'))}/uploads", headers=headers, params={"type": "file"}) as resp:
+        body = await resp.text()
+        if resp.status >= 400:
+            raise RuntimeError(f"MAX upload init failed: {resp.status} {body}")
+        try:
+            init_data = json.loads(body) if body else {}
+        except Exception:
+            init_data = {}
+
+    upload_url = str(init_data.get("url") or "").strip()
+    if not upload_url:
+        raise RuntimeError("MAX upload init did not return url")
+
+    form = aiohttp.FormData()
+    form.add_field("data", content, filename=filename, content_type=content_type)
+    async with session.post(upload_url, headers=headers, data=form) as resp:
+        body = await resp.text()
+        if resp.status >= 400:
+            raise RuntimeError(f"MAX file upload failed: {resp.status} {body}")
+        try:
+            uploaded = json.loads(body) if body else {}
+        except Exception:
+            uploaded = {}
+
+    if not uploaded.get("token"):
+        raise RuntimeError("MAX upload did not return token")
+    return uploaded
+
+
+async def _send_document_to_max_user(app: web.Application, *, max_user_id: int, content: bytes, filename: str, caption: str) -> None:
+    from max_bot import send_message
+
+    uploaded = await _max_upload_file(app, content, filename, content_type="image/png")
+    token = app.get("max_token") or ""
+    session: aiohttp.ClientSession = app["max_session"]
+
+    attachments = [{"type": "file", "payload": uploaded}]
+    retry_delays = (0.0, 1.0, 2.0)
+    last_error = None
+    for delay in retry_delays:
+        if delay:
+            await asyncio.sleep(delay)
+        try:
+            await send_message(session, token, user_id=int(max_user_id), text=caption, attachments=attachments)
+            return
+        except Exception as e:
+            last_error = e
+            msg = str(e)
+            if "attachment.not.ready" not in msg and "not.processed" not in msg:
+                raise
+    if last_error:
+        raise last_error
+
+
 def _verify_admin_token(raw_token: str) -> int | None:
     token = (raw_token or "").strip()
     if not token:
@@ -619,7 +697,7 @@ async def admin_set_level(request: web.Request) -> web.Response:
     admin_id = await _require_admin(request)
     payload = await request.json()
     level_key = str(payload.get("level_key"))
-    is_active = bool(payload.get("is_active"))
+    is_active = _parse_boolish(payload.get("is_active"))
     await set_level_active(level_key, is_active)
 
     actor = await _format_actor(admin_id)
