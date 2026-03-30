@@ -1,6 +1,7 @@
 /* global Telegram */
 
 const tg = window.Telegram?.WebApp;
+const ADMIN_TOKEN = new URLSearchParams(window.location.search).get("admin_token") || "";
 
 // В админке оставляем только два шрифта.
 // (Сервер тоже принимает только эти ключи; всё остальное фолбэкается в DejaVu Sans.)
@@ -227,11 +228,16 @@ async function init() {
     }
   }
 
-  // Telegram init
+  const hasAdminToken = Boolean(ADMIN_TOKEN);
+
+  // Telegram init нужен только внутри Telegram. Для MAX/внешнего браузера работаем по admin_token.
   try {
-    if (!tg) throw new Error("Telegram WebApp не найден. Открой админку через /admin → кнопку в Telegram.");
-    tg.ready();
-    tg.expand();
+    if (tg) {
+      tg.ready();
+      tg.expand();
+    } else if (!hasAdminToken) {
+      throw new Error("Открой админку через /admin в Telegram или MAX.");
+    }
   } catch (e) {
     $who.textContent = "Ошибка: " + e.message;
     return;
@@ -242,11 +248,16 @@ async function init() {
   }
 
   async function api(path, opts = {}) {
-    const initData = getInitData();
-    if (!initData) throw new Error("Bad initData: открой админку внутри Telegram через /admin → кнопку.");
-
     const { timeoutMs: _timeoutMs, ...fetchOpts } = opts;
-    const headers = Object.assign({ "X-Telegram-InitData": initData }, fetchOpts.headers || {});
+    const headers = Object.assign({}, fetchOpts.headers || {});
+
+    if (hasAdminToken) {
+      headers["X-Admin-Token"] = ADMIN_TOKEN;
+    } else {
+      const initData = getInitData();
+      if (!initData) throw new Error("Bad initData: открой админку через /admin → кнопку.");
+      headers["X-Telegram-InitData"] = initData;
+    }
     const method = (fetchOpts.method || "GET").toUpperCase();
     if (method !== "GET" && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
 
