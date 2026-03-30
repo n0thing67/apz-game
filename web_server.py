@@ -4,6 +4,7 @@ import hmac
 import json
 import logging
 import os
+import time
 from datetime import datetime
 from io import BytesIO
 from urllib.parse import parse_qsl
@@ -243,7 +244,45 @@ def _extract_user_id(verified_params: dict) -> int | None:
 
 def _get_admin_ids() -> set[int]:
     raw_admins = os.getenv("ADMIN_IDS", "")
-    return {int(x.strip()) for x in raw_admins.split(",") if x.strip().isdigit()}
+    return {int(x.strip()) for x in raw_admins.split(",") if x.strip().lstrip("-").isdigit()}
+
+
+def _get_admin_auth_secret() -> str:
+    return (
+        (os.getenv("ADMIN_AUTH_SECRET") or "").strip()
+        or (os.getenv("MAX_BOT_TOKEN") or "").strip()
+        or (os.getenv("BOT_TOKEN") or "").strip()
+    )
+
+
+def _verify_admin_token(raw_token: str) -> int | None:
+    token = (raw_token or "").strip()
+    if not token:
+        return None
+
+    try:
+        uid_raw, exp_raw, sig = token.split(".", 2)
+        uid = int(uid_raw)
+        exp = int(exp_raw)
+    except Exception:
+        return None
+
+    if exp < int(time.time()):
+        return None
+
+    secret = _get_admin_auth_secret()
+    if not secret:
+        return None
+
+    payload = f"{uid}:{exp}"
+    expected = hmac.new(secret.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(expected, sig):
+        return None
+
+    if uid not in _get_admin_ids():
+        return None
+
+    return uid
 
 
 async def _send_admin_log(app: web.Application, text: str) -> None:
@@ -418,7 +457,12 @@ async def handle_me(request: web.Request) -> web.Response:
     )
 
 async def _require_admin(request: web.Request) -> int:
-    """Проверка admin по initData (передаётся в заголовке X-Telegram-InitData или ?initData=...)."""
+    """Проверка admin: либо Telegram initData, либо подписанный admin_token для MAX/внешнего браузера."""
+    admin_token = request.headers.get("X-Admin-Token") or request.query.get("admin_token") or ""
+    token_user_id = _verify_admin_token(admin_token)
+    if token_user_id is not None:
+        return token_user_id
+
     bot_token = os.getenv("BOT_TOKEN", "")
     init_data = request.headers.get("X-Telegram-InitData") or request.query.get("initData") or ""
 
