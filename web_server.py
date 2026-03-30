@@ -701,8 +701,23 @@ async def admin_delete_all_users(request: web.Request) -> web.Response:
 
 async def admin_set_level(request: web.Request) -> web.Response:
     admin_id = await _require_admin(request)
-    payload = await request.json()
-    level_key = str(payload.get("level_key"))
+
+    payload = {}
+    if request.method == "POST":
+        try:
+            payload = await request.json()
+        except Exception:
+            try:
+                payload = dict(await request.post())
+            except Exception:
+                payload = {}
+    else:
+        payload = dict(request.query)
+
+    level_key = str(payload.get("level_key") or "").strip()
+    if not level_key:
+        raise web.HTTPBadRequest(text="level_key required")
+
     is_active = _parse_boolish(payload.get("is_active"))
     await set_level_active(level_key, is_active)
 
@@ -848,6 +863,7 @@ def create_app() -> web.Application:
     app.router.add_post("/api/admin/reset_user_scores", admin_reset_user_scores)
     app.router.add_post("/api/admin/delete_user", admin_delete_user)
     app.router.add_post("/api/admin/delete_all_users", admin_delete_all_users)
+    app.router.add_get("/api/admin/set_level", admin_set_level)
     app.router.add_post("/api/admin/set_level", admin_set_level)
     app.router.add_post("/api/admin/send_award", admin_send_award)
 
