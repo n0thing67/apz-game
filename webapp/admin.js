@@ -872,7 +872,6 @@ function renderAwardsListFromCache() {
     }
   });
 
-
   // --- USERS VIEW page actions ---
   byId("back-from-users-view")?.addEventListener("click", () => showScreen("home"));
   byId("btn-refresh-users-view")?.addEventListener("click", () => loadUsersView().catch((e) => alert(e.message)));
