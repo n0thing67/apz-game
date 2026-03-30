@@ -445,7 +445,7 @@ async def handle_levels(request: web.Request) -> web.Response:
             user_deleted_token = "0"
             user_reset_token = "0"
 
-    return web.json_response(
+    resp = web.json_response(
         {
             "ok": True,
             "levels": levels,
@@ -455,6 +455,12 @@ async def handle_levels(request: web.Request) -> web.Response:
             "user_reset_token": str(user_reset_token or "0"),
         }
     )
+    # Внешний браузер/MAX WebView может кешировать ответ /api/levels и показывать
+    # старый статус уровней даже после успешного переключения в админке.
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    resp.headers["Pragma"] = "no-cache"
+    resp.headers["Expires"] = "0"
+    return resp
 
 
 
