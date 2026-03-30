@@ -601,7 +601,7 @@ function renderAwardsListFromCache() {
       row.innerHTML = `
         <div class="level-title">${levelEmoji(key)} ${esc(levelTitle(key))}</div>
         <div class="level-stats">Статус: <b class="level-status">${active ? "ВКЛ" : "ВЫКЛ"}</b></div>
-        <button class="btn ${active ? "btn-secondary" : ""}" data-next="${active ? "0" : "1"}">
+        <button type="button" class="btn ${active ? "btn-secondary" : ""}" data-next="${active ? "0" : "1"}">
           ${active ? "Отключить" : "Включить"}
         </button>
       `;
@@ -630,6 +630,8 @@ function renderAwardsListFromCache() {
           // чтобы не было рывков страницы вверх-вниз.
           active = nextActive;
           applyState();
+          // На некоторых мобильных WebView безопаснее сразу перечитать состояние с сервера.
+          try { await loadLevels(); } catch (_) {}
         } catch (e) {
           alert("Ошибка: " + e.message);
         } finally {
