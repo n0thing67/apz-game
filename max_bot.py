@@ -2,6 +2,9 @@ import os
 import re
 import json
 import logging
+import time
+import hmac
+import hashlib
 from urllib.parse import quote
 
 import aiohttp
@@ -53,6 +56,37 @@ def _game_url() -> str:
     api_part = f"?api={quote(admin_url, safe='')}" if admin_url else ""
     return f"{game_url}/" + api_part
 
+
+def _admin_auth_secret() -> str:
+    return (
+        (os.getenv("ADMIN_AUTH_SECRET") or "").strip()
+        or (os.getenv("MAX_BOT_TOKEN") or "").strip()
+        or (os.getenv("BOT_TOKEN") or "").strip()
+    )
+
+
+def _make_admin_token(db_user_id: int, ttl_seconds: int = 3600) -> str:
+    secret = _admin_auth_secret()
+    if not secret:
+        return ""
+    uid = int(db_user_id)
+    exp = int(time.time()) + max(60, int(ttl_seconds))
+    payload = f"{uid}:{exp}"
+    sig = hmac.new(secret.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).hexdigest()
+    return f"{uid}.{exp}.{sig}"
+
+
+def _admin_entry_url(max_user_id: int | None = None) -> str:
+    au = _admin_url()
+    if not au:
+        return ""
+    base = f"{au}/admin.html"
+    if max_user_id is None:
+        return base
+    token = _make_admin_token(_max_to_db_id(int(max_user_id)))
+    if not token:
+        return base
+    return f"{base}?admin_token={quote(token, safe='')}"
 
 
 def _factory_entry_url() -> str:
@@ -300,12 +334,12 @@ async def handle_update(app, update: dict) -> None:
             if not _is_admin(_max_to_db_id(int(max_user_id))):
                 await send_message(session, token, user_id=int(max_user_id), text="Нет доступа")
                 return
-            au = _admin_url()
-            if not au:
+            admin_entry = _admin_entry_url(int(max_user_id))
+            if not admin_entry:
                 await send_message(session, token, user_id=int(max_user_id), text="Админ-панель не настроена (ADMIN_URL/WEBAPP_URL).")
                 return
             kb = _inline_keyboard([
-                [{"type": "link", "text": "Админ-панель", "url": f"{au}/admin.html"}]
+                [{"type": "link", "text": "Админ-панель", "url": admin_entry}]
             ])
             await send_message(session, token, user_id=int(max_user_id), text="⚙️ Панель администратора", attachments=kb)
             return
