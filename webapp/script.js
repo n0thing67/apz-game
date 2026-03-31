@@ -845,15 +845,110 @@ let LEVEL_AVAIL = null; // { level_key: true/false }
 // Если игра открыта с GitHub Pages, API находится на Render.
 // Бот передает адрес API параметром: ?api=https://<render-app>.onrender.com
 // Также сохраняем его в localStorage, чтобы работало и при перезапуске.
+function decodeBase64Url(value) {
+    try {
+        const s = String(value || '').trim();
+        if (!s) return '';
+        const normalized = s.replace(/-/g, '+').replace(/_/g, '/');
+        const padded = normalized + '='.repeat((4 - (normalized.length % 4)) % 4);
+        return atob(padded);
+    } catch (e) {
+        return '';
+    }
+}
+
+function normalizeApiBase(value) {
+    const s = String(value || '').trim();
+    if (!/^https?:\/\//i.test(s)) return '';
+    return s.replace(/\/$/, '');
+}
+
+function extractApiBaseFromStartParam(raw) {
+    const value = String(raw || '').trim();
+    if (!value) return '';
+
+    if (/^https?:\/\//i.test(value)) {
+        return normalizeApiBase(value);
+    }
+
+    const mPacked = value.match(/(?:^|[|;&?])api=([^|;&]+)/i);
+    if (mPacked) {
+        try {
+            return normalizeApiBase(decodeURIComponent(mPacked[1]));
+        } catch (e) {}
+    }
+
+    const marker = 'game__api__';
+    const idx = value.indexOf(marker);
+    if (idx >= 0) {
+        const encoded = value.slice(idx + marker.length).split(/[|;&?]/, 1)[0];
+        return normalizeApiBase(decodeBase64Url(encoded));
+    }
+
+    return '';
+}
+
+function parseBridgeInitData(raw) {
+    const candidates = [];
+    try {
+        const s = String(raw || '').trim();
+        if (!s) return candidates;
+
+        try {
+            const obj = JSON.parse(s);
+            if (obj && typeof obj === 'object') {
+                candidates.push(obj.start_param, obj.startapp, obj.startApp, obj.api);
+            }
+        } catch (e) {}
+
+        try {
+            const params = new URLSearchParams(s);
+            candidates.push(
+                params.get('start_param'),
+                params.get('startapp'),
+                params.get('startApp'),
+                params.get('api')
+            );
+        } catch (e) {}
+    } catch (e) {}
+    return candidates;
+}
+
+function getApiBaseFromBridge() {
+    const candidates = [
+        tg?.initDataUnsafe?.start_param,
+        tg?.initDataUnsafe?.startapp,
+        tg?.initDataUnsafe?.startApp,
+        tg?.initDataUnsafe?.api,
+        mx?.initDataUnsafe?.start_param,
+        mx?.initDataUnsafe?.startapp,
+        mx?.initDataUnsafe?.startApp,
+        mx?.initDataUnsafe?.api,
+        mx?.startParam,
+        mx?.start_param,
+        mx?.startapp,
+        mx?.api,
+        ...parseBridgeInitData(mx?.initData),
+        ...parseBridgeInitData(tg?.initData),
+    ];
+
+    for (const item of candidates) {
+        const api = extractApiBaseFromStartParam(item);
+        if (api) return api;
+    }
+    return '';
+}
+
 let API_BASE = '';
 try {
     const url = new URL(window.location.href);
-    const qp = (url.searchParams.get('api') || '').trim();
-    if (qp) {
-        API_BASE = qp.replace(/\/$/, '');
+    const qp = normalizeApiBase(url.searchParams.get('api') || '');
+    const bridgeApi = getApiBaseFromBridge();
+    const savedApi = normalizeApiBase(localStorage.getItem('apzApiBaseV1') || '');
+
+    API_BASE = qp || bridgeApi || savedApi;
+    if (API_BASE) {
         localStorage.setItem('apzApiBaseV1', API_BASE);
-    } else {
-        API_BASE = (localStorage.getItem('apzApiBaseV1') || '').replace(/\/$/, '');
     }
 } catch (e) {
     API_BASE = '';
