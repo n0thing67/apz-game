@@ -960,6 +960,76 @@ function apiUrl(path) {
     return API_BASE + path;
 }
 
+function getMaxInitDataRaw() {
+    try {
+        if (mx?.initData) return String(mx.initData);
+    } catch (e) {}
+
+    try {
+        const hash = String(window.location.hash || '').replace(/^#/, '');
+        if (hash) {
+            const params = new URLSearchParams(hash);
+            const raw = params.get('WebAppData') || params.get('webappdata') || '';
+            if (raw) return raw;
+        }
+    } catch (e) {}
+
+    try {
+        const url = new URL(window.location.href);
+        const raw = url.searchParams.get('max_init_data') || '';
+        if (raw) return raw;
+    } catch (e) {}
+
+    return '';
+}
+
+function getMaxBotName() {
+    try {
+        const url = new URL(window.location.href);
+        return String(url.searchParams.get('bot') || '').trim().replace(/^@/, '');
+    } catch (e) {
+        return '';
+    }
+}
+
+async function saveStatsForMax(payload) {
+    const maxInitData = getMaxInitDataRaw();
+    if (!maxInitData) return false;
+
+    try {
+        const res = await fetch(apiUrl('/api/max/save_stats'), {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Max-InitData': maxInitData,
+            },
+            body: JSON.stringify(payload),
+        });
+        return res.ok;
+    } catch (e) {
+        return false;
+    }
+}
+
+function openMaxBotChat() {
+    const botName = getMaxBotName();
+    const target = botName ? `https://max.ru/${encodeURIComponent(botName)}?start=stats` : 'https://max.ru';
+
+    try {
+        if (mx?.openMaxLink) {
+            mx.openMaxLink(target);
+            return true;
+        }
+    } catch (e) {}
+
+    try {
+        window.location.href = target;
+        return true;
+    } catch (e) {}
+
+    return false;
+}
+
 
 // Синхронизация профтеста ("Что тебе больше подходит") с сервером.
 // Если админ удалил пользователя/сбросил статистику, локальный localStorage может
@@ -1374,21 +1444,26 @@ if (statLine && statMain && savedApt && savedApt.main) {
     showScreen('screen-final');
 }
 
-function sendStatsAndClose() {
+async function sendStatsAndClose() {
     const payload = buildStatsPayload();
 
     // В Telegram WebApp: отправляем данные и закрываем WebApp
     if (tg?.sendData) {
         try {
             tg.sendData(JSON.stringify(payload));
-            // Закрываем, чтобы пользователь вернулся в Telegram и увидел сообщение бота
             tg.close();
             return;
         } catch (e) {}
     }
 
-    // В MAX Mini App (MAX Bridge): просто закрываем мини‑приложение.
-    // ВАЖНО: close() работает только внутри MAX. Если страница открыта во внешнем браузере — этого метода нет.
+    // MAX: сначала сохраняем статистику на сервер, затем открываем чат с ботом на статистике.
+    const maxSaved = await saveStatsForMax(payload);
+    if (maxSaved) {
+        openMaxBotChat();
+        return;
+    }
+
+    // Если MAX Bridge доступен, но initData не прочитались — хотя бы закроем мини‑приложение.
     if (mx?.close) {
         try {
             mx.close();
@@ -1396,16 +1471,8 @@ function sendStatsAndClose() {
         } catch (e) {}
     }
 
-    // Если мы оказались во внешнем браузере (часто так бывает в MAX, когда бот отправляет обычную ссылку),
-    // то "закрыть" и вернуться в MAX программно нельзя. Единственный рабочий путь — открыть диплинк MAX.
-    // Ссылка https://max.ru обычно подхватывается приложением MAX (если установлено).
-    try {
-        const returnUrl = (new URL(window.location.href)).searchParams.get('return') || '';
-        const target = returnUrl && /^https:\/\/max\.ru\//.test(returnUrl) ? returnUrl : 'https://max.ru';
-        window.location.href = target;
-        return;
-    } catch (e) {}
-
+    // Фолбэк для внешнего браузера: пробуем открыть чат с ботом в MAX.
+    if (openMaxBotChat()) return;
 
     // В обычном браузере: скачиваем JSON
     try {
@@ -1445,7 +1512,7 @@ function confirmSendStatsAndClose() {
                     ]
                 },
                 (btnId) => {
-                    if (btnId === 'go') sendStatsAndClose();
+                    if (btnId === 'go') void sendStatsAndClose();
                 }
             );
             return;
@@ -1459,7 +1526,7 @@ function confirmSendStatsAndClose() {
                 'Сейчас будет переход к статистике.\n\n' +
                 'Нажмите OK, чтобы продолжить, или Отмена, чтобы вернуться в игру.'
             );
-            if (ok) sendStatsAndClose();
+            if (ok) void sendStatsAndClose();
             return;
         }
     } catch (e) {}
