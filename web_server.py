@@ -372,7 +372,7 @@ async def cors_middleware(request: web.Request, handler):
     # Важно: WebApp шлёт initData в кастомном заголовке.
     # Если его не разрешить в CORS, браузер/WebView блокирует запросы (особенно /api/me),
     # и локальный localStorage потом «оживляет» старые очки/рекомендации после админского сброса.
-    resp.headers["Access-Control-Allow-Headers"] = "Content-Type, X-Telegram-InitData, X-Admin-Token"
+    resp.headers["Access-Control-Allow-Headers"] = "Content-Type, X-Telegram-InitData, X-Max-InitData, X-Admin-Token"
     return resp
 async def handle_levels(request: web.Request) -> web.Response:
     # ВАЖНО: сброс статистики в WebApp должен работать так же надёжно,
@@ -724,22 +724,30 @@ async def save_max_stats(request: web.Request) -> web.Response:
     bot_token = (request.app.get("max_token") or "").strip()
     if not bot_token:
         return web.json_response({"ok": False, "error": "max_not_configured"}, status=503)
-    max_init_data = ((request.headers.get("X-Max-InitData") or "").strip()
-                     or (request.query.get("max_init_data") or "").strip())
-    verified = _verify_max_webapp_init_data(max_init_data, bot_token)
-    if not verified:
-        return web.json_response({"ok": False, "error": "bad_max_init_data"}, status=401)
-    max_user_id = _extract_max_user_id(verified)
-    if max_user_id is None:
-        return web.json_response({"ok": False, "error": "no_user"}, status=401)
-    db_id = -int(max_user_id)
-    user = await get_user(db_id)
-    if not user:
-        return web.json_response({"ok": False, "error": "user_not_found"}, status=404)
+
     try:
         data = await request.json()
     except Exception:
         data = {}
+
+    max_init_data = (
+        (request.headers.get("X-Max-InitData") or "").strip()
+        or (request.query.get("max_init_data") or "").strip()
+        or str(data.get("max_init_data") or "").strip()
+    )
+    verified = _verify_max_webapp_init_data(max_init_data, bot_token)
+    if not verified:
+        return web.json_response({"ok": False, "error": "bad_max_init_data"}, status=401)
+
+    max_user_id = _extract_max_user_id(verified)
+    if max_user_id is None:
+        return web.json_response({"ok": False, "error": "no_user"}, status=401)
+
+    db_id = -int(max_user_id)
+    user = await get_user(db_id)
+    if not user:
+        return web.json_response({"ok": False, "error": "user_not_found"}, status=404)
+
     score_raw = data.get("score", None)
     score = 0
     if score_raw is not None:
@@ -747,14 +755,18 @@ async def save_max_stats(request: web.Request) -> web.Response:
             score = int(score_raw or 0)
         except Exception:
             score = 0
+
     aptitude_top = data.get("aptitude_top") or data.get("aptitudeTop") or None
     if isinstance(aptitude_top, str):
         aptitude_top = aptitude_top.strip() or None
+
     if aptitude_top is not None:
         await update_aptitude_top(db_id, aptitude_top)
     if score_raw is not None:
         await update_score(db_id, score)
+
     return web.json_response({"ok": True, "max_user_id": int(max_user_id)})
+
 def create_app() -> web.Application:
     app = web.Application(middlewares=[cors_middleware])
     # Bot instance для отправки грамот из админ-панели
