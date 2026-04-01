@@ -5,7 +5,7 @@ import logging
 import time
 import hmac
 import hashlib
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 import aiohttp
 
@@ -53,8 +53,16 @@ def _format_person_name(value: str | None) -> str:
 def _game_url() -> str:
     game_url = os.getenv("GAME_URL", "https://n0thing67.github.io/APZ-games/").rstrip("/")
     admin_url = os.getenv("ADMIN_URL", os.getenv("WEBAPP_URL", "")).rstrip("/")
-    api_part = f"?api={quote(admin_url, safe='')}" if admin_url else ""
-    return f"{game_url}/" + api_part
+    bot_name = (os.getenv("MAX_BOT_NAME", "") or "").strip().lstrip("@")
+
+    params: dict[str, str] = {}
+    if admin_url:
+        params["api"] = admin_url
+    if bot_name:
+        params["bot"] = bot_name
+
+    qs = urlencode(params, safe='')
+    return f"{game_url}/" + (f"?{qs}" if qs else "")
 
 
 def _admin_auth_secret() -> str:
@@ -253,6 +261,10 @@ async def handle_update(app, update: dict) -> None:
         user = update.get("user") or {}
         max_user_id = user.get("user_id")
         if max_user_id is None:
+            return
+
+        if str(update.get("payload") or "").strip().lower() == "stats":
+            await _send_stats_max(app, max_user_id=int(max_user_id))
             return
 
         db_id = _max_to_db_id(int(max_user_id))
