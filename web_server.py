@@ -217,7 +217,8 @@ def _verify_max_webapp_init_data(init_data: str, bot_token: str) -> dict | None:
             pairs.append((key, unquote_plus(value)))
         if not their_hash:
             return None
-        PLACEHOLDER
+        # data_check_string: key=value\n... отсортировано по ключу
+        launch_params = "\n".join(f"{k}={v}" for k, v in sorted(pairs, key=lambda kv: kv[0]))
         secret_key = hmac.new(b"WebAppData", bot_token.encode("utf-8"), hashlib.sha256).digest()
         calc_hash = hmac.new(secret_key, launch_params.encode("utf-8"), hashlib.sha256).hexdigest()
         if not hmac.compare_digest(calc_hash, their_hash):
