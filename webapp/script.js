@@ -1001,9 +1001,11 @@ async function saveStatsForMax(payload) {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'X-Max-InitData': maxInitData,
             },
-            body: JSON.stringify(payload),
+            body: JSON.stringify({
+                ...payload,
+                max_init_data: maxInitData,
+            }),
         });
         return res.ok;
     } catch (e) {
@@ -1017,9 +1019,28 @@ function openMaxBotChat() {
 
     try {
         if (mx?.openMaxLink) {
-            mx.openMaxLink(target);
+            try { mx.openMaxLink(target); } catch (e) {}
+            setTimeout(() => {
+                try { window.location.replace(target); } catch (e) {}
+            }, 150);
             return true;
         }
+    } catch (e) {}
+
+    try {
+        const a = document.createElement('a');
+        a.href = target;
+        a.target = '_self';
+        a.rel = 'noopener';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        return true;
+    } catch (e) {}
+
+    try {
+        window.location.replace(target);
+        return true;
     } catch (e) {}
 
     try {
