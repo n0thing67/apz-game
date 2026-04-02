@@ -84,6 +84,19 @@ def _make_admin_token(db_user_id: int, ttl_seconds: int = 3600) -> str:
     return f"{uid}.{exp}.{sig}"
 
 
+def _make_max_webapp_token(max_user_id: int, ttl_seconds: int = 24 * 3600) -> str:
+    """Подписанный токен для сохранения статистики из внешнего браузера."""
+    secret = _admin_auth_secret()
+    if not secret:
+        return ""
+    uid = int(max_user_id)
+    exp = int(time.time()) + max(300, int(ttl_seconds))
+    payload = f"max:{uid}:{exp}"
+    sig = hmac.new(secret.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).hexdigest()
+    raw = f"{uid}.{exp}.{sig}".encode("utf-8")
+    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+
 def _admin_entry_url(max_user_id: int | None = None) -> str:
     au = _admin_url()
     if not au:
@@ -97,25 +110,26 @@ def _admin_entry_url(max_user_id: int | None = None) -> str:
     return f"{base}?admin_token={quote(token, safe='')}"
 
 
-def _factory_entry_url() -> str:
+def _factory_entry_url(max_user_id: int | None = None) -> str:
     """URL для кнопки «Зайти на завод» в MAX.
 
     Для MAX стараемся открывать именно Mini App внутри клиента, но при этом
-    передаём адресу игры базовый URL API (Render), чтобы мини‑веб мог читать
-    актуальные /api/levels даже если сама игра открывается с другого домена
-    (например, GitHub Pages).
-
-    Формат startapp-параметра делаем простым и безопасным для deep link:
-    game__api__<base64url(API_BASE)>
+    передаём в startapp всё, что нужно фронтенду даже при открытии во внешнем браузере:
+    API base, имя бота для возврата в чат и подписанный токен пользователя.
     """
     bot_name = (os.getenv("MAX_BOT_NAME", "") or "").strip().lstrip("@")
     if bot_name:
         api_base = (_admin_url() or "").strip().rstrip("/")
-        startapp = "game"
+        parts = ["game"]
         if api_base:
-            import base64
-            encoded = base64.urlsafe_b64encode(api_base.encode("utf-8")).decode("ascii").rstrip("=")
-            startapp = f"game__api__{encoded}"
+            encoded_api = base64.urlsafe_b64encode(api_base.encode("utf-8")).decode("ascii").rstrip("=")
+            parts.extend(["api", encoded_api])
+        parts.extend(["bot", bot_name])
+        if max_user_id is not None:
+            tok = _make_max_webapp_token(int(max_user_id))
+            if tok:
+                parts.extend(["tok", tok])
+        startapp = "__".join(parts)
         return f"https://max.ru/{bot_name}?startapp={quote(startapp, safe='')}"
     return _game_url()
 
@@ -272,7 +286,7 @@ async def handle_update(app, update: dict) -> None:
         if existing:
             fname = existing[1]
             kb = _inline_keyboard([
-                [{"type": "link", "text": "🏭 Зайти на завод (Играть)", "url": _factory_entry_url()}]
+                [{"type": "link", "text": "🏭 Зайти на завод (Играть)", "url": _factory_entry_url(int(max_user_id))}]
             ])
             await send_message(session, token, user_id=int(max_user_id), text=f"С возвращением, {fname}! Нажми кнопку ниже, чтобы начать испытание.", attachments=kb)
             return
@@ -435,7 +449,7 @@ async def handle_update(app, update: dict) -> None:
             state.pop(str(max_user_id), None)
 
             kb = _inline_keyboard([
-                [{"type": "link", "text": "🏭 Зайти на завод (Играть)", "url": _factory_entry_url()}]
+                [{"type": "link", "text": "🏭 Зайти на завод (Играть)", "url": _factory_entry_url(int(max_user_id))}]
             ])
             await send_message(session, token, user_id=int(max_user_id), text=f"Регистрация пройдена, {st.get('first_name')}! Нажми кнопку ниже, чтобы начать испытание.", attachments=kb)
             return
@@ -449,7 +463,7 @@ async def handle_update(app, update: dict) -> None:
             return
 
         kb = _inline_keyboard([
-            [{"type": "link", "text": "🏭 Зайти на завод (Играть)", "url": _factory_entry_url()}],
+            [{"type": "link", "text": "🏭 Зайти на завод (Играть)", "url": _factory_entry_url(int(max_user_id))}],
             [{"type": "callback", "text": "📊 Статистика", "payload": "stats"}],
         ])
         await send_message(session, token, user_id=int(max_user_id), text="Выбери действие:", attachments=kb)
