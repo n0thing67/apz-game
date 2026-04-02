@@ -5,6 +5,7 @@ import logging
 import time
 import hmac
 import hashlib
+import base64
 from urllib.parse import quote, urlencode
 
 import aiohttp
@@ -359,7 +360,7 @@ async def handle_update(app, update: dict) -> None:
         body = msg.get("body") or {}
         text = (body.get("text") or "").strip()
 
-        if text == "/start":
+        if text == "/start" or text.lower() == "начать":
             await handle_update(app, {"update_type": "bot_started", "user": {"user_id": int(max_user_id)}})
             return
 
