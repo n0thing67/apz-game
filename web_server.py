@@ -373,7 +373,7 @@ async def cors_middleware(request: web.Request, handler):
     # Важно: WebApp шлёт initData в кастомном заголовке.
     # Если его не разрешить в CORS, браузер/WebView блокирует запросы (особенно /api/me),
     # и локальный localStorage потом «оживляет» старые очки/рекомендации после админского сброса.
-    resp.headers["Access-Control-Allow-Headers"] = "Content-Type, X-Telegram-InitData, X-Max-InitData, X-Admin-Token"
+    resp.headers["Access-Control-Allow-Headers"] = "Content-Type, X-Telegram-InitData, X-Max-InitData, X-Max-User-Token, X-Admin-Token"
     return resp
 async def handle_levels(request: web.Request) -> web.Response:
     # ВАЖНО: сброс статистики в WebApp должен работать так же надёжно,
