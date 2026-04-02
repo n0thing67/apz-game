@@ -863,29 +863,45 @@ function normalizeApiBase(value) {
     return s.replace(/\/$/, '');
 }
 
-function extractApiBaseFromStartParam(raw) {
+function extractStartParamValue(raw, key) {
     const value = String(raw || '').trim();
-    if (!value) return '';
+    const wanted = String(key || '').trim().toLowerCase();
+    if (!value || !wanted) return '';
 
-    if (/^https?:\/\//i.test(value)) {
+    if (wanted === 'api' && /^https?:\/\//i.test(value)) {
         return normalizeApiBase(value);
     }
 
-    const mPacked = value.match(/(?:^|[|;&?])api=([^|;&]+)/i);
+    const mPacked = value.match(new RegExp(`(?:^|[|;&?])${wanted}=([^|;&]+)`, 'i'));
     if (mPacked) {
         try {
-            return normalizeApiBase(decodeURIComponent(mPacked[1]));
+            const decoded = decodeURIComponent(mPacked[1]);
+            return wanted === 'api' ? normalizeApiBase(decoded) : decoded;
         } catch (e) {}
     }
 
-    const marker = 'game__api__';
-    const idx = value.indexOf(marker);
-    if (idx >= 0) {
-        const encoded = value.slice(idx + marker.length).split(/[|;&?]/, 1)[0];
+    const parts = value.split('__').filter(Boolean);
+    for (let i = 0; i < parts.length - 1; i += 2) {
+        const k = String(parts[i] || '').trim().toLowerCase();
+        const v = String(parts[i + 1] || '').trim();
+        if (k !== wanted || !v) continue;
+        if (wanted === 'api') return normalizeApiBase(decodeBase64Url(v));
+        if (wanted === 'tok') return v;
+        return v;
+    }
+
+    const legacyMarker = 'game__api__';
+    const idx = value.indexOf(legacyMarker);
+    if (wanted === 'api' && idx >= 0) {
+        const encoded = value.slice(idx + legacyMarker.length).split(/[|;&?]/, 1)[0];
         return normalizeApiBase(decodeBase64Url(encoded));
     }
 
     return '';
+}
+
+function extractApiBaseFromStartParam(raw) {
+    return extractStartParamValue(raw, 'api');
 }
 
 function parseBridgeInitData(raw) {
@@ -914,8 +930,8 @@ function parseBridgeInitData(raw) {
     return candidates;
 }
 
-function getApiBaseFromBridge() {
-    const candidates = [
+function getBridgeStartParamCandidates() {
+    return [
         tg?.initDataUnsafe?.start_param,
         tg?.initDataUnsafe?.startapp,
         tg?.initDataUnsafe?.startApp,
@@ -930,7 +946,12 @@ function getApiBaseFromBridge() {
         mx?.api,
         ...parseBridgeInitData(mx?.initData),
         ...parseBridgeInitData(tg?.initData),
+        ...parseBridgeInitData(getMaxInitDataRaw()),
     ];
+}
+
+function getApiBaseFromBridge() {
+    const candidates = getBridgeStartParamCandidates();
 
     for (const item of candidates) {
         const api = extractApiBaseFromStartParam(item);
@@ -986,25 +1007,48 @@ function getMaxInitDataRaw() {
 function getMaxBotName() {
     try {
         const url = new URL(window.location.href);
-        return String(url.searchParams.get('bot') || '').trim().replace(/^@/, '');
-    } catch (e) {
-        return '';
+        const qp = String(url.searchParams.get('bot') || '').trim().replace(/^@/, '');
+        if (qp) return qp;
+    } catch (e) {}
+
+    for (const item of getBridgeStartParamCandidates()) {
+        const bot = String(extractStartParamValue(item, 'bot') || '').trim().replace(/^@/, '');
+        if (bot) return bot;
     }
+    return '';
+}
+
+function getMaxUserToken() {
+    try {
+        const url = new URL(window.location.href);
+        const qp = String(url.searchParams.get('mx_token') || url.searchParams.get('max_user_token') || '').trim();
+        if (qp) return qp;
+    } catch (e) {}
+
+    for (const item of getBridgeStartParamCandidates()) {
+        const tok = String(extractStartParamValue(item, 'tok') || '').trim();
+        if (tok) return tok;
+    }
+    return '';
 }
 
 async function saveStatsForMax(payload) {
     const maxInitData = getMaxInitDataRaw();
-    if (!maxInitData) return false;
+    const mxToken = getMaxUserToken();
+    if (!maxInitData && !mxToken) return false;
 
     try {
         const res = await fetch(apiUrl('/api/max/save_stats'), {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
+                ...(maxInitData ? { 'X-Max-InitData': maxInitData } : {}),
+                ...(mxToken ? { 'X-Max-User-Token': mxToken } : {}),
             },
             body: JSON.stringify({
                 ...payload,
-                max_init_data: maxInitData,
+                ...(maxInitData ? { max_init_data: maxInitData } : {}),
+                ...(mxToken ? { mx_token: mxToken } : {}),
             }),
         });
         return res.ok;
@@ -1019,32 +1063,23 @@ function openMaxBotChat() {
 
     try {
         if (mx?.openMaxLink) {
-            try { mx.openMaxLink(target); } catch (e) {}
-            setTimeout(() => {
-                try { window.location.replace(target); } catch (e) {}
-            }, 150);
+            mx.openMaxLink(target);
             return true;
         }
     } catch (e) {}
 
     try {
-        const a = document.createElement('a');
-        a.href = target;
-        a.target = '_self';
-        a.rel = 'noopener';
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
+        window.location.href = target;
+        return true;
+    } catch (e) {}
+
+    try {
+        window.location.assign(target);
         return true;
     } catch (e) {}
 
     try {
         window.location.replace(target);
-        return true;
-    } catch (e) {}
-
-    try {
-        window.location.href = target;
         return true;
     } catch (e) {}
 
