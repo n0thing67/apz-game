@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import hashlib
 import hmac
 import json
@@ -719,6 +720,38 @@ async def admin_send_award(request: web.Request) -> web.Response:
         f"🏅 Отправка сертификата\nПользователь: {full_name} (ID: {tg_id}; платформа: {user_platform})\nАдмин: {actor}\nВремя: {ts}",
     )
     return web.json_response({"ok": True, "sent_to": tg_id})
+def _max_auth_secret() -> str:
+    return (
+        (os.getenv("ADMIN_AUTH_SECRET") or "").strip()
+        or (os.getenv("MAX_BOT_TOKEN") or "").strip()
+        or (os.getenv("BOT_TOKEN") or "").strip()
+    )
+
+
+def _verify_max_signed_token(token: str) -> int | None:
+    token = str(token or "").strip()
+    if not token:
+        return None
+    secret = _max_auth_secret()
+    if not secret:
+        return None
+    try:
+        padded = token + ("=" * ((4 - len(token) % 4) % 4))
+        raw = base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8")
+        uid_s, exp_s, sig = raw.split('.', 2)
+        uid = int(uid_s)
+        exp = int(exp_s)
+        if exp < int(time.time()):
+            return None
+        payload = f"max:{uid}:{exp}"
+        calc = hmac.new(secret.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(calc, sig):
+            return None
+        return uid
+    except Exception:
+        return None
+
+
 async def save_max_stats(request: web.Request) -> web.Response:
     """Сохранение статистики из MAX Mini App / внешнего браузера."""
     bot_token = (request.app.get("max_token") or "").strip()
@@ -735,13 +768,22 @@ async def save_max_stats(request: web.Request) -> web.Response:
         or (request.query.get("max_init_data") or "").strip()
         or str(data.get("max_init_data") or "").strip()
     )
-    verified = _verify_max_webapp_init_data(max_init_data, bot_token)
-    if not verified:
-        return web.json_response({"ok": False, "error": "bad_max_init_data"}, status=401)
+    max_user_id = None
+    if max_init_data:
+        verified = _verify_max_webapp_init_data(max_init_data, bot_token)
+        if verified:
+            max_user_id = _extract_max_user_id(verified)
 
-    max_user_id = _extract_max_user_id(verified)
     if max_user_id is None:
-        return web.json_response({"ok": False, "error": "no_user"}, status=401)
+        signed_token = (
+            (request.headers.get("X-Max-User-Token") or "").strip()
+            or (request.query.get("mx_token") or "").strip()
+            or str(data.get("mx_token") or data.get("max_user_token") or "").strip()
+        )
+        max_user_id = _verify_max_signed_token(signed_token)
+
+    if max_user_id is None:
+        return web.json_response({"ok": False, "error": "bad_max_auth"}, status=401)
 
     db_id = -int(max_user_id)
     user = await get_user(db_id)
