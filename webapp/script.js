@@ -1037,13 +1037,34 @@ async function saveStatsForMax(payload) {
     const mxToken = getMaxUserToken();
     if (!maxInitData && !mxToken) return false;
 
+    // Для MAX / внешнего браузера сначала используем form-urlencoded без custom headers.
+    // Это самый надёжный вариант для WebView: меньше шансов упереться в CORS/preflight.
+    try {
+        const body = new URLSearchParams();
+        Object.entries(payload || {}).forEach(([k, v]) => {
+            if (v == null) return;
+            if (typeof v === 'object') body.set(k, JSON.stringify(v));
+            else body.set(k, String(v));
+        });
+        if (maxInitData) body.set('max_init_data', String(maxInitData));
+        if (mxToken) body.set('mx_token', String(mxToken));
+
+        const res = await fetch(apiUrl('/api/max/save_stats'), {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
+            },
+            body: body.toString(),
+        });
+        if (res.ok) return true;
+    } catch (e) {}
+
+    // Фолбэк: JSON.
     try {
         const res = await fetch(apiUrl('/api/max/save_stats'), {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json',
-                ...(maxInitData ? { 'X-Max-InitData': maxInitData } : {}),
-                ...(mxToken ? { 'X-Max-User-Token': mxToken } : {}),
+                'Content-Type': 'application/json'
             },
             body: JSON.stringify({
                 ...payload,
