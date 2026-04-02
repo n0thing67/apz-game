@@ -114,25 +114,24 @@ def _admin_entry_url(max_user_id: int | None = None) -> str:
 def _factory_entry_url(max_user_id: int | None = None) -> str:
     """URL для кнопки «Зайти на завод» в MAX.
 
-    Для MAX стараемся открывать именно Mini App внутри клиента, но при этом
-    передаём в startapp всё, что нужно фронтенду даже при открытии во внешнем браузере:
-    API base, имя бота для возврата в чат и подписанный токен пользователя.
+    MAX у части пользователей открывает игру во внешнем браузере/вебвью без
+    корректной передачи bridge/initData. Поэтому критичные параметры для
+    сохранения статистики передаём прямо в URL самой игры: api, bot и
+    подписанный токен пользователя.
+
+    Это не меняет рабочую логику уровней, но делает сохранение статистики и
+    возврат в чат независимыми от startapp/bridge.
     """
-    bot_name = (os.getenv("MAX_BOT_NAME", "") or "").strip().lstrip("@")
-    if bot_name:
-        api_base = (_admin_url() or "").strip().rstrip("/")
-        parts = ["game"]
-        if api_base:
-            encoded_api = base64.urlsafe_b64encode(api_base.encode("utf-8")).decode("ascii").rstrip("=")
-            parts.extend(["api", encoded_api])
-        parts.extend(["bot", bot_name])
-        if max_user_id is not None:
-            tok = _make_max_webapp_token(int(max_user_id))
-            if tok:
-                parts.extend(["tok", tok])
-        startapp = "__".join(parts)
-        return f"https://max.ru/{bot_name}?startapp={quote(startapp, safe='')}"
-    return _game_url()
+    base = _game_url()
+    if max_user_id is None:
+        return base
+
+    tok = _make_max_webapp_token(int(max_user_id))
+    if not tok:
+        return base
+
+    sep = '&' if '?' in base else '?'
+    return f"{base}{sep}mx_token={quote(tok, safe='')}"
 
 def _admin_url() -> str:
     return (os.getenv("ADMIN_URL", os.getenv("WEBAPP_URL", "")) or "").rstrip("/")
