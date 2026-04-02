@@ -16,10 +16,12 @@ const USE_WEBP = supportsWebP();
 function assetPath(name, fallbackExt) {
     return `assets/${name}.${USE_WEBP ? 'webp' : fallbackExt}`;
 }
+
 // ==========================================
 // PRELOADER: при входе загружаем ТОЛЬКО изображения (assets/*)
 // Требование: показать прогресс (ползунок + %)...
 // ==========================================
+
 // Список ВСЕХ изображений в webapp/assets (добавлять сюда при появлении новых).
 const APP_IMAGE_MANIFEST = [
     'after_2048',
@@ -979,61 +981,112 @@ function apiUrl(path) {
     return API_BASE + path;
 }
 
+const MAX_INIT_DATA_CACHE_KEY = 'apzMaxInitDataV1';
+const MAX_BOT_NAME_CACHE_KEY = 'apzMaxBotNameV1';
+const MAX_USER_TOKEN_CACHE_KEY = 'apzMaxUserTokenV1';
+
+function getCachedString(key) {
+    try {
+        return String(localStorage.getItem(key) || '').trim();
+    } catch (e) {
+        return '';
+    }
+}
+
+function setCachedString(key, value) {
+    try {
+        const s = String(value || '').trim();
+        if (s) localStorage.setItem(key, s);
+    } catch (e) {}
+}
+
 function getMaxInitDataRaw() {
     try {
-        if (mx?.initData) return String(mx.initData);
+        if (mx?.initData) {
+            const raw = String(mx.initData || '').trim();
+            if (raw) {
+                setCachedString(MAX_INIT_DATA_CACHE_KEY, raw);
+                return raw;
+            }
+        }
     } catch (e) {}
 
     try {
         const hash = String(window.location.hash || '').replace(/^#/, '');
         if (hash) {
             const params = new URLSearchParams(hash);
-            const raw = params.get('WebAppData') || params.get('webappdata') || '';
-            if (raw) return raw;
+            const raw = String(params.get('WebAppData') || params.get('webappdata') || '').trim();
+            if (raw) {
+                setCachedString(MAX_INIT_DATA_CACHE_KEY, raw);
+                return raw;
+            }
         }
     } catch (e) {}
 
     try {
         const url = new URL(window.location.href);
-        const raw = url.searchParams.get('max_init_data') || '';
-        if (raw) return raw;
+        const raw = String(url.searchParams.get('max_init_data') || '').trim();
+        if (raw) {
+            setCachedString(MAX_INIT_DATA_CACHE_KEY, raw);
+            return raw;
+        }
     } catch (e) {}
 
-    return '';
+    return getCachedString(MAX_INIT_DATA_CACHE_KEY);
 }
 
 function getMaxBotName() {
     try {
         const url = new URL(window.location.href);
         const qp = String(url.searchParams.get('bot') || '').trim().replace(/^@/, '');
-        if (qp) return qp;
+        if (qp) {
+            setCachedString(MAX_BOT_NAME_CACHE_KEY, qp);
+            return qp;
+        }
     } catch (e) {}
 
     for (const item of getBridgeStartParamCandidates()) {
         const bot = String(extractStartParamValue(item, 'bot') || '').trim().replace(/^@/, '');
-        if (bot) return bot;
+        if (bot) {
+            setCachedString(MAX_BOT_NAME_CACHE_KEY, bot);
+            return bot;
+        }
     }
-    return '';
+    return getCachedString(MAX_BOT_NAME_CACHE_KEY);
 }
 
 function getMaxUserToken() {
     try {
         const url = new URL(window.location.href);
         const qp = String(url.searchParams.get('mx_token') || url.searchParams.get('max_user_token') || '').trim();
-        if (qp) return qp;
+        if (qp) {
+            setCachedString(MAX_USER_TOKEN_CACHE_KEY, qp);
+            return qp;
+        }
     } catch (e) {}
 
     for (const item of getBridgeStartParamCandidates()) {
         const tok = String(extractStartParamValue(item, 'tok') || '').trim();
-        if (tok) return tok;
+        if (tok) {
+            setCachedString(MAX_USER_TOKEN_CACHE_KEY, tok);
+            return tok;
+        }
     }
-    return '';
+    return getCachedString(MAX_USER_TOKEN_CACHE_KEY);
 }
 
 async function saveStatsForMax(payload) {
     const maxInitData = getMaxInitDataRaw();
     const mxToken = getMaxUserToken();
-    if (!maxInitData && !mxToken) return false;
+    if (!maxInitData && !mxToken) {
+        console.warn('MAX save skipped: no auth data in WebApp context');
+        return false;
+    }
+
+    const authQuery = new URLSearchParams();
+    if (maxInitData) authQuery.set('max_init_data', String(maxInitData));
+    if (mxToken) authQuery.set('mx_token', String(mxToken));
+    const saveUrl = apiUrl('/api/max/save_stats') + (authQuery.toString() ? `?${authQuery.toString()}` : '');
 
     // Для MAX / внешнего браузера сначала используем form-urlencoded без custom headers.
     // Это самый надёжный вариант для WebView: меньше шансов упереться в CORS/preflight.
@@ -1047,19 +1100,23 @@ async function saveStatsForMax(payload) {
         if (maxInitData) body.set('max_init_data', String(maxInitData));
         if (mxToken) body.set('mx_token', String(mxToken));
 
-        const res = await fetch(apiUrl('/api/max/save_stats'), {
+        const res = await fetch(saveUrl, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
             },
             body: body.toString(),
+            keepalive: true,
         });
         if (res.ok) return true;
-    } catch (e) {}
+        console.warn('MAX save_stats form failed', res.status);
+    } catch (e) {
+        console.warn('MAX save_stats form exception', e);
+    }
 
     // Фолбэк: JSON.
     try {
-        const res = await fetch(apiUrl('/api/max/save_stats'), {
+        const res = await fetch(saveUrl, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -1069,9 +1126,13 @@ async function saveStatsForMax(payload) {
                 ...(maxInitData ? { max_init_data: maxInitData } : {}),
                 ...(mxToken ? { mx_token: mxToken } : {}),
             }),
+            keepalive: true,
         });
-        return res.ok;
+        if (res.ok) return true;
+        console.warn('MAX save_stats json failed', res.status);
+        return false;
     } catch (e) {
+        console.warn('MAX save_stats json exception', e);
         return false;
     }
 }
@@ -1538,16 +1599,12 @@ async function sendStatsAndClose() {
         return;
     }
 
-    // Если MAX Bridge доступен, но initData не прочитались — хотя бы закроем мини‑приложение.
-    if (mx?.close) {
-        try {
-            mx.close();
-            return;
-        } catch (e) {}
-    }
+    // Для MAX нельзя молча закрывать мини‑приложение, если сохранение не удалось.
+    // Иначе пользователь видит только исчезновение окна, а статистика в БД не обновляется.
+    notify('Не удалось сохранить статистику. Проверьте подключение и попробуйте ещё раз.');
 
-    // Фолбэк для внешнего браузера: пробуем открыть чат с ботом в MAX.
-    if (openMaxBotChat()) return;
+    // Фолбэк для внешнего браузера: пробуем открыть чат с ботом в MAX только если известен бот.
+    if (getMaxBotName() && openMaxBotChat()) return;
 
     // В обычном браузере: скачиваем JSON
     try {
