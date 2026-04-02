@@ -379,6 +379,7 @@ async def handle_levels(request: web.Request) -> web.Response:
     # ВАЖНО: сброс статистики в WebApp должен работать так же надёжно,
     # как и отключение уровней. /api/levels вызывается без кастомных заголовков
     # (значит, без CORS-preflight), поэтому сюда также добавляем reset_token.
+    #
     # Также сюда же (по uid в query) добавляем признак существования пользователя и метку удаления:
     # при удалении пользователя в админке WebApp должен очистить localStorage при следующем входе
     # так же надёжно, как и подхватываются отключённые уровни.
@@ -757,8 +758,28 @@ async def save_max_stats(request: web.Request) -> web.Response:
     if not bot_token:
         return web.json_response({"ok": False, "error": "max_not_configured"}, status=503)
 
+    data: dict = {}
     try:
-        data = await request.json()
+        if request.can_read_body:
+            ctype = (request.content_type or '').lower()
+            if 'application/json' in ctype:
+                raw_json = await request.json()
+                if isinstance(raw_json, dict):
+                    data = raw_json
+            elif ctype in {'application/x-www-form-urlencoded', 'multipart/form-data'}:
+                post_data = await request.post()
+                data = dict(post_data)
+            else:
+                raw_body = (await request.text()).strip()
+                if raw_body:
+                    try:
+                        parsed = json.loads(raw_body)
+                        if isinstance(parsed, dict):
+                            data = parsed
+                        else:
+                            data = dict(parse_qsl(raw_body, keep_blank_values=True))
+                    except Exception:
+                        data = dict(parse_qsl(raw_body, keep_blank_values=True))
     except Exception:
         data = {}
 
@@ -782,11 +803,13 @@ async def save_max_stats(request: web.Request) -> web.Response:
         max_user_id = _verify_max_signed_token(signed_token)
 
     if max_user_id is None:
+        logging.getLogger(__name__).warning("MAX save_stats auth failed: has_init=%s has_token=%s", bool(max_init_data), bool((request.headers.get("X-Max-User-Token") or request.query.get("mx_token") or data.get("mx_token") or data.get("max_user_token"))))
         return web.json_response({"ok": False, "error": "bad_max_auth"}, status=401)
 
     db_id = -int(max_user_id)
     user = await get_user(db_id)
     if not user:
+        logging.getLogger(__name__).warning("MAX save_stats user not found: max_user_id=%s db_id=%s", max_user_id, db_id)
         return web.json_response({"ok": False, "error": "user_not_found"}, status=404)
 
     score_raw = data.get("score", None)
@@ -806,6 +829,7 @@ async def save_max_stats(request: web.Request) -> web.Response:
     if score_raw is not None:
         await update_score(db_id, score)
 
+    logging.getLogger(__name__).info("MAX save_stats ok: max_user_id=%s db_id=%s score=%s aptitude_top=%s", max_user_id, db_id, score, aptitude_top)
     return web.json_response({"ok": True, "max_user_id": int(max_user_id)})
 
 def create_app() -> web.Application:
