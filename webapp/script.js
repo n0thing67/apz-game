@@ -21,6 +21,7 @@ function assetPath(name, fallbackExt) {
 // PRELOADER: при входе загружаем ТОЛЬКО изображения (assets/*)
 // Требование: показать прогресс (ползунок + %)...
 // ==========================================
+
 // Список ВСЕХ изображений в webapp/assets (добавлять сюда при появлении новых).
 const APP_IMAGE_MANIFEST = [
     'after_2048',
@@ -1074,6 +1075,34 @@ function getMaxUserToken() {
     return getCachedString(MAX_USER_TOKEN_CACHE_KEY);
 }
 
+async function saveStatsForTelegram(payload) {
+    const initData = String(tg?.initData || '').trim();
+    if (!initData) return false;
+
+    const saveUrl = apiUrl('/api/save_stats');
+
+    try {
+        const res = await fetch(saveUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Telegram-InitData': initData,
+            },
+            body: JSON.stringify({
+                ...payload,
+                initData,
+            }),
+            keepalive: true,
+        });
+        if (res.ok) return true;
+        console.warn('Telegram save_stats failed', res.status);
+        return false;
+    } catch (e) {
+        console.warn('Telegram save_stats exception', e);
+        return false;
+    }
+}
+
 async function saveStatsForMax(payload) {
     const maxInitData = getMaxInitDataRaw();
     const mxToken = getMaxUserToken();
@@ -1085,7 +1114,7 @@ async function saveStatsForMax(payload) {
     const authQuery = new URLSearchParams();
     if (maxInitData) authQuery.set('max_init_data', String(maxInitData));
     if (mxToken) authQuery.set('mx_token', String(mxToken));
-    const saveUrl = apiUrl('/api/max/save_stats') + (authQuery.toString() ? `?${authQuery.toString()}` : '');
+    const saveUrl = apiUrl('/api/save_stats') + (authQuery.toString() ? `?${authQuery.toString()}` : '');
 
     // Для MAX / внешнего браузера сначала используем form-urlencoded без custom headers.
     // Это самый надёжный вариант для WebView: меньше шансов упереться в CORS/preflight.
@@ -1582,18 +1611,35 @@ if (statLine && statMain && savedApt && savedApt.main) {
 async function sendStatsAndClose() {
     const payload = buildStatsPayload();
 
-    // В Telegram WebApp: отправляем данные и закрываем WebApp
+    // Сначала сохраняем статистику напрямую в БД — так же надёжно, как это делает админка.
+    // Это нужно и для Telegram, и для MAX: даже если возврат в чат не сработает,
+    // статистика уже будет сохранена на сервере.
+    let directSaved = false;
+    if (tg?.initData) {
+        directSaved = await saveStatsForTelegram(payload);
+    } else {
+        directSaved = await saveStatsForMax(payload);
+    }
+
+    // Telegram WebApp: после прямого сохранения оставляем прежнюю механику sendData + close.
     if (tg?.sendData) {
+        if (!directSaved) {
+            notify('Не удалось сохранить статистику. Проверьте подключение и попробуйте ещё раз.');
+            return;
+        }
         try {
             tg.sendData(JSON.stringify(payload));
+        } catch (e) {}
+        try {
             tg.close();
             return;
-        } catch (e) {}
+        } catch (e) {
+            return;
+        }
     }
 
     // MAX: сначала сохраняем статистику на сервер, затем открываем чат с ботом на статистике.
-    const maxSaved = await saveStatsForMax(payload);
-    if (maxSaved) {
+    if (directSaved) {
         openMaxBotChat();
         return;
     }
