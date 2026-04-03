@@ -1611,9 +1611,9 @@ if (statLine && statMain && savedApt && savedApt.main) {
 async function sendStatsAndClose() {
     const payload = buildStatsPayload();
 
-    // Сначала сохраняем статистику напрямую в БД — так же надёжно, как это делает админка.
-    // Это нужно и для Telegram, и для MAX: даже если возврат в чат не сработает,
-    // статистика уже будет сохранена на сервере.
+    // Сначала сохраняем статистику напрямую в БД.
+    // Для MAX сервер после успешного сохранения сам отправляет пользователю сообщение
+    // со статистикой, поэтому фронтенду достаточно надёжно закрыть мини‑приложение.
     let directSaved = false;
     if (tg?.initData) {
         directSaved = await saveStatsForTelegram(payload);
@@ -1621,12 +1621,13 @@ async function sendStatsAndClose() {
         directSaved = await saveStatsForMax(payload);
     }
 
-    // Telegram WebApp: после прямого сохранения оставляем прежнюю механику sendData + close.
+    if (!directSaved) {
+        notify('Не удалось сохранить статистику. Проверьте подключение и попробуйте ещё раз.');
+        return;
+    }
+
+    // Telegram WebApp: сохраняем старую рабочую механику.
     if (tg?.sendData) {
-        if (!directSaved) {
-            notify('Не удалось сохранить статистику. Проверьте подключение и попробуйте ещё раз.');
-            return;
-        }
         try {
             tg.sendData(JSON.stringify(payload));
         } catch (e) {}
@@ -1638,34 +1639,19 @@ async function sendStatsAndClose() {
         }
     }
 
-    // MAX: сначала сохраняем статистику на сервер, затем открываем чат с ботом на статистике.
-    if (directSaved) {
-        openMaxBotChat();
-        return;
-    }
+    // MAX Mini App: после успешного сохранения сервер уже отправил статистику в чат,
+    // поэтому нужно просто закрыть мини‑приложение и вернуть пользователя в диалог.
+    try {
+        if (mx?.close) {
+            mx.close();
+            return;
+        }
+    } catch (e) {}
 
-    // Для MAX нельзя молча закрывать мини‑приложение, если сохранение не удалось.
-    // Иначе пользователь видит только исчезновение окна, а статистика в БД не обновляется.
-    notify('Не удалось сохранить статистику. Проверьте подключение и попробуйте ещё раз.');
-
-    // Фолбэк для внешнего браузера: пробуем открыть чат с ботом в MAX только если известен бот.
+    // Фолбэк для внешнего браузера / старых клиентов: пробуем открыть чат с ботом.
     if (getMaxBotName() && openMaxBotChat()) return;
 
-    // В обычном браузере: скачиваем JSON
-    try {
-        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'apz_stats.json';
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 1000);
-        notify('Файл статистики сохранён ✅');
-    } catch (e) {
-        notify('Не удалось сохранить статистику 😕');
-    }
+    notify('Статистика сохранена. Вернитесь в чат с ботом, чтобы посмотреть результат.');
 }
 
 // Подтверждение перед закрытием WebApp и переходом в Telegram к статистике.
