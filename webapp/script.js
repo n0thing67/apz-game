@@ -1134,7 +1134,7 @@ async function saveStatsForTelegram(payload) {
     const initData = String(tg?.initData || '').trim();
     if (!initData) return false;
 
-    const saveUrl = apiUrl(tg?.initData ? '/api/save_stats' : '/api/max/save_stats');
+    const saveUrl = apiUrl('/api/save_stats');
 
     try {
         const res = await fetch(saveUrl, {
@@ -1169,7 +1169,7 @@ async function saveStatsForMax(payload) {
     const authQuery = new URLSearchParams();
     if (maxInitData) authQuery.set('max_init_data', String(maxInitData));
     if (mxToken) authQuery.set('mx_token', String(mxToken));
-    const saveUrl = apiUrl(tg?.initData ? '/api/save_stats' : '/api/max/save_stats') + (authQuery.toString() ? `?${authQuery.toString()}` : '');
+    const saveUrl = apiUrl('/api/max/save_stats') + (authQuery.toString() ? `?${authQuery.toString()}` : '');
 
     // Для MAX / внешнего браузера сначала используем form-urlencoded без custom headers.
     // Это самый надёжный вариант для WebView: меньше шансов упереться в CORS/preflight.
@@ -1731,24 +1731,34 @@ async function sendStatsAndClose() {
     }
 
     // MAX / встроенный браузер: сначала сохраняем напрямую в БД,
-    // затем тем же окном возвращаем пользователя в чат с ботом.
+    // затем делаем серверный финиш-редирект. Он надёжнее в MAX и во внешнем браузере:
+    // серверная страница пробует закрыть mini app, а если это не удалось —
+    // переводит пользователя обратно в чат с ботом по deep link.
     const directSaved = await saveStatsForMax(payload);
-    if (!directSaved) {
-        notify('Не удалось сохранить статистику. Проверьте подключение и попробуйте ещё раз.');
+    if (directSaved) {
+        const redirected = redirectMaxFinish(payload);
+        if (redirected) return;
+
+        try {
+            if (mx?.close) {
+                mx.close();
+                return;
+            }
+        } catch (e) {}
+
+        const opened = openMaxBotChat();
+        if (opened) return;
+
+        notify('Статистика сохранена, но не удалось автоматически вернуться в чат с ботом.');
         return;
     }
 
-    try {
-        if (mx?.close) {
-            mx.close();
-            return;
-        }
-    } catch (e) {}
+    // Если прямое сохранение не прошло (например, из-за ограничений WebView),
+    // пробуем серверный HTML-финиш, который сам повторно выполнит сохранение.
+    const redirected = redirectMaxFinish(payload);
+    if (redirected) return;
 
-    const opened = openMaxBotChat();
-    if (opened) return;
-
-    notify('Статистика сохранена, но не удалось автоматически вернуться в чат с ботом.');
+    notify('Не удалось сохранить статистику. Проверьте подключение и попробуйте ещё раз.');
 }
 
 // Подтверждение перед закрытием WebApp и переходом в Telegram к статистике.
