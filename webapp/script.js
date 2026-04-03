@@ -1697,6 +1697,53 @@ function redirectMaxFinish(payload) {
     return false;
 }
 
+function tryCloseMaxWebView() {
+    try {
+        if (mx?.close) {
+            mx.close();
+            return true;
+        }
+    } catch (e) {}
+    try {
+        if (window?.WebApp?.close) {
+            window.WebApp.close();
+            return true;
+        }
+    } catch (e) {}
+    try {
+        window.close();
+    } catch (e) {}
+    return false;
+}
+
+function navigateToMaxBotChat() {
+    const botName = getMaxBotName();
+    if (!botName) return false;
+    const target = `https://max.ru/${encodeURIComponent(botName)}?start=stats&_ts=${Date.now()}`;
+
+    try {
+        if (mx?.openMaxLink) {
+            mx.openMaxLink(target);
+            return true;
+        }
+    } catch (e) {}
+    try {
+        if (window.top && window.top !== window) {
+            window.top.location.replace(target);
+            return true;
+        }
+    } catch (e) {}
+    try {
+        window.location.replace(target);
+        return true;
+    } catch (e) {}
+    try {
+        window.location.href = target;
+        return true;
+    } catch (e) {}
+    return false;
+}
+
 async function sendStatsAndClose() {
     const payload = buildStatsPayload();
 
@@ -1723,13 +1770,28 @@ async function sendStatsAndClose() {
         return;
     }
 
-    // Для MAX не делаем async fetch + close. Вместо этого сразу уходим
-    // на серверный endpoint прямой навигацией из пользовательского действия:
-    // сервер сохраняет статистику, шлёт сообщение в чат и возвращает страницу,
-    // которая закрывает mini app / переводит обратно в бот.
-    if (redirectMaxFinish(payload)) return;
+    // MAX: сначала сохраняем статистику напрямую в БД.
+    const maxSaved = await saveStatsForMax(payload);
+    if (!maxSaved) {
+        // Если API base и auth уже есть — пробуем последний фолбэк через серверный endpoint.
+        if (redirectMaxFinish(payload)) return;
+        notify('Не удалось сохранить статистику. Проверьте подключение и попробуйте ещё раз.');
+        return;
+    }
 
-    notify('Не удалось открыть переход к сохранению статистики.');
+    // Сразу после успешного сохранения сервер сам отправляет статистику в чат MAX.
+    // На фронтенде остаётся закрыть WebView / вернуть пользователя в чат.
+    const closed = tryCloseMaxWebView();
+    const moved = navigateToMaxBotChat();
+
+    if (closed || moved) return;
+
+    try {
+        history.back();
+        return;
+    } catch (e) {}
+
+    notify('Статистика сохранена. Вернитесь в чат с ботом вручную, если окно не закрылось автоматически.');
 }
 
 // Подтверждение перед закрытием WebApp и переходом в Telegram к статистике.
