@@ -16,10 +16,12 @@ const USE_WEBP = supportsWebP();
 function assetPath(name, fallbackExt) {
     return `assets/${name}.${USE_WEBP ? 'webp' : fallbackExt}`;
 }
+
 // ==========================================
 // PRELOADER: при входе загружаем ТОЛЬКО изображения (assets/*)
 // Требование: показать прогресс (ползунок + %)...
 // ==========================================
+
 // Список ВСЕХ изображений в webapp/assets (добавлять сюда при появлении новых).
 const APP_IMAGE_MANIFEST = [
     'after_2048',
@@ -911,7 +913,7 @@ function parseBridgeInitData(raw) {
         try {
             const obj = JSON.parse(s);
             if (obj && typeof obj === 'object') {
-                candidates.push(obj.start_param, obj.startapp, obj.startApp, obj.api);
+                candidates.push(obj.start_param, obj.startapp, obj.startApp, obj.api, obj.mx_token, obj.bot, obj.max_user_token);
             }
         } catch (e) {}
 
@@ -921,49 +923,63 @@ function parseBridgeInitData(raw) {
                 params.get('start_param'),
                 params.get('startapp'),
                 params.get('startApp'),
-                params.get('api')
+                params.get('api'),
+                params.get('mx_token'),
+                params.get('max_user_token'),
+                params.get('bot')
             );
         } catch (e) {}
-    } catch (e) {}
-    return candidates;
-}
 
-function getReferrerStartParamCandidates() {
-    const out = [];
-    try {
-        const ref = String(document.referrer || '').trim();
-        if (!ref) return out;
-
-        out.push(ref);
-
-        const url = new URL(ref);
-        out.push(
-            url.searchParams.get('startapp'),
-            url.searchParams.get('start_param'),
-            url.searchParams.get('bot'),
-            url.searchParams.get('api'),
-            url.searchParams.get('mx_token'),
-            url.searchParams.get('max_user_token')
-        );
-
-        const hash = String(url.hash || '').replace(/^#/, '');
-        if (hash) {
-            const hp = new URLSearchParams(hash);
-            out.push(
-                hp.get('startapp'),
-                hp.get('start_param'),
-                hp.get('bot'),
-                hp.get('api'),
-                hp.get('mx_token'),
-                hp.get('max_user_token')
+        try {
+            const url = new URL(s);
+            candidates.push(
+                url.searchParams.get('start_param'),
+                url.searchParams.get('startapp'),
+                url.searchParams.get('startApp'),
+                url.searchParams.get('api'),
+                url.searchParams.get('mx_token'),
+                url.searchParams.get('max_user_token'),
+                url.searchParams.get('bot')
             );
+            candidates.push(url.hash);
+        } catch (e) {}
+
+        const startMarkers = ['startapp=', 'startApp=', 'start_param='];
+        for (const marker of startMarkers) {
+            const idx = s.indexOf(marker);
+            if (idx >= 0) {
+                const tail = s.slice(idx + marker.length).split(/[&#]/, 1)[0];
+                if (tail) {
+                    try {
+                        candidates.push(decodeURIComponent(tail));
+                    } catch (e) {
+                        candidates.push(tail);
+                    }
+                }
+            }
         }
     } catch (e) {}
-    return out.filter(Boolean);
+    return candidates.filter(Boolean);
+}
+
+function getRuntimeBridgeCandidates() {
+    const out = [];
+    try { if (document?.referrer) out.push(document.referrer); } catch (e) {}
+    try {
+        const nav = performance?.getEntriesByType?.('navigation');
+        if (nav && nav[0]?.name) out.push(nav[0].name);
+    } catch (e) {}
+    try {
+        if (window?.name) out.push(window.name);
+    } catch (e) {}
+    try {
+        if (window?.location?.hash) out.push(window.location.hash);
+    } catch (e) {}
+    return out;
 }
 
 function getBridgeStartParamCandidates() {
-    const out = [
+    return [
         tg?.initDataUnsafe?.start_param,
         tg?.initDataUnsafe?.startapp,
         tg?.initDataUnsafe?.startApp,
@@ -979,12 +995,9 @@ function getBridgeStartParamCandidates() {
         ...parseBridgeInitData(mx?.initData),
         ...parseBridgeInitData(tg?.initData),
         ...parseBridgeInitData(getMaxInitDataRaw()),
-        ...getReferrerStartParamCandidates(),
-    ];
-    try {
-        out.push(localStorage.getItem('apzMaxStartParamV1') || '');
-    } catch (e) {}
-    return out.filter(Boolean);
+        ...getRuntimeBridgeCandidates(),
+        ...getRuntimeBridgeCandidates().flatMap(parseBridgeInitData),
+    ].filter(Boolean);
 }
 
 function getApiBaseFromBridge() {
@@ -1001,16 +1014,17 @@ let API_BASE = '';
 try {
     const url = new URL(window.location.href);
     const qp = normalizeApiBase(url.searchParams.get('api') || '');
+    let refApi = '';
+    try {
+        const refUrl = new URL(String(document?.referrer || ''));
+        refApi = normalizeApiBase(refUrl.searchParams.get('api') || '');
+    } catch (e) {}
     const bridgeApi = getApiBaseFromBridge();
     const savedApi = normalizeApiBase(localStorage.getItem('apzApiBaseV1') || '');
 
-    API_BASE = qp || bridgeApi || savedApi;
+    API_BASE = qp || refApi || bridgeApi || savedApi;
     if (API_BASE) {
         localStorage.setItem('apzApiBaseV1', API_BASE);
-    }
-    const savedStart = getBridgeStartParamCandidates().find(Boolean) || '';
-    if (savedStart) {
-        localStorage.setItem('apzMaxStartParamV1', String(savedStart));
     }
 } catch (e) {
     API_BASE = '';
@@ -1022,27 +1036,58 @@ function apiUrl(path) {
     return API_BASE + path;
 }
 
+const MAX_INIT_DATA_CACHE_KEY = 'apzMaxInitDataV1';
+const MAX_BOT_NAME_CACHE_KEY = 'apzMaxBotNameV1';
+const MAX_USER_TOKEN_CACHE_KEY = 'apzMaxUserTokenV1';
+
+function getCachedString(key) {
+    try {
+        return String(localStorage.getItem(key) || '').trim();
+    } catch (e) {
+        return '';
+    }
+}
+
+function setCachedString(key, value) {
+    try {
+        const s = String(value || '').trim();
+        if (s) localStorage.setItem(key, s);
+    } catch (e) {}
+}
+
 function getMaxInitDataRaw() {
     try {
-        if (mx?.initData) return String(mx.initData);
+        if (mx?.initData) {
+            const raw = String(mx.initData || '').trim();
+            if (raw) {
+                setCachedString(MAX_INIT_DATA_CACHE_KEY, raw);
+                return raw;
+            }
+        }
     } catch (e) {}
 
     try {
         const hash = String(window.location.hash || '').replace(/^#/, '');
         if (hash) {
             const params = new URLSearchParams(hash);
-            const raw = params.get('WebAppData') || params.get('webappdata') || '';
-            if (raw) return raw;
+            const raw = String(params.get('WebAppData') || params.get('webappdata') || '').trim();
+            if (raw) {
+                setCachedString(MAX_INIT_DATA_CACHE_KEY, raw);
+                return raw;
+            }
         }
     } catch (e) {}
 
     try {
         const url = new URL(window.location.href);
-        const raw = url.searchParams.get('max_init_data') || '';
-        if (raw) return raw;
+        const raw = String(url.searchParams.get('max_init_data') || '').trim();
+        if (raw) {
+            setCachedString(MAX_INIT_DATA_CACHE_KEY, raw);
+            return raw;
+        }
     } catch (e) {}
 
-    return '';
+    return getCachedString(MAX_INIT_DATA_CACHE_KEY);
 }
 
 function getMaxBotName() {
@@ -1050,7 +1095,7 @@ function getMaxBotName() {
         const url = new URL(window.location.href);
         const qp = String(url.searchParams.get('bot') || '').trim().replace(/^@/, '');
         if (qp) {
-            try { localStorage.setItem('apzMaxBotNameV1', qp); } catch (e) {}
+            setCachedString(MAX_BOT_NAME_CACHE_KEY, qp);
             return qp;
         }
     } catch (e) {}
@@ -1058,14 +1103,11 @@ function getMaxBotName() {
     for (const item of getBridgeStartParamCandidates()) {
         const bot = String(extractStartParamValue(item, 'bot') || '').trim().replace(/^@/, '');
         if (bot) {
-            try { localStorage.setItem('apzMaxBotNameV1', bot); } catch (e) {}
+            setCachedString(MAX_BOT_NAME_CACHE_KEY, bot);
             return bot;
         }
     }
-    try {
-        return String(localStorage.getItem('apzMaxBotNameV1') || '').trim().replace(/^@/, '');
-    } catch (e) {}
-    return '';
+    return getCachedString(MAX_BOT_NAME_CACHE_KEY);
 }
 
 function getMaxUserToken() {
@@ -1073,7 +1115,7 @@ function getMaxUserToken() {
         const url = new URL(window.location.href);
         const qp = String(url.searchParams.get('mx_token') || url.searchParams.get('max_user_token') || '').trim();
         if (qp) {
-            try { localStorage.setItem('apzMaxUserTokenV1', qp); } catch (e) {}
+            setCachedString(MAX_USER_TOKEN_CACHE_KEY, qp);
             return qp;
         }
     } catch (e) {}
@@ -1081,20 +1123,53 @@ function getMaxUserToken() {
     for (const item of getBridgeStartParamCandidates()) {
         const tok = String(extractStartParamValue(item, 'tok') || '').trim();
         if (tok) {
-            try { localStorage.setItem('apzMaxUserTokenV1', tok); } catch (e) {}
+            setCachedString(MAX_USER_TOKEN_CACHE_KEY, tok);
             return tok;
         }
     }
+    return getCachedString(MAX_USER_TOKEN_CACHE_KEY);
+}
+
+async function saveStatsForTelegram(payload) {
+    const initData = String(tg?.initData || '').trim();
+    if (!initData) return false;
+
+    const saveUrl = apiUrl('/api/save_stats');
+
     try {
-        return String(localStorage.getItem('apzMaxUserTokenV1') || '').trim();
-    } catch (e) {}
-    return '';
+        const res = await fetch(saveUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Telegram-InitData': initData,
+            },
+            body: JSON.stringify({
+                ...payload,
+                initData,
+            }),
+            keepalive: true,
+        });
+        if (res.ok) return true;
+        console.warn('Telegram save_stats failed', res.status);
+        return false;
+    } catch (e) {
+        console.warn('Telegram save_stats exception', e);
+        return false;
+    }
 }
 
 async function saveStatsForMax(payload) {
     const maxInitData = getMaxInitDataRaw();
     const mxToken = getMaxUserToken();
-    if (!maxInitData && !mxToken) return false;
+    if (!maxInitData && !mxToken) {
+        console.warn('MAX save skipped: no auth data in WebApp context');
+        return false;
+    }
+
+    const authQuery = new URLSearchParams();
+    if (maxInitData) authQuery.set('max_init_data', String(maxInitData));
+    if (mxToken) authQuery.set('mx_token', String(mxToken));
+    const saveUrl = apiUrl('/api/save_stats') + (authQuery.toString() ? `?${authQuery.toString()}` : '');
 
     // Для MAX / внешнего браузера сначала используем form-urlencoded без custom headers.
     // Это самый надёжный вариант для WebView: меньше шансов упереться в CORS/preflight.
@@ -1108,19 +1183,23 @@ async function saveStatsForMax(payload) {
         if (maxInitData) body.set('max_init_data', String(maxInitData));
         if (mxToken) body.set('mx_token', String(mxToken));
 
-        const res = await fetch(apiUrl('/api/max/save_stats'), {
+        const res = await fetch(saveUrl, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
             },
             body: body.toString(),
+            keepalive: true,
         });
         if (res.ok) return true;
-    } catch (e) {}
+        console.warn('MAX save_stats form failed', res.status);
+    } catch (e) {
+        console.warn('MAX save_stats form exception', e);
+    }
 
     // Фолбэк: JSON.
     try {
-        const res = await fetch(apiUrl('/api/max/save_stats'), {
+        const res = await fetch(saveUrl, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -1130,9 +1209,13 @@ async function saveStatsForMax(payload) {
                 ...(maxInitData ? { max_init_data: maxInitData } : {}),
                 ...(mxToken ? { mx_token: mxToken } : {}),
             }),
+            keepalive: true,
         });
-        return res.ok;
+        if (res.ok) return true;
+        console.warn('MAX save_stats json failed', res.status);
+        return false;
     } catch (e) {
+        console.warn('MAX save_stats json exception', e);
         return false;
     }
 }
@@ -1149,7 +1232,7 @@ function openMaxBotChat() {
     } catch (e) {}
 
     try {
-        window.location.href = target;
+        window.location.replace(target);
         return true;
     } catch (e) {}
 
@@ -1159,8 +1242,15 @@ function openMaxBotChat() {
     } catch (e) {}
 
     try {
-        window.location.replace(target);
+        window.location.href = target;
         return true;
+    } catch (e) {}
+
+    try {
+        if (window.top && window.top !== window) {
+            window.top.location.href = target;
+            return true;
+        }
     } catch (e) {}
 
     return false;
@@ -1580,89 +1670,85 @@ if (statLine && statMain && savedApt && savedApt.main) {
     showScreen('screen-final');
 }
 
-async function sendStatsAndClose() {
-    const payload = buildStatsPayload();
-
-    // В Telegram WebApp: отправляем данные и закрываем WebApp
-    if (tg?.sendData) {
-        try {
-            tg.sendData(JSON.stringify(payload));
-            tg.close();
-            return;
-        } catch (e) {}
+function redirectMaxFinish(payload) {
+    if (!API_BASE) {
+        console.warn('MAX finish redirect aborted: API base is empty');
+        return false;
     }
 
-    // MAX / внешний браузер: сначала пробуем прямое сохранение через API.
-    const maxSaved = await saveStatsForMax(payload);
-    if (maxSaved) {
-        try {
-            if (mx?.close) {
-                mx.close();
-                return;
-            }
-        } catch (e) {}
-
-        if (openMaxBotChat()) return;
-    }
-
-    // Надёжный фолбэк для MAX: прямой POST-навигацией на серверный endpoint.
-    // Так переход считается пользовательским действием и не блокируется WebView.
+    const params = new URLSearchParams();
     const maxInitData = getMaxInitDataRaw();
     const mxToken = getMaxUserToken();
     const botName = getMaxBotName();
-    const finishUrl = apiUrl('/api/max/save_stats_finish');
-    if ((maxInitData || mxToken) && /^https?:\/\//i.test(finishUrl)) {
-        try {
-            const form = document.createElement('form');
-            form.method = 'POST';
-            form.action = finishUrl;
-            form.style.display = 'none';
 
-            const fullPayload = {
-                ...payload,
-                ...(maxInitData ? { max_init_data: maxInitData } : {}),
-                ...(mxToken ? { mx_token: mxToken } : {}),
-                ...(botName ? { bot: botName } : {}),
-            };
-            Object.entries(fullPayload).forEach(([k, v]) => {
-                if (v == null) return;
-                const input = document.createElement('input');
-                input.type = 'hidden';
-                input.name = k;
-                input.value = typeof v === 'object' ? JSON.stringify(v) : String(v);
-                form.appendChild(input);
-            });
-            document.body.appendChild(form);
-            form.submit();
+    params.set('score', String(payload?.score ?? 0));
+    if (payload?.aptitude_top) params.set('aptitude_top', String(payload.aptitude_top));
+    if (maxInitData) params.set('max_init_data', String(maxInitData));
+    if (mxToken) params.set('mx_token', String(mxToken));
+    if (botName) params.set('bot', String(botName));
+    params.set('_ts', String(Date.now()));
+
+    const target = apiUrl('/api/max/finish_stats') + '?' + params.toString();
+    try {
+        window.location.assign(target);
+        return true;
+    } catch (e) {}
+    try {
+        window.location.href = target;
+        return true;
+    } catch (e) {}
+    try {
+        window.location.replace(target);
+        return true;
+    } catch (e) {}
+    return false;
+}
+
+async function sendStatsAndClose() {
+    const payload = buildStatsPayload();
+
+    // Telegram WebApp оставляем по прежней рабочей логике: сначала сохраняем,
+    // затем sendData/close.
+    if (tg?.initData) {
+        const directSaved = await saveStatsForTelegram(payload);
+        if (!directSaved) {
+            notify('Не удалось сохранить статистику. Проверьте подключение и попробуйте ещё раз.');
             return;
-        } catch (e) {}
+        }
+
+        if (tg?.sendData) {
+            try {
+                tg.sendData(JSON.stringify(payload));
+            } catch (e) {}
+            try {
+                tg.close();
+                return;
+            } catch (e) {
+                return;
+            }
+        }
+        return;
     }
 
-    // Если MAX Bridge доступен, но auth не прочитались — хотя бы закроем мини‑приложение.
-    if (mx?.close) {
-        try {
+    // MAX / встроенный браузер: сначала сохраняем напрямую в БД,
+    // затем тем же окном возвращаем пользователя в чат с ботом.
+    const directSaved = await saveStatsForMax(payload);
+    if (!directSaved) {
+        notify('Не удалось сохранить статистику. Проверьте подключение и попробуйте ещё раз.');
+        return;
+    }
+
+    try {
+        if (mx?.close) {
             mx.close();
             return;
-        } catch (e) {}
-    }
+        }
+    } catch (e) {}
 
-    if (openMaxBotChat()) return;
+    const opened = openMaxBotChat();
+    if (opened) return;
 
-    // В обычном браузере: скачиваем JSON
-    try {
-        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'apz_stats.json';
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 1000);
-        notify('Файл статистики сохранён ✅');
-    } catch (e) {
-        notify('Не удалось сохранить статистику 😕');
-    }
+    notify('Статистика сохранена, но не удалось автоматически вернуться в чат с ботом.');
 }
 
 // Подтверждение перед закрытием WebApp и переходом в Telegram к статистике.
