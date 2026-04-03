@@ -891,6 +891,20 @@ async def save_webapp_stats(request: web.Request) -> web.Response:
         "WebApp save_stats ok (max): max_user_id=%s db_id=%s score=%s aptitude_top=%s",
         max_user_id, db_id, score, aptitude_top,
     )
+
+    # После успешного сохранения сразу отправляем статистику в чат MAX.
+    # Тогда фронтенду не нужно открывать deep link после await/fetch,
+    # что в мобильных WebView часто блокируется как переход без пользовательского жеста.
+    try:
+        from max_bot import _send_stats_max
+        await _send_stats_max(request.app, max_user_id=int(max_user_id))
+    except Exception as e:
+        logging.getLogger(__name__).exception(
+            "WebApp save_stats post-send failed: max_user_id=%s err=%s",
+            max_user_id,
+            e,
+        )
+
     return web.json_response({"ok": True, "platform": "max", "max_user_id": int(max_user_id), "user_id": db_id})
 
 
