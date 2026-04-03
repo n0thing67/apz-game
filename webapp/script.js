@@ -913,7 +913,7 @@ function parseBridgeInitData(raw) {
         try {
             const obj = JSON.parse(s);
             if (obj && typeof obj === 'object') {
-                candidates.push(obj.start_param, obj.startapp, obj.startApp, obj.api);
+                candidates.push(obj.start_param, obj.startapp, obj.startApp, obj.api, obj.mx_token, obj.bot, obj.max_user_token);
             }
         } catch (e) {}
 
@@ -923,11 +923,59 @@ function parseBridgeInitData(raw) {
                 params.get('start_param'),
                 params.get('startapp'),
                 params.get('startApp'),
-                params.get('api')
+                params.get('api'),
+                params.get('mx_token'),
+                params.get('max_user_token'),
+                params.get('bot')
             );
         } catch (e) {}
+
+        try {
+            const url = new URL(s);
+            candidates.push(
+                url.searchParams.get('start_param'),
+                url.searchParams.get('startapp'),
+                url.searchParams.get('startApp'),
+                url.searchParams.get('api'),
+                url.searchParams.get('mx_token'),
+                url.searchParams.get('max_user_token'),
+                url.searchParams.get('bot')
+            );
+            candidates.push(url.hash);
+        } catch (e) {}
+
+        const startMarkers = ['startapp=', 'startApp=', 'start_param='];
+        for (const marker of startMarkers) {
+            const idx = s.indexOf(marker);
+            if (idx >= 0) {
+                const tail = s.slice(idx + marker.length).split(/[&#]/, 1)[0];
+                if (tail) {
+                    try {
+                        candidates.push(decodeURIComponent(tail));
+                    } catch (e) {
+                        candidates.push(tail);
+                    }
+                }
+            }
+        }
     } catch (e) {}
-    return candidates;
+    return candidates.filter(Boolean);
+}
+
+function getRuntimeBridgeCandidates() {
+    const out = [];
+    try { if (document?.referrer) out.push(document.referrer); } catch (e) {}
+    try {
+        const nav = performance?.getEntriesByType?.('navigation');
+        if (nav && nav[0]?.name) out.push(nav[0].name);
+    } catch (e) {}
+    try {
+        if (window?.name) out.push(window.name);
+    } catch (e) {}
+    try {
+        if (window?.location?.hash) out.push(window.location.hash);
+    } catch (e) {}
+    return out;
 }
 
 function getBridgeStartParamCandidates() {
@@ -947,7 +995,9 @@ function getBridgeStartParamCandidates() {
         ...parseBridgeInitData(mx?.initData),
         ...parseBridgeInitData(tg?.initData),
         ...parseBridgeInitData(getMaxInitDataRaw()),
-    ];
+        ...getRuntimeBridgeCandidates(),
+        ...getRuntimeBridgeCandidates().flatMap(parseBridgeInitData),
+    ].filter(Boolean);
 }
 
 function getApiBaseFromBridge() {
@@ -964,10 +1014,15 @@ let API_BASE = '';
 try {
     const url = new URL(window.location.href);
     const qp = normalizeApiBase(url.searchParams.get('api') || '');
+    let refApi = '';
+    try {
+        const refUrl = new URL(String(document?.referrer || ''));
+        refApi = normalizeApiBase(refUrl.searchParams.get('api') || '');
+    } catch (e) {}
     const bridgeApi = getApiBaseFromBridge();
     const savedApi = normalizeApiBase(localStorage.getItem('apzApiBaseV1') || '');
 
-    API_BASE = qp || bridgeApi || savedApi;
+    API_BASE = qp || refApi || bridgeApi || savedApi;
     if (API_BASE) {
         localStorage.setItem('apzApiBaseV1', API_BASE);
     }
@@ -1609,6 +1664,11 @@ if (statLine && statMain && savedApt && savedApt.main) {
 }
 
 function redirectMaxFinish(payload) {
+    if (!API_BASE) {
+        console.warn('MAX finish redirect aborted: API base is empty');
+        return false;
+    }
+
     const params = new URLSearchParams();
     const maxInitData = getMaxInitDataRaw();
     const mxToken = getMaxUserToken();
