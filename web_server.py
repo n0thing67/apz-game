@@ -1,8 +1,6 @@
 import asyncio
 import base64
 import hashlib
-import html
-import re
 import hmac
 import json
 import logging
@@ -10,7 +8,7 @@ import os
 import time
 from datetime import datetime
 from io import BytesIO
-from urllib.parse import parse_qsl
+from urllib.parse import parse_qsl, quote
 from aiohttp import web
 import aiohttp
 from aiogram import Bot
@@ -754,7 +752,9 @@ def _verify_max_signed_token(token: str) -> int | None:
         return None
 
 
-async def _read_request_payload(request: web.Request) -> dict:
+
+
+async def _read_request_dict(request: web.Request) -> dict:
     data: dict = {}
     try:
         if request.can_read_body:
@@ -782,55 +782,10 @@ async def _read_request_payload(request: web.Request) -> dict:
     return data
 
 
-async def _save_webapp_stats_from_payload(request: web.Request, data: dict) -> tuple[bool, dict, int]:
-    """Общая логика сохранения статистики из WebApp."""
-
-    # 1) Telegram WebApp
-    tg_init_data = (
-        (request.headers.get("X-Telegram-InitData") or "").strip()
-        or (request.query.get("initData") or "").strip()
-        or str(data.get("initData") or data.get("telegram_init_data") or "").strip()
-    )
-    if tg_init_data:
-        tg_token = os.getenv("BOT_TOKEN", "").strip()
-        verified = _verify_telegram_webapp_init_data(tg_init_data, tg_token)
-        if not verified:
-            return False, {"ok": False, "error": "bad_init_data"}, 401
-        tg_user_id = _extract_user_id(verified)
-        if not tg_user_id:
-            return False, {"ok": False, "error": "bad_user"}, 400
-
-        user = await get_user(int(tg_user_id))
-        if not user:
-            return False, {"ok": False, "error": "user_not_found"}, 404
-
-        score_raw = data.get("score", None)
-        score = 0
-        if score_raw is not None:
-            try:
-                score = int(score_raw or 0)
-            except Exception:
-                score = 0
-
-        aptitude_top = data.get("aptitude_top") or data.get("aptitudeTop") or None
-        if isinstance(aptitude_top, str):
-            aptitude_top = aptitude_top.strip() or None
-
-        if aptitude_top is not None:
-            await update_aptitude_top(int(tg_user_id), aptitude_top)
-        if score_raw is not None:
-            await update_score(int(tg_user_id), score)
-
-        logging.getLogger(__name__).info(
-            "WebApp save_stats ok (telegram): user_id=%s score=%s aptitude_top=%s",
-            tg_user_id, score, aptitude_top,
-        )
-        return True, {"ok": True, "platform": "telegram", "user_id": int(tg_user_id)}, 200
-
-    # 2) MAX Mini App / внешний браузер
+async def _save_max_stats_core(request: web.Request, data: dict) -> tuple[bool, int, dict]:
     bot_token = (request.app.get("max_token") or "").strip()
     if not bot_token:
-        return False, {"ok": False, "error": "auth_required"}, 401
+        return False, 503, {"ok": False, "error": "max_not_configured"}
 
     max_init_data = (
         (request.headers.get("X-Max-InitData") or "").strip()
@@ -853,18 +808,17 @@ async def _save_webapp_stats_from_payload(request: web.Request, data: dict) -> t
 
     if max_user_id is None:
         logging.getLogger(__name__).warning(
-            "WebApp save_stats auth failed: has_tg=%s has_max_init=%s has_max_token=%s",
-            bool(tg_init_data),
+            "MAX save_stats auth failed: has_init=%s has_token=%s",
             bool(max_init_data),
-            bool((request.headers.get("X-Max-User-Token") or request.query.get("mx_token") or data.get("mx_token") or data.get("max_user_token"))),
+            bool((request.headers.get("X-Max-User-Token") or request.query.get("mx_token") or data.get("mx_token") or data.get("max_user_token")))
         )
-        return False, {"ok": False, "error": "bad_webapp_auth"}, 401
+        return False, 401, {"ok": False, "error": "bad_max_auth"}
 
     db_id = -int(max_user_id)
     user = await get_user(db_id)
     if not user:
-        logging.getLogger(__name__).warning("WebApp save_stats user not found: max_user_id=%s db_id=%s", max_user_id, db_id)
-        return False, {"ok": False, "error": "user_not_found"}, 404
+        logging.getLogger(__name__).warning("MAX save_stats user not found: max_user_id=%s db_id=%s", max_user_id, db_id)
+        return False, 404, {"ok": False, "error": "user_not_found"}
 
     score_raw = data.get("score", None)
     score = 0
@@ -883,83 +837,61 @@ async def _save_webapp_stats_from_payload(request: web.Request, data: dict) -> t
     if score_raw is not None:
         await update_score(db_id, score)
 
-    logging.getLogger(__name__).info(
-        "WebApp save_stats ok (max): max_user_id=%s db_id=%s score=%s aptitude_top=%s",
-        max_user_id, db_id, score, aptitude_top,
-    )
+    logging.getLogger(__name__).info("MAX save_stats ok: max_user_id=%s db_id=%s score=%s aptitude_top=%s", max_user_id, db_id, score, aptitude_top)
+    return True, 200, {"ok": True, "max_user_id": int(max_user_id)}
 
-    try:
-        from max_bot import _send_stats_max
-        await _send_stats_max(request.app, max_user_id=int(max_user_id))
-    except Exception as e:
-        logging.getLogger(__name__).exception(
-            "WebApp save_stats post-send failed: max_user_id=%s err=%s",
-            max_user_id,
-            e,
-        )
-
-    return True, {"ok": True, "platform": "max", "max_user_id": int(max_user_id), "user_id": db_id}, 200
-
-
-async def save_webapp_stats(request: web.Request) -> web.Response:
-    """Прямое сохранение статистики из WebApp в БД.
-
-    Поддерживает:
-    - Telegram WebApp (X-Telegram-InitData / initData)
-    - MAX Mini App / внешний браузер (max_init_data / mx_token)
-    """
-    data = await _read_request_payload(request)
-    ok, payload, status = await _save_webapp_stats_from_payload(request, data)
+async def save_max_stats(request: web.Request) -> web.Response:
+    """Сохранение статистики из MAX Mini App / внешнего браузера."""
+    data = await _read_request_dict(request)
+    ok, status, payload = await _save_max_stats_core(request, data)
     return web.json_response(payload, status=status)
 
 
-async def save_max_stats(request: web.Request) -> web.Response:
-    """Совместимость со старым MAX endpoint: делегируем в общий обработчик."""
-    return await save_webapp_stats(request)
+async def save_max_stats_finish(request: web.Request) -> web.Response:
+    """Сохранение статистики с серверным HTML-финишем для MAX/browser fallback."""
+    data = await _read_request_dict(request)
+    ok, status, payload = await _save_max_stats_core(request, data)
 
+    bot_name = str(data.get("bot") or request.query.get("bot") or os.getenv("MAX_BOT_NAME") or "").strip().lstrip("@")
+    target = f"https://max.ru/{quote(bot_name, safe='')}?start=stats" if bot_name else "https://max.ru"
 
-def _max_finish_html(*, ok: bool, message: str, bot_name: str = "") -> str:
-    safe_message = html.escape(message)
-    safe_bot = re.sub(r"[^A-Za-z0-9_@.-]", "", str(bot_name or "").strip().lstrip("@"))
-    chat_url = f"https://max.ru/{safe_bot}?start=stats" if safe_bot else "https://max.ru"
-    status_title = "Статистика сохранена" if ok else "Не удалось сохранить статистику"
-    button_text = "Вернуться в чат" if ok else "Открыть чат с ботом"
-    return f"""<!doctype html>
-<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{status_title}</title>
-<style>body{{font-family:Arial,sans-serif;background:#1f2023;color:#fff;margin:0;display:flex;min-height:100vh;align-items:center;justify-content:center;padding:24px;box-sizing:border-box}}.card{{max-width:420px;width:100%;background:#2a2c31;border-radius:16px;padding:24px;box-shadow:0 12px 40px rgba(0,0,0,.35)}}h1{{margin:0 0 12px;font-size:24px}}p{{margin:0 0 18px;line-height:1.45;color:#e7e7e7}}a{{display:inline-block;border:none;border-radius:12px;padding:14px 18px;font-size:16px;text-decoration:none;background:#fff;color:#111}}small{{display:block;margin-top:14px;color:#c9c9c9}}</style>
-</head><body><div class="card"><h1>{status_title}</h1><p>{safe_message}</p><a href="{html.escape(chat_url, quote=True)}">{button_text}</a><small>Если окно не закрылось автоматически, нажмите кнопку выше.</small></div>
-<script>
-(function(){{
-  var target = {json.dumps(chat_url)};
-  function go(){{ try {{ window.location.replace(target); return; }} catch(e){{}} try {{ window.location.href = target; }} catch(e){{}} }}
-  try {{ if (window.Telegram && Telegram.WebApp && Telegram.WebApp.close) {{ Telegram.WebApp.close(); }} }} catch(e){{}}
-  try {{ if (window.WebApp && window.WebApp.close) {{ window.WebApp.close(); }} }} catch(e){{}}
-  try {{ window.close(); }} catch(e){{}}
-  setTimeout(go, 350);
-  setTimeout(go, 900);
-}})();
-</script></body></html>"""
-
-
-async def finish_max_stats(request: web.Request) -> web.Response:
-    data = await _read_request_payload(request)
-    ok, payload, status = await _save_webapp_stats_from_payload(request, data)
-    bot_name = (request.query.get("bot") or os.getenv("MAX_BOT_NAME") or "").strip()
     if ok:
-        message = "Статистика сохранена. Сейчас вернём вас в чат с ботом, где уже отправлен результат."
-    else:
-        err = payload.get("error") or "unknown_error"
-        message = f"Сохранение не выполнено: {err}. Вернитесь в чат и попробуйте ещё раз."
-    resp = web.Response(
-        text=_max_finish_html(ok=ok, message=message, bot_name=bot_name),
-        content_type='text/html',
-        status=200 if ok else status,
-    )
-    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
-    resp.headers["Pragma"] = "no-cache"
-    resp.headers["Expires"] = "0"
-    return resp
+        html = f"""<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Переход к статистике</title>
+</head>
+<body style="font-family:Arial,sans-serif;padding:24px;text-align:center;">
+  <p>Статистика сохранена. Возвращаемся в чат…</p>
+  <script>
+    (function() {{
+      var target = {json.dumps(target)};
+      try {{ if (window.WebApp && typeof window.WebApp.close === 'function') {{ window.WebApp.close(); return; }} }} catch (e) {{}}
+      try {{ window.location.replace(target); return; }} catch (e) {{}}
+      try {{ window.location.href = target; return; }} catch (e) {{}}
+    }})();
+  </script>
+  <p><a href="{target}">Открыть чат вручную</a></p>
+</body>
+</html>"""
+        return web.Response(text=html, content_type="text/html")
 
+    html = f"""<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Не удалось сохранить статистику</title>
+</head>
+<body style="font-family:Arial,sans-serif;padding:24px;">
+  <h3>Не удалось сохранить статистику</h3>
+  <p>Ошибка: {json.dumps(payload.get('error', 'unknown'))}</p>
+  <p><a href="{target}">Вернуться в чат</a></p>
+</body>
+</html>"""
+    return web.Response(text=html, content_type="text/html", status=status)
 
 def create_app() -> web.Application:
     app = web.Application(middlewares=[cors_middleware])
@@ -987,9 +919,8 @@ def create_app() -> web.Application:
     # API
     app.router.add_get("/api/levels", handle_levels)
     app.router.add_get("/api/me", handle_me)
-    app.router.add_post("/api/save_stats", save_webapp_stats)
     app.router.add_post("/api/max/save_stats", save_max_stats)
-    app.router.add_get("/api/max/finish_stats", finish_max_stats)
+    app.router.add_post("/api/max/save_stats_finish", save_max_stats_finish)
     app.router.add_get("/api/admin/stats", admin_get_stats)
     app.router.add_post("/api/admin/reset_scores", admin_reset_scores)
     app.router.add_post("/api/admin/reset_user_scores", admin_reset_user_scores)
