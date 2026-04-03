@@ -114,20 +114,19 @@ def _admin_entry_url(max_user_id: int | None = None) -> str:
 def _factory_entry_url(max_user_id: int | None = None) -> str:
     """URL для кнопки «Зайти на завод» в MAX.
 
-    Критично передаём все параметры прямо в URL игры, потому что в MAX на мобильных
-    устройствах WebView / встроенный браузер может не пробрасывать startapp обратно
-    в текущий location/referrer после открытия GitHub Pages. Из-за этого фронтенд
-    не видел API base и токен пользователя, а сохранение статистики после кнопки
-    «ОК» молча не доходило до БД.
-
-    Формат:
-    GAME_URL/?api=<render>&bot=<bot_name>&mx_token=<signed_token>
+    Для надёжной работы сохранения статистики в MAX передаём API base, имя бота
+    и подписанный токен пользователя прямо в URL игры. На практике это стабильнее,
+    чем рассчитывать на startapp/initData во всех WebView/браузерных сценариях.
+    Игра при этом всё так же открывается внутри MAX как встроенная веб-страница.
     """
-    game_url = os.getenv("GAME_URL", "https://n0thing67.github.io/APZ-games/").rstrip("/")
+    game_url = (os.getenv("GAME_URL", "https://n0thing67.github.io/APZ-games/") or "").strip()
+    if not game_url:
+        return _game_url()
+
+    params: dict[str, str] = {}
     api_base = (_admin_url() or "").strip().rstrip("/")
     bot_name = (os.getenv("MAX_BOT_NAME", "") or "").strip().lstrip("@")
 
-    params: dict[str, str] = {}
     if api_base:
         params["api"] = api_base
     if bot_name:
@@ -138,7 +137,9 @@ def _factory_entry_url(max_user_id: int | None = None) -> str:
             params["mx_token"] = tok
 
     qs = urlencode(params, safe='')
-    return f"{game_url}/" + (f"?{qs}" if qs else "")
+    if not qs:
+        return game_url
+    return game_url + ('&' if '?' in game_url else '?') + qs
 
 def _admin_url() -> str:
     return (os.getenv("ADMIN_URL", os.getenv("WEBAPP_URL", "")) or "").rstrip("/")
