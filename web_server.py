@@ -752,12 +752,7 @@ def _verify_max_signed_token(token: str) -> int | None:
         return None
 
 
-async def save_max_stats(request: web.Request) -> web.Response:
-    """Сохранение статистики из MAX Mini App / внешнего браузера."""
-    bot_token = (request.app.get("max_token") or "").strip()
-    if not bot_token:
-        return web.json_response({"ok": False, "error": "max_not_configured"}, status=503)
-
+async def _read_request_payload(request: web.Request) -> dict:
     data: dict = {}
     try:
         if request.can_read_body:
@@ -782,6 +777,64 @@ async def save_max_stats(request: web.Request) -> web.Response:
                         data = dict(parse_qsl(raw_body, keep_blank_values=True))
     except Exception:
         data = {}
+    return data
+
+
+async def save_webapp_stats(request: web.Request) -> web.Response:
+    """Прямое сохранение статистики из WebApp в БД.
+
+    Поддерживает:
+    - Telegram WebApp (X-Telegram-InitData / initData)
+    - MAX Mini App / внешний браузер (max_init_data / mx_token)
+    """
+    data = await _read_request_payload(request)
+
+    # 1) Telegram WebApp
+    tg_init_data = (
+        (request.headers.get("X-Telegram-InitData") or "").strip()
+        or (request.query.get("initData") or "").strip()
+        or str(data.get("initData") or data.get("telegram_init_data") or "").strip()
+    )
+    if tg_init_data:
+        tg_token = os.getenv("BOT_TOKEN", "").strip()
+        verified = _verify_telegram_webapp_init_data(tg_init_data, tg_token)
+        if not verified:
+            return web.json_response({"ok": False, "error": "bad_init_data"}, status=401)
+        tg_user_id = _extract_user_id(verified)
+        if not tg_user_id:
+            return web.json_response({"ok": False, "error": "bad_user"}, status=400)
+
+        user = await get_user(int(tg_user_id))
+        if not user:
+            return web.json_response({"ok": False, "error": "user_not_found"}, status=404)
+
+        score_raw = data.get("score", None)
+        score = 0
+        if score_raw is not None:
+            try:
+                score = int(score_raw or 0)
+            except Exception:
+                score = 0
+
+        aptitude_top = data.get("aptitude_top") or data.get("aptitudeTop") or None
+        if isinstance(aptitude_top, str):
+            aptitude_top = aptitude_top.strip() or None
+
+        if aptitude_top is not None:
+            await update_aptitude_top(int(tg_user_id), aptitude_top)
+        if score_raw is not None:
+            await update_score(int(tg_user_id), score)
+
+        logging.getLogger(__name__).info(
+            "WebApp save_stats ok (telegram): user_id=%s score=%s aptitude_top=%s",
+            tg_user_id, score, aptitude_top,
+        )
+        return web.json_response({"ok": True, "platform": "telegram", "user_id": int(tg_user_id)})
+
+    # 2) MAX Mini App / внешний браузер
+    bot_token = (request.app.get("max_token") or "").strip()
+    if not bot_token:
+        return web.json_response({"ok": False, "error": "auth_required"}, status=401)
 
     max_init_data = (
         (request.headers.get("X-Max-InitData") or "").strip()
@@ -803,13 +856,18 @@ async def save_max_stats(request: web.Request) -> web.Response:
         max_user_id = _verify_max_signed_token(signed_token)
 
     if max_user_id is None:
-        logging.getLogger(__name__).warning("MAX save_stats auth failed: has_init=%s has_token=%s", bool(max_init_data), bool((request.headers.get("X-Max-User-Token") or request.query.get("mx_token") or data.get("mx_token") or data.get("max_user_token"))))
-        return web.json_response({"ok": False, "error": "bad_max_auth"}, status=401)
+        logging.getLogger(__name__).warning(
+            "WebApp save_stats auth failed: has_tg=%s has_max_init=%s has_max_token=%s",
+            bool(tg_init_data),
+            bool(max_init_data),
+            bool((request.headers.get("X-Max-User-Token") or request.query.get("mx_token") or data.get("mx_token") or data.get("max_user_token"))),
+        )
+        return web.json_response({"ok": False, "error": "bad_webapp_auth"}, status=401)
 
     db_id = -int(max_user_id)
     user = await get_user(db_id)
     if not user:
-        logging.getLogger(__name__).warning("MAX save_stats user not found: max_user_id=%s db_id=%s", max_user_id, db_id)
+        logging.getLogger(__name__).warning("WebApp save_stats user not found: max_user_id=%s db_id=%s", max_user_id, db_id)
         return web.json_response({"ok": False, "error": "user_not_found"}, status=404)
 
     score_raw = data.get("score", None)
@@ -829,8 +887,16 @@ async def save_max_stats(request: web.Request) -> web.Response:
     if score_raw is not None:
         await update_score(db_id, score)
 
-    logging.getLogger(__name__).info("MAX save_stats ok: max_user_id=%s db_id=%s score=%s aptitude_top=%s", max_user_id, db_id, score, aptitude_top)
-    return web.json_response({"ok": True, "max_user_id": int(max_user_id)})
+    logging.getLogger(__name__).info(
+        "WebApp save_stats ok (max): max_user_id=%s db_id=%s score=%s aptitude_top=%s",
+        max_user_id, db_id, score, aptitude_top,
+    )
+    return web.json_response({"ok": True, "platform": "max", "max_user_id": int(max_user_id), "user_id": db_id})
+
+
+async def save_max_stats(request: web.Request) -> web.Response:
+    """Совместимость со старым MAX endpoint: делегируем в общий обработчик."""
+    return await save_webapp_stats(request)
 
 def create_app() -> web.Application:
     app = web.Application(middlewares=[cors_middleware])
@@ -858,6 +924,7 @@ def create_app() -> web.Application:
     # API
     app.router.add_get("/api/levels", handle_levels)
     app.router.add_get("/api/me", handle_me)
+    app.router.add_post("/api/save_stats", save_webapp_stats)
     app.router.add_post("/api/max/save_stats", save_max_stats)
     app.router.add_get("/api/admin/stats", admin_get_stats)
     app.router.add_post("/api/admin/reset_scores", admin_reset_scores)
