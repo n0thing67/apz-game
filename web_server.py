@@ -754,75 +754,31 @@ def _verify_max_signed_token(token: str) -> int | None:
 
 
 
-
-
-async def save_telegram_stats(request: web.Request) -> web.Response:
-    """Сохранение статистики из Telegram WebApp."""
-    try:
-        data = await _read_request_dict(request)
-    except Exception:
-        data = {}
-
-    try:
-        tg_id = await _require_user(request)
-    except web.HTTPException as e:
-        return web.json_response({"ok": False, "error": "bad_init_data"}, status=e.status)
-
-    user = await get_user(tg_id)
-    if not user:
-        return web.json_response({"ok": False, "error": "user_not_found"}, status=404)
-
-    score_raw = data.get("score", None)
-    score = 0
-    if score_raw is not None:
-        try:
-            score = int(score_raw or 0)
-        except Exception:
-            score = 0
-
-    aptitude_top = data.get("aptitude_top") or data.get("aptitudeTop") or None
-    if isinstance(aptitude_top, str):
-        aptitude_top = aptitude_top.strip() or None
-
-    if aptitude_top is not None:
-        await update_aptitude_top(tg_id, aptitude_top)
-    if score_raw is not None:
-        await update_score(tg_id, score)
-
-    return web.json_response({"ok": True, "telegram_id": int(tg_id)})
-
-
-async def save_stats(request: web.Request) -> web.Response:
-    """Единая точка сохранения статистики для Telegram и MAX."""
-    init_data = (request.headers.get("X-Telegram-InitData") or request.query.get("initData") or "").strip()
-    if init_data:
-        return await save_telegram_stats(request)
-    return await save_max_stats(request)
 async def _read_request_dict(request: web.Request) -> dict:
-    data: dict = dict(request.query)
+    data: dict = {}
     try:
         if request.can_read_body:
             ctype = (request.content_type or '').lower()
             if 'application/json' in ctype:
                 raw_json = await request.json()
                 if isinstance(raw_json, dict):
-                    data.update(raw_json)
+                    data = raw_json
             elif ctype in {'application/x-www-form-urlencoded', 'multipart/form-data'}:
                 post_data = await request.post()
-                data.update(dict(post_data))
+                data = dict(post_data)
             else:
                 raw_body = (await request.text()).strip()
                 if raw_body:
                     try:
                         parsed = json.loads(raw_body)
                         if isinstance(parsed, dict):
-                            data.update(parsed)
+                            data = parsed
                         else:
-                            data.update(dict(parse_qsl(raw_body, keep_blank_values=True)))
+                            data = dict(parse_qsl(raw_body, keep_blank_values=True))
                     except Exception:
-                        data.update(dict(parse_qsl(raw_body, keep_blank_values=True)))
+                        data = dict(parse_qsl(raw_body, keep_blank_values=True))
     except Exception:
-        pass
+        data = {}
     return data
 
 
@@ -893,7 +849,10 @@ async def save_max_stats(request: web.Request) -> web.Response:
 
 async def save_max_stats_finish(request: web.Request) -> web.Response:
     """Сохранение статистики с серверным HTML-финишем для MAX/browser fallback."""
-    data = await _read_request_dict(request)
+    data = dict(request.query)
+    body_data = await _read_request_dict(request)
+    if body_data:
+        data.update(body_data)
     ok, status, payload = await _save_max_stats_core(request, data)
 
     bot_name = str(data.get("bot") or request.query.get("bot") or os.getenv("MAX_BOT_NAME") or "").strip().lstrip("@")
@@ -963,11 +922,12 @@ def create_app() -> web.Application:
     # API
     app.router.add_get("/api/levels", handle_levels)
     app.router.add_get("/api/me", handle_me)
-    app.router.add_post("/api/save_stats", save_stats)
     app.router.add_post("/api/max/save_stats", save_max_stats)
     app.router.add_post("/api/max/save_stats_finish", save_max_stats_finish)
-    app.router.add_get("/api/max/finish_stats", save_max_stats_finish)
+    app.router.add_get("/api/max/save_stats_finish", save_max_stats_finish)
+    # Обратная совместимость со старыми/закэшированными версиями webapp.
     app.router.add_post("/api/max/finish_stats", save_max_stats_finish)
+    app.router.add_get("/api/max/finish_stats", save_max_stats_finish)
     app.router.add_get("/api/admin/stats", admin_get_stats)
     app.router.add_post("/api/admin/reset_scores", admin_reset_scores)
     app.router.add_post("/api/admin/reset_user_scores", admin_reset_user_scores)
