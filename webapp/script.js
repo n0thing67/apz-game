@@ -1608,50 +1608,68 @@ if (statLine && statMain && savedApt && savedApt.main) {
     showScreen('screen-final');
 }
 
+function redirectMaxFinish(payload) {
+    const params = new URLSearchParams();
+    const maxInitData = getMaxInitDataRaw();
+    const mxToken = getMaxUserToken();
+    const botName = getMaxBotName();
+
+    params.set('score', String(payload?.score ?? 0));
+    if (payload?.aptitude_top) params.set('aptitude_top', String(payload.aptitude_top));
+    if (maxInitData) params.set('max_init_data', String(maxInitData));
+    if (mxToken) params.set('mx_token', String(mxToken));
+    if (botName) params.set('bot', String(botName));
+    params.set('_ts', String(Date.now()));
+
+    const target = apiUrl('/api/max/finish_stats') + '?' + params.toString();
+    try {
+        window.location.assign(target);
+        return true;
+    } catch (e) {}
+    try {
+        window.location.href = target;
+        return true;
+    } catch (e) {}
+    try {
+        window.location.replace(target);
+        return true;
+    } catch (e) {}
+    return false;
+}
+
 async function sendStatsAndClose() {
     const payload = buildStatsPayload();
 
-    // Сначала сохраняем статистику напрямую в БД.
-    // Для MAX сервер после успешного сохранения сам отправляет пользователю сообщение
-    // со статистикой, поэтому фронтенду достаточно надёжно закрыть мини‑приложение.
-    let directSaved = false;
+    // Telegram WebApp оставляем по прежней рабочей логике: сначала сохраняем,
+    // затем sendData/close.
     if (tg?.initData) {
-        directSaved = await saveStatsForTelegram(payload);
-    } else {
-        directSaved = await saveStatsForMax(payload);
-    }
+        const directSaved = await saveStatsForTelegram(payload);
+        if (!directSaved) {
+            notify('Не удалось сохранить статистику. Проверьте подключение и попробуйте ещё раз.');
+            return;
+        }
 
-    if (!directSaved) {
-        notify('Не удалось сохранить статистику. Проверьте подключение и попробуйте ещё раз.');
+        if (tg?.sendData) {
+            try {
+                tg.sendData(JSON.stringify(payload));
+            } catch (e) {}
+            try {
+                tg.close();
+                return;
+            } catch (e) {
+                return;
+            }
+        }
         return;
     }
 
-    // Telegram WebApp: сохраняем старую рабочую механику.
-    if (tg?.sendData) {
-        try {
-            tg.sendData(JSON.stringify(payload));
-        } catch (e) {}
-        try {
-            tg.close();
-            return;
-        } catch (e) {
-            return;
-        }
-    }
+    // Для MAX не делаем async fetch + close. Вместо этого сразу уходим
+    // на серверный endpoint прямой навигацией из пользовательского действия:
+    // сервер сохраняет статистику, шлёт сообщение в чат и возвращает страницу,
+    // которая закрывает mini app / переводит обратно в бот.
+    if (redirectMaxFinish(payload)) return;
 
-    // MAX Mini App: после успешного сохранения сервер уже отправил статистику в чат,
-    // поэтому нужно просто закрыть мини‑приложение и вернуть пользователя в диалог.
-    try {
-        if (mx?.close) {
-            mx.close();
-            return;
-        }
-    } catch (e) {}
-
-    // Фолбэк для внешнего браузера / старых клиентов: пробуем открыть чат с ботом.
-    if (getMaxBotName() && openMaxBotChat()) return;
-
-    notify('Статистика сохранена. Вернитесь в чат с ботом, чтобы посмотреть результат.');
+    notify('Не удалось открыть переход к сохранению статистики.');
 }
 
 // Подтверждение перед закрытием WebApp и переходом в Telegram к статистике.
