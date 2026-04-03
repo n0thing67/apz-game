@@ -5,8 +5,7 @@ import logging
 import time
 import hmac
 import hashlib
-import base64
-from urllib.parse import quote, urlencode
+from urllib.parse import quote
 
 import aiohttp
 
@@ -15,6 +14,7 @@ from database.db import (
     get_user,
     get_user_profile,
 )
+
 
 MAX_API_BASE = os.getenv("MAX_API_BASE", "https://platform-api.max.ru").rstrip("/")
 
@@ -53,16 +53,8 @@ def _format_person_name(value: str | None) -> str:
 def _game_url() -> str:
     game_url = os.getenv("GAME_URL", "https://n0thing67.github.io/APZ-games/").rstrip("/")
     admin_url = os.getenv("ADMIN_URL", os.getenv("WEBAPP_URL", "")).rstrip("/")
-    bot_name = (os.getenv("MAX_BOT_NAME", "") or "").strip().lstrip("@")
-
-    params: dict[str, str] = {}
-    if admin_url:
-        params["api"] = admin_url
-    if bot_name:
-        params["bot"] = bot_name
-
-    qs = urlencode(params, safe='')
-    return f"{game_url}/" + (f"?{qs}" if qs else "")
+    api_part = f"?api={quote(admin_url, safe='')}" if admin_url else ""
+    return f"{game_url}/" + api_part
 
 
 def _admin_auth_secret() -> str:
@@ -84,19 +76,6 @@ def _make_admin_token(db_user_id: int, ttl_seconds: int = 3600) -> str:
     return f"{uid}.{exp}.{sig}"
 
 
-def _make_max_webapp_token(max_user_id: int, ttl_seconds: int = 24 * 3600) -> str:
-    """Подписанный токен для сохранения статистики из внешнего браузера."""
-    secret = _admin_auth_secret()
-    if not secret:
-        return ""
-    uid = int(max_user_id)
-    exp = int(time.time()) + max(300, int(ttl_seconds))
-    payload = f"max:{uid}:{exp}"
-    sig = hmac.new(secret.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).hexdigest()
-    raw = f"{uid}.{exp}.{sig}".encode("utf-8")
-    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
-
-
 def _admin_entry_url(max_user_id: int | None = None) -> str:
     au = _admin_url()
     if not au:
@@ -110,45 +89,27 @@ def _admin_entry_url(max_user_id: int | None = None) -> str:
     return f"{base}?admin_token={quote(token, safe='')}"
 
 
-def _factory_entry_url(max_user_id: int | None = None) -> str:
+def _factory_entry_url() -> str:
     """URL для кнопки «Зайти на завод» в MAX.
 
-    Для надёжной работы сохранения статистики в MAX передаём API base, имя бота
-    и подписанный токен пользователя прямо в URL игры. На практике это стабильнее,
-    чем рассчитывать на startapp/initData во всех WebView/браузерных сценариях.
-    Игра при этом всё так же открывается внутри MAX как встроенная веб-страница.
+    Для MAX стараемся открывать именно Mini App внутри клиента, но при этом
+    передаём адресу игры базовый URL API (Render), чтобы мини‑веб мог читать
+    актуальные /api/levels даже если сама игра открывается с другого домена
+    (например, GitHub Pages).
+
+    Формат startapp-параметра делаем простым и безопасным для deep link:
+    game__api__<base64url(API_BASE)>
     """
-    game_url = (os.getenv("GAME_URL", "https://n0thing67.github.io/APZ-games/") or "").strip()
-    if not game_url:
-        return _game_url()
-
-    params: dict[str, str] = {}
-    api_base = (_admin_url() or "").strip().rstrip("/")
     bot_name = (os.getenv("MAX_BOT_NAME", "") or "").strip().lstrip("@")
-
-    if api_base:
-        params["api"] = api_base
     if bot_name:
-        params["bot"] = bot_name
-    if max_user_id is not None:
-        tok = _make_max_webapp_token(int(max_user_id))
-        if tok:
-            params["mx_token"] = tok
-
-    qs = urlencode(params, safe='')
-    if not qs:
-        return game_url
-    return game_url + ('&' if '?' in game_url else '?') + qs
-
-
-
-def _factory_open_app_button(max_user_id: int) -> dict:
-    """Кнопка запуска игры именно как mini app внутри MAX."""
-    return {
-        "type": "open_app",
-        "text": "🏭 Зайти на завод (Играть)",
-        "web_app": _factory_entry_url(int(max_user_id)),
-    }
+        api_base = (_admin_url() or "").strip().rstrip("/")
+        startapp = "game"
+        if api_base:
+            import base64
+            encoded = base64.urlsafe_b64encode(api_base.encode("utf-8")).decode("ascii").rstrip("=")
+            startapp = f"game__api__{encoded}"
+        return f"https://max.ru/{bot_name}?startapp={quote(startapp, safe='')}"
+    return _game_url()
 
 def _admin_url() -> str:
     return (os.getenv("ADMIN_URL", os.getenv("WEBAPP_URL", "")) or "").rstrip("/")
@@ -294,16 +255,12 @@ async def handle_update(app, update: dict) -> None:
         if max_user_id is None:
             return
 
-        if str(update.get("payload") or "").strip().lower() == "stats":
-            await _send_stats_max(app, max_user_id=int(max_user_id))
-            return
-
         db_id = _max_to_db_id(int(max_user_id))
         existing = await get_user(db_id)
         if existing:
             fname = existing[1]
             kb = _inline_keyboard([
-                [_factory_open_app_button(int(max_user_id))]
+                [{"type": "link", "text": "🏭 Зайти на завод (Играть)", "url": _factory_entry_url()}]
             ])
             await send_message(session, token, user_id=int(max_user_id), text=f"С возвращением, {fname}! Нажми кнопку ниже, чтобы начать испытание.", attachments=kb)
             return
@@ -376,7 +333,7 @@ async def handle_update(app, update: dict) -> None:
         body = msg.get("body") or {}
         text = (body.get("text") or "").strip()
 
-        if text == "/start" or text.lower() == "начать":
+        if text == "/start":
             await handle_update(app, {"update_type": "bot_started", "user": {"user_id": int(max_user_id)}})
             return
 
@@ -466,7 +423,7 @@ async def handle_update(app, update: dict) -> None:
             state.pop(str(max_user_id), None)
 
             kb = _inline_keyboard([
-                [_factory_open_app_button(int(max_user_id))]
+                [{"type": "link", "text": "🏭 Зайти на завод (Играть)", "url": _factory_entry_url()}]
             ])
             await send_message(session, token, user_id=int(max_user_id), text=f"Регистрация пройдена, {st.get('first_name')}! Нажми кнопку ниже, чтобы начать испытание.", attachments=kb)
             return
@@ -480,7 +437,7 @@ async def handle_update(app, update: dict) -> None:
             return
 
         kb = _inline_keyboard([
-            [_factory_open_app_button(int(max_user_id))],
+            [{"type": "link", "text": "🏭 Зайти на завод (Играть)", "url": _factory_entry_url()}],
             [{"type": "callback", "text": "📊 Статистика", "payload": "stats"}],
         ])
         await send_message(session, token, user_id=int(max_user_id), text="Выбери действие:", attachments=kb)
