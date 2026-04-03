@@ -16,6 +16,7 @@ from database.db import (
     get_user_profile,
 )
 
+
 MAX_API_BASE = os.getenv("MAX_API_BASE", "https://platform-api.max.ru").rstrip("/")
 
 
@@ -113,25 +114,31 @@ def _admin_entry_url(max_user_id: int | None = None) -> str:
 def _factory_entry_url(max_user_id: int | None = None) -> str:
     """URL для кнопки «Зайти на завод» в MAX.
 
-    Для MAX стараемся открывать именно Mini App внутри клиента, но при этом
-    передаём в startapp всё, что нужно фронтенду даже при открытии во внешнем браузере:
-    API base, имя бота для возврата в чат и подписанный токен пользователя.
+    Критично передаём все параметры прямо в URL игры, потому что в MAX на мобильных
+    устройствах WebView / встроенный браузер может не пробрасывать startapp обратно
+    в текущий location/referrer после открытия GitHub Pages. Из-за этого фронтенд
+    не видел API base и токен пользователя, а сохранение статистики после кнопки
+    «ОК» молча не доходило до БД.
+
+    Формат:
+    GAME_URL/?api=<render>&bot=<bot_name>&mx_token=<signed_token>
     """
+    game_url = os.getenv("GAME_URL", "https://n0thing67.github.io/APZ-games/").rstrip("/")
+    api_base = (_admin_url() or "").strip().rstrip("/")
     bot_name = (os.getenv("MAX_BOT_NAME", "") or "").strip().lstrip("@")
+
+    params: dict[str, str] = {}
+    if api_base:
+        params["api"] = api_base
     if bot_name:
-        api_base = (_admin_url() or "").strip().rstrip("/")
-        parts = ["game"]
-        if api_base:
-            encoded_api = base64.urlsafe_b64encode(api_base.encode("utf-8")).decode("ascii").rstrip("=")
-            parts.extend(["api", encoded_api])
-        parts.extend(["bot", bot_name])
-        if max_user_id is not None:
-            tok = _make_max_webapp_token(int(max_user_id))
-            if tok:
-                parts.extend(["tok", tok])
-        startapp = "__".join(parts)
-        return f"https://max.ru/{bot_name}?startapp={quote(startapp, safe='')}"
-    return _game_url()
+        params["bot"] = bot_name
+    if max_user_id is not None:
+        tok = _make_max_webapp_token(int(max_user_id))
+        if tok:
+            params["mx_token"] = tok
+
+    qs = urlencode(params, safe='')
+    return f"{game_url}/" + (f"?{qs}" if qs else "")
 
 def _admin_url() -> str:
     return (os.getenv("ADMIN_URL", os.getenv("WEBAPP_URL", "")) or "").rstrip("/")
