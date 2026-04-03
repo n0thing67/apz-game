@@ -141,6 +141,16 @@ def _factory_entry_url(max_user_id: int | None = None) -> str:
         return game_url
     return game_url + ('&' if '?' in game_url else '?') + qs
 
+
+
+def _factory_open_app_button(max_user_id: int) -> dict:
+    """Кнопка запуска игры именно как mini app внутри MAX."""
+    return {
+        "type": "open_app",
+        "text": "🏭 Зайти на завод (Играть)",
+        "web_app": _factory_entry_url(int(max_user_id)),
+    }
+
 def _admin_url() -> str:
     return (os.getenv("ADMIN_URL", os.getenv("WEBAPP_URL", "")) or "").rstrip("/")
 
@@ -294,7 +304,7 @@ async def handle_update(app, update: dict) -> None:
         if existing:
             fname = existing[1]
             kb = _inline_keyboard([
-                [{"type": "link", "text": "🏭 Зайти на завод (Играть)", "url": _factory_entry_url(int(max_user_id))}]
+                [_factory_open_app_button(int(max_user_id))]
             ])
             await send_message(session, token, user_id=int(max_user_id), text=f"С возвращением, {fname}! Нажми кнопку ниже, чтобы начать испытание.", attachments=kb)
             return
@@ -457,7 +467,7 @@ async def handle_update(app, update: dict) -> None:
             state.pop(str(max_user_id), None)
 
             kb = _inline_keyboard([
-                [{"type": "link", "text": "🏭 Зайти на завод (Играть)", "url": _factory_entry_url(int(max_user_id))}]
+                [_factory_open_app_button(int(max_user_id))]
             ])
             await send_message(session, token, user_id=int(max_user_id), text=f"Регистрация пройдена, {st.get('first_name')}! Нажми кнопку ниже, чтобы начать испытание.", attachments=kb)
             return
@@ -471,7 +481,7 @@ async def handle_update(app, update: dict) -> None:
             return
 
         kb = _inline_keyboard([
-            [{"type": "link", "text": "🏭 Зайти на завод (Играть)", "url": _factory_entry_url(int(max_user_id))}],
+            [_factory_open_app_button(int(max_user_id))],
             [{"type": "callback", "text": "📊 Статистика", "payload": "stats"}],
         ])
         await send_message(session, token, user_id=int(max_user_id), text="Выбери действие:", attachments=kb)
