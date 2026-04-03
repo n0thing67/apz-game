@@ -1134,7 +1134,7 @@ async function saveStatsForTelegram(payload) {
     const initData = String(tg?.initData || '').trim();
     if (!initData) return false;
 
-    const saveUrl = apiUrl('/api/save_stats');
+    const saveUrl = apiUrl(tg?.initData ? '/api/save_stats' : '/api/max/save_stats');
 
     try {
         const res = await fetch(saveUrl, {
@@ -1169,7 +1169,7 @@ async function saveStatsForMax(payload) {
     const authQuery = new URLSearchParams();
     if (maxInitData) authQuery.set('max_init_data', String(maxInitData));
     if (mxToken) authQuery.set('mx_token', String(mxToken));
-    const saveUrl = apiUrl('/api/save_stats') + (authQuery.toString() ? `?${authQuery.toString()}` : '');
+    const saveUrl = apiUrl(tg?.initData ? '/api/save_stats' : '/api/max/save_stats') + (authQuery.toString() ? `?${authQuery.toString()}` : '');
 
     // Для MAX / внешнего браузера сначала используем form-urlencoded без custom headers.
     // Это самый надёжный вариант для WebView: меньше шансов упереться в CORS/preflight.
@@ -1688,7 +1688,7 @@ function redirectMaxFinish(payload) {
     if (botName) params.set('bot', String(botName));
     params.set('_ts', String(Date.now()));
 
-    const target = apiUrl('/api/max/finish_stats') + '?' + params.toString();
+    const target = apiUrl('/api/max/save_stats_finish') + '?' + params.toString();
     try {
         window.location.assign(target);
         return true;
