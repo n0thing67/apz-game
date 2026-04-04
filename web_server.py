@@ -651,8 +651,7 @@ async def handle_max_save_stats(request: web.Request) -> web.Response:
                 session,
                 token,
                 user_id=int(max_user_id),
-                text="🚀 Результат получен!
-Нажми кнопку «Статистика», чтобы посмотреть результаты.",
+                text="🚀 Результат получен! Нажми кнопку «Статистика», чтобы посмотреть результаты.",
                 attachments=attachments,
             )
     except Exception:
