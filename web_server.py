@@ -30,6 +30,8 @@ from database.db import (
     get_stats_reset_token,
     get_user_deleted_token,
     get_user_reset_token,
+    update_score,
+    update_aptitude_top,
 )
 
 
@@ -242,6 +244,57 @@ def _extract_user_id(verified_params: dict) -> int | None:
         return None
 
 
+def _verify_max_webapp_init_data(init_data: str, bot_token: str) -> dict | None:
+    """Проверка initData из MAX Mini App (HMAC SHA-256)."""
+    if not init_data or not bot_token:
+        return None
+
+    try:
+        pairs = list(parse_qsl(init_data, keep_blank_values=True, strict_parsing=True))
+    except Exception:
+        return None
+
+    hash_values = [v for (k, v) in pairs if k == "hash"]
+    if len(hash_values) != 1:
+        return None
+    their_hash = hash_values[0]
+
+    normalized = []
+    for k, v in pairs:
+        if k == "hash":
+            continue
+        normalized.append((k, v))
+
+    launch_params = "\n".join(f"{k}={v}" for (k, v) in sorted(normalized, key=lambda item: item[0]))
+    secret_key = hmac.new(b"WebAppData", bot_token.encode("utf-8"), hashlib.sha256).digest()
+    calc_hash = hmac.new(secret_key, launch_params.encode("utf-8"), hashlib.sha256).hexdigest()
+
+    if not hmac.compare_digest(calc_hash, their_hash):
+        return None
+
+    return {k: v for (k, v) in normalized}
+
+
+def _require_max_user_id(request: web.Request) -> int:
+    init_data = request.headers.get("X-Max-InitData") or request.query.get("maxInitData") or ""
+    token = (os.getenv("MAX_BOT_TOKEN", "") or "").strip()
+    verified = _verify_max_webapp_init_data(init_data, token)
+    if not verified:
+        raise web.HTTPUnauthorized(text="Bad MAX initData")
+
+    raw_user = verified.get("user")
+    if not raw_user:
+        raise web.HTTPUnauthorized(text="No MAX user")
+
+    try:
+        user_obj = json.loads(raw_user) if isinstance(raw_user, str) else raw_user
+        user_id = int(user_obj.get("id"))
+    except Exception:
+        raise web.HTTPUnauthorized(text="Bad MAX user")
+
+    return user_id
+
+
 def _get_admin_ids() -> set[int]:
     raw_admins = os.getenv("ADMIN_IDS", "")
     return {int(x.strip()) for x in raw_admins.split(",") if x.strip().lstrip("-").isdigit()}
@@ -412,7 +465,7 @@ async def cors_middleware(request: web.Request, handler):
     # Важно: WebApp шлёт initData в кастомном заголовке.
     # Если его не разрешить в CORS, браузер/WebView блокирует запросы (особенно /api/me),
     # и локальный localStorage потом «оживляет» старые очки/рекомендации после админского сброса.
-    resp.headers["Access-Control-Allow-Headers"] = "Content-Type, X-Telegram-InitData, X-Admin-Token"
+    resp.headers["Access-Control-Allow-Headers"] = "Content-Type, X-Telegram-InitData, X-Max-InitData, X-Admin-Token"
     return resp
 
 
@@ -539,6 +592,45 @@ async def handle_me(request: web.Request) -> web.Response:
             },
         }
     )
+
+async def handle_max_save_stats(request: web.Request) -> web.Response:
+    """Сохраняет результат игры из MAX Mini App перед закрытием WebView."""
+    max_user_id = _require_max_user_id(request)
+
+    try:
+        payload = await request.json()
+    except Exception:
+        raise web.HTTPBadRequest(text="bad json")
+
+    db_user_id = -int(max_user_id)
+    user = await get_user(db_user_id)
+    if not user:
+        return web.json_response(
+            {"ok": False, "error": "user_not_found", "message": "Пользователь не найден. Откройте /start в MAX и зарегистрируйтесь заново."},
+            status=404,
+        )
+
+    score_raw = payload.get("score", None)
+    aptitude_top = payload.get("aptitude_top") or payload.get("aptitudeTop") or None
+
+    score = None
+    if score_raw is not None:
+        try:
+            score = max(0, int(score_raw or 0))
+        except Exception:
+            score = 0
+
+    if isinstance(aptitude_top, str):
+        aptitude_top = aptitude_top.strip() or None
+
+    if aptitude_top is not None:
+        await update_aptitude_top(db_user_id, aptitude_top)
+
+    if score is not None:
+        await update_score(db_user_id, score)
+
+    return web.json_response({"ok": True, "saved": True, "score": score, "aptitude_top": aptitude_top})
+
 
 async def _require_admin(request: web.Request) -> int:
     """Проверка admin: либо Telegram initData, либо подписанный admin_token для MAX/внешнего браузера."""
@@ -857,6 +949,7 @@ def create_app() -> web.Application:
     # API
     app.router.add_get("/api/levels", handle_levels)
     app.router.add_get("/api/me", handle_me)
+    app.router.add_post("/api/max/save_stats", handle_max_save_stats)
 
     app.router.add_get("/api/admin/stats", admin_get_stats)
     app.router.add_post("/api/admin/reset_scores", admin_reset_scores)
