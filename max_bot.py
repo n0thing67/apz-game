@@ -435,7 +435,6 @@ async def handle_update(app, update: dict) -> None:
             ])
             await send_message(session, token, user_id=int(max_user_id), text="Нажми кнопку ниже:", attachments=kb)
             return
-
         kb = _inline_keyboard([
             [{"type": "link", "text": "🏭 Зайти на завод (Играть)", "url": _factory_entry_url()}],
             [{"type": "callback", "text": "📊 Статистика", "payload": "stats"}],
