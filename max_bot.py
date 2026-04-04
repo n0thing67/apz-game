@@ -151,6 +151,57 @@ def _factory_open_app_button(max_user_id: int) -> dict:
         "web_app": _factory_entry_url(int(max_user_id)),
     }
 
+
+def _factory_link_button(max_user_id: int) -> dict:
+    """Fallback-кнопка, если MAX API/клиент не принимает open_app."""
+    return {
+        "type": "link",
+        "text": "🏭 Зайти на завод (Играть)",
+        "url": _factory_entry_url(int(max_user_id)),
+    }
+
+
+async def _send_game_entry(session: aiohttp.ClientSession, token: str, *, user_id: int, text: str) -> None:
+    """Надёжная отправка кнопки запуска игры.
+
+    Сначала пробуем native open_app. Если MAX API отклоняет такую клавиатуру,
+    не роняем /start и отправляем резервный вариант.
+    """
+    try:
+        kb = _inline_keyboard([[_factory_open_app_button(int(user_id))]])
+        await send_message(session, token, user_id=int(user_id), text=text, attachments=kb)
+        return
+    except Exception as e:
+        logging.getLogger(__name__).warning("MAX open_app send failed for user %s: %s", user_id, e)
+
+    try:
+        kb = _inline_keyboard([[_factory_link_button(int(user_id))]])
+        await send_message(
+            session,
+            token,
+            user_id=int(user_id),
+            text=(
+                text
+                + "\n\nЕсли кнопка откроет браузер, используйте штатную кнопку запуска мини‑приложения в чате MAX."
+            ),
+            attachments=kb,
+        )
+        return
+    except Exception as e:
+        logging.getLogger(__name__).warning("MAX link fallback send failed for user %s: %s", user_id, e)
+
+    await send_message(
+        session,
+        token,
+        user_id=int(user_id),
+        text=(
+            text
+            + "\n\nНе удалось прикрепить кнопку запуска."
+            + "\nПроверьте, что мини‑приложение подключено к боту в настройках MAX."
+        ),
+    )
+
+
 def _admin_url() -> str:
     return (os.getenv("ADMIN_URL", os.getenv("WEBAPP_URL", "")) or "").rstrip("/")
 
@@ -303,10 +354,12 @@ async def handle_update(app, update: dict) -> None:
         existing = await get_user(db_id)
         if existing:
             fname = existing[1]
-            kb = _inline_keyboard([
-                [_factory_open_app_button(int(max_user_id))]
-            ])
-            await send_message(session, token, user_id=int(max_user_id), text=f"С возвращением, {fname}! Нажми кнопку ниже, чтобы начать испытание.", attachments=kb)
+            await _send_game_entry(
+                session,
+                token,
+                user_id=int(max_user_id),
+                text=f"С возвращением, {fname}! Нажми кнопку ниже, чтобы начать испытание.",
+            )
             return
 
         await send_message(
@@ -466,10 +519,12 @@ async def handle_update(app, update: dict) -> None:
             )
             state.pop(str(max_user_id), None)
 
-            kb = _inline_keyboard([
-                [_factory_open_app_button(int(max_user_id))]
-            ])
-            await send_message(session, token, user_id=int(max_user_id), text=f"Регистрация пройдена, {st.get('first_name')}! Нажми кнопку ниже, чтобы начать испытание.", attachments=kb)
+            await _send_game_entry(
+                session,
+                token,
+                user_id=int(max_user_id),
+                text=f"Регистрация пройдена, {st.get('first_name')}! Нажми кнопку ниже, чтобы начать испытание.",
+            )
             return
 
         # зарегистрированным даём кнопку статистики и ссылку на игру
@@ -480,11 +535,27 @@ async def handle_update(app, update: dict) -> None:
             await send_message(session, token, user_id=int(max_user_id), text="Нажми кнопку ниже:", attachments=kb)
             return
 
+        try:
+            kb = _inline_keyboard([
+                [_factory_open_app_button(int(max_user_id))],
+                [{"type": "callback", "text": "📊 Статистика", "payload": "stats"}],
+            ])
+            await send_message(session, token, user_id=int(max_user_id), text="Выбери действие:", attachments=kb)
+            return
+        except Exception as e:
+            logging.getLogger(__name__).warning("MAX main menu open_app send failed for user %s: %s", max_user_id, e)
+
         kb = _inline_keyboard([
-            [_factory_open_app_button(int(max_user_id))],
+            [_factory_link_button(int(max_user_id))],
             [{"type": "callback", "text": "📊 Статистика", "payload": "stats"}],
         ])
-        await send_message(session, token, user_id=int(max_user_id), text="Выбери действие:", attachments=kb)
+        await send_message(
+            session,
+            token,
+            user_id=int(max_user_id),
+            text="Выбери действие:\n\nЕсли запуск откроется во внешнем браузере, используй штатную кнопку мини‑приложения в чате MAX.",
+            attachments=kb,
+        )
         return
 
     return
