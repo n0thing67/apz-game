@@ -1374,7 +1374,29 @@ if (statLine && statMain && savedApt && savedApt.main) {
     showScreen('screen-final');
 }
 
-function sendStatsAndClose() {
+async function saveStatsForMax(payload) {
+    if (!mx?.initData) return false;
+
+    const res = await fetch(apiUrl('/api/max/save_stats'), {
+        method: 'POST',
+        cache: 'no-store',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-Max-InitData': mx.initData
+        },
+        body: JSON.stringify(payload)
+    });
+
+    let data = null;
+    try { data = await res.json(); } catch (e) { data = null; }
+    if (!res.ok || !data?.ok) {
+        const msg = data?.message || 'Не удалось сохранить статистику. Попробуйте открыть игру из MAX ещё раз.';
+        throw new Error(msg);
+    }
+    return true;
+}
+
+async function sendStatsAndClose() {
     const payload = buildStatsPayload();
 
     // В Telegram WebApp: отправляем данные и закрываем WebApp
@@ -1385,6 +1407,23 @@ function sendStatsAndClose() {
             tg.close();
             return;
         } catch (e) {}
+    }
+
+    // В MAX Mini App: сначала сохраняем статистику на сервере, потом закрываем mini app.
+    if (mx?.initData) {
+        try {
+            await saveStatsForMax(payload);
+        } catch (e) {
+            notify((e && e.message) ? e.message : 'Не удалось сохранить статистику 😕');
+            return;
+        }
+
+        if (mx?.close) {
+            try {
+                mx.close();
+                return;
+            } catch (e) {}
+        }
     }
 
     // В MAX Mini App (MAX Bridge): просто закрываем мини‑приложение.
