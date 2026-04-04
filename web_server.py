@@ -629,6 +629,35 @@ async def handle_max_save_stats(request: web.Request) -> web.Response:
     if score is not None:
         await update_score(db_user_id, score)
 
+    # После успешного сохранения отправляем пользователю сообщение в MAX,
+    # чтобы после закрытия mini app в чате сразу была кнопка просмотра статистики.
+    try:
+        from max_bot import send_message
+
+        token = (request.app.get("max_token") or "").strip()
+        session: aiohttp.ClientSession = request.app["max_session"]
+        if token:
+            attachments = [
+                {
+                    "type": "inline_keyboard",
+                    "payload": {
+                        "buttons": [
+                            [{"type": "callback", "text": "📊 Статистика", "payload": "stats"}]
+                        ]
+                    },
+                }
+            ]
+            await send_message(
+                session,
+                token,
+                user_id=int(max_user_id),
+                text="🚀 Результат получен!
+Нажми кнопку «Статистика», чтобы посмотреть результаты.",
+                attachments=attachments,
+            )
+    except Exception:
+        logging.getLogger(__name__).exception("MAX post-save message failed")
+
     return web.json_response({"ok": True, "saved": True, "score": score, "aptitude_top": aptitude_top})
 
 
