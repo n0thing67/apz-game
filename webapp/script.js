@@ -863,45 +863,29 @@ function normalizeApiBase(value) {
     return s.replace(/\/$/, '');
 }
 
-function extractStartParamValue(raw, key) {
+function extractApiBaseFromStartParam(raw) {
     const value = String(raw || '').trim();
-    const wanted = String(key || '').trim().toLowerCase();
-    if (!value || !wanted) return '';
+    if (!value) return '';
 
-    if (wanted === 'api' && /^https?:\/\//i.test(value)) {
+    if (/^https?:\/\//i.test(value)) {
         return normalizeApiBase(value);
     }
 
-    const mPacked = value.match(new RegExp(`(?:^|[|;&?])${wanted}=([^|;&]+)`, 'i'));
+    const mPacked = value.match(/(?:^|[|;&?])api=([^|;&]+)/i);
     if (mPacked) {
         try {
-            const decoded = decodeURIComponent(mPacked[1]);
-            return wanted === 'api' ? normalizeApiBase(decoded) : decoded;
+            return normalizeApiBase(decodeURIComponent(mPacked[1]));
         } catch (e) {}
     }
 
-    const parts = value.split('__').filter(Boolean);
-    for (let i = 0; i < parts.length - 1; i += 2) {
-        const k = String(parts[i] || '').trim().toLowerCase();
-        const v = String(parts[i + 1] || '').trim();
-        if (k !== wanted || !v) continue;
-        if (wanted === 'api') return normalizeApiBase(decodeBase64Url(v));
-        if (wanted === 'tok') return v;
-        return v;
-    }
-
-    const legacyMarker = 'game__api__';
-    const idx = value.indexOf(legacyMarker);
-    if (wanted === 'api' && idx >= 0) {
-        const encoded = value.slice(idx + legacyMarker.length).split(/[|;&?]/, 1)[0];
+    const marker = 'game__api__';
+    const idx = value.indexOf(marker);
+    if (idx >= 0) {
+        const encoded = value.slice(idx + marker.length).split(/[|;&?]/, 1)[0];
         return normalizeApiBase(decodeBase64Url(encoded));
     }
 
     return '';
-}
-
-function extractApiBaseFromStartParam(raw) {
-    return extractStartParamValue(raw, 'api');
 }
 
 function parseBridgeInitData(raw) {
@@ -913,7 +897,7 @@ function parseBridgeInitData(raw) {
         try {
             const obj = JSON.parse(s);
             if (obj && typeof obj === 'object') {
-                candidates.push(obj.start_param, obj.startapp, obj.startApp, obj.api, obj.mx_token, obj.bot, obj.max_user_token);
+                candidates.push(obj.start_param, obj.startapp, obj.startApp, obj.api);
             }
         } catch (e) {}
 
@@ -923,63 +907,15 @@ function parseBridgeInitData(raw) {
                 params.get('start_param'),
                 params.get('startapp'),
                 params.get('startApp'),
-                params.get('api'),
-                params.get('mx_token'),
-                params.get('max_user_token'),
-                params.get('bot')
+                params.get('api')
             );
         } catch (e) {}
-
-        try {
-            const url = new URL(s);
-            candidates.push(
-                url.searchParams.get('start_param'),
-                url.searchParams.get('startapp'),
-                url.searchParams.get('startApp'),
-                url.searchParams.get('api'),
-                url.searchParams.get('mx_token'),
-                url.searchParams.get('max_user_token'),
-                url.searchParams.get('bot')
-            );
-            candidates.push(url.hash);
-        } catch (e) {}
-
-        const startMarkers = ['startapp=', 'startApp=', 'start_param='];
-        for (const marker of startMarkers) {
-            const idx = s.indexOf(marker);
-            if (idx >= 0) {
-                const tail = s.slice(idx + marker.length).split(/[&#]/, 1)[0];
-                if (tail) {
-                    try {
-                        candidates.push(decodeURIComponent(tail));
-                    } catch (e) {
-                        candidates.push(tail);
-                    }
-                }
-            }
-        }
     } catch (e) {}
-    return candidates.filter(Boolean);
+    return candidates;
 }
 
-function getRuntimeBridgeCandidates() {
-    const out = [];
-    try { if (document?.referrer) out.push(document.referrer); } catch (e) {}
-    try {
-        const nav = performance?.getEntriesByType?.('navigation');
-        if (nav && nav[0]?.name) out.push(nav[0].name);
-    } catch (e) {}
-    try {
-        if (window?.name) out.push(window.name);
-    } catch (e) {}
-    try {
-        if (window?.location?.hash) out.push(window.location.hash);
-    } catch (e) {}
-    return out;
-}
-
-function getBridgeStartParamCandidates() {
-    return [
+function getApiBaseFromBridge() {
+    const candidates = [
         tg?.initDataUnsafe?.start_param,
         tg?.initDataUnsafe?.startapp,
         tg?.initDataUnsafe?.startApp,
@@ -994,14 +930,7 @@ function getBridgeStartParamCandidates() {
         mx?.api,
         ...parseBridgeInitData(mx?.initData),
         ...parseBridgeInitData(tg?.initData),
-        ...parseBridgeInitData(getMaxInitDataRaw()),
-        ...getRuntimeBridgeCandidates(),
-        ...getRuntimeBridgeCandidates().flatMap(parseBridgeInitData),
-    ].filter(Boolean);
-}
-
-function getApiBaseFromBridge() {
-    const candidates = getBridgeStartParamCandidates();
+    ];
 
     for (const item of candidates) {
         const api = extractApiBaseFromStartParam(item);
@@ -1014,15 +943,10 @@ let API_BASE = '';
 try {
     const url = new URL(window.location.href);
     const qp = normalizeApiBase(url.searchParams.get('api') || '');
-    let refApi = '';
-    try {
-        const refUrl = new URL(String(document?.referrer || ''));
-        refApi = normalizeApiBase(refUrl.searchParams.get('api') || '');
-    } catch (e) {}
     const bridgeApi = getApiBaseFromBridge();
     const savedApi = normalizeApiBase(localStorage.getItem('apzApiBaseV1') || '');
 
-    API_BASE = qp || refApi || bridgeApi || savedApi;
+    API_BASE = qp || bridgeApi || savedApi;
     if (API_BASE) {
         localStorage.setItem('apzApiBaseV1', API_BASE);
     }
@@ -1034,226 +958,6 @@ function apiUrl(path) {
     if (!API_BASE) return path;
     if (path.startsWith('http')) return path;
     return API_BASE + path;
-}
-
-const MAX_INIT_DATA_CACHE_KEY = 'apzMaxInitDataV1';
-const MAX_BOT_NAME_CACHE_KEY = 'apzMaxBotNameV1';
-const MAX_USER_TOKEN_CACHE_KEY = 'apzMaxUserTokenV1';
-
-function getCachedString(key) {
-    try {
-        return String(localStorage.getItem(key) || '').trim();
-    } catch (e) {
-        return '';
-    }
-}
-
-function setCachedString(key, value) {
-    try {
-        const s = String(value || '').trim();
-        if (s) localStorage.setItem(key, s);
-    } catch (e) {}
-}
-
-function getMaxInitDataRaw() {
-    try {
-        if (mx?.initData) {
-            const raw = String(mx.initData || '').trim();
-            if (raw) {
-                setCachedString(MAX_INIT_DATA_CACHE_KEY, raw);
-                return raw;
-            }
-        }
-    } catch (e) {}
-
-    try {
-        const hash = String(window.location.hash || '').replace(/^#/, '');
-        if (hash) {
-            const params = new URLSearchParams(hash);
-            const raw = String(params.get('WebAppData') || params.get('webappdata') || '').trim();
-            if (raw) {
-                setCachedString(MAX_INIT_DATA_CACHE_KEY, raw);
-                return raw;
-            }
-        }
-    } catch (e) {}
-
-    try {
-        const url = new URL(window.location.href);
-        const raw = String(url.searchParams.get('max_init_data') || '').trim();
-        if (raw) {
-            setCachedString(MAX_INIT_DATA_CACHE_KEY, raw);
-            return raw;
-        }
-    } catch (e) {}
-
-    return getCachedString(MAX_INIT_DATA_CACHE_KEY);
-}
-
-function getMaxBotName() {
-    try {
-        const url = new URL(window.location.href);
-        const qp = String(url.searchParams.get('bot') || '').trim().replace(/^@/, '');
-        if (qp) {
-            setCachedString(MAX_BOT_NAME_CACHE_KEY, qp);
-            return qp;
-        }
-    } catch (e) {}
-
-    for (const item of getBridgeStartParamCandidates()) {
-        const bot = String(extractStartParamValue(item, 'bot') || '').trim().replace(/^@/, '');
-        if (bot) {
-            setCachedString(MAX_BOT_NAME_CACHE_KEY, bot);
-            return bot;
-        }
-    }
-    return getCachedString(MAX_BOT_NAME_CACHE_KEY);
-}
-
-function getMaxUserToken() {
-    try {
-        const url = new URL(window.location.href);
-        const qp = String(url.searchParams.get('mx_token') || url.searchParams.get('max_user_token') || '').trim();
-        if (qp) {
-            setCachedString(MAX_USER_TOKEN_CACHE_KEY, qp);
-            return qp;
-        }
-    } catch (e) {}
-
-    for (const item of getBridgeStartParamCandidates()) {
-        const tok = String(extractStartParamValue(item, 'tok') || '').trim();
-        if (tok) {
-            setCachedString(MAX_USER_TOKEN_CACHE_KEY, tok);
-            return tok;
-        }
-    }
-    return getCachedString(MAX_USER_TOKEN_CACHE_KEY);
-}
-
-async function saveStatsForTelegram(payload) {
-    const initData = String(tg?.initData || '').trim();
-    if (!initData) return false;
-
-    const saveUrl = apiUrl('/api/save_stats');
-
-    try {
-        const res = await fetch(saveUrl, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Telegram-InitData': initData,
-            },
-            body: JSON.stringify({
-                ...payload,
-                initData,
-            }),
-            keepalive: true,
-        });
-        if (res.ok) return true;
-        console.warn('Telegram save_stats failed', res.status);
-        return false;
-    } catch (e) {
-        console.warn('Telegram save_stats exception', e);
-        return false;
-    }
-}
-
-async function saveStatsForMax(payload) {
-    const maxInitData = getMaxInitDataRaw();
-    const mxToken = getMaxUserToken();
-    if (!maxInitData && !mxToken) {
-        console.warn('MAX save skipped: no auth data in WebApp context');
-        return false;
-    }
-
-    const authQuery = new URLSearchParams();
-    if (maxInitData) authQuery.set('max_init_data', String(maxInitData));
-    if (mxToken) authQuery.set('mx_token', String(mxToken));
-    const saveUrl = apiUrl('/api/max/save_stats') + (authQuery.toString() ? `?${authQuery.toString()}` : '');
-
-    // Для MAX / внешнего браузера сначала используем form-urlencoded без custom headers.
-    // Это самый надёжный вариант для WebView: меньше шансов упереться в CORS/preflight.
-    try {
-        const body = new URLSearchParams();
-        Object.entries(payload || {}).forEach(([k, v]) => {
-            if (v == null) return;
-            if (typeof v === 'object') body.set(k, JSON.stringify(v));
-            else body.set(k, String(v));
-        });
-        if (maxInitData) body.set('max_init_data', String(maxInitData));
-        if (mxToken) body.set('mx_token', String(mxToken));
-
-        const res = await fetch(saveUrl, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
-            },
-            body: body.toString(),
-            keepalive: true,
-        });
-        if (res.ok) return true;
-        console.warn('MAX save_stats form failed', res.status);
-    } catch (e) {
-        console.warn('MAX save_stats form exception', e);
-    }
-
-    // Фолбэк: JSON.
-    try {
-        const res = await fetch(saveUrl, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                ...payload,
-                ...(maxInitData ? { max_init_data: maxInitData } : {}),
-                ...(mxToken ? { mx_token: mxToken } : {}),
-            }),
-            keepalive: true,
-        });
-        if (res.ok) return true;
-        console.warn('MAX save_stats json failed', res.status);
-        return false;
-    } catch (e) {
-        console.warn('MAX save_stats json exception', e);
-        return false;
-    }
-}
-
-function openMaxBotChat() {
-    const botName = getMaxBotName();
-    const target = botName ? `https://max.ru/${encodeURIComponent(botName)}?start=stats` : 'https://max.ru';
-
-    try {
-        if (mx?.openMaxLink) {
-            mx.openMaxLink(target);
-            return true;
-        }
-    } catch (e) {}
-
-    try {
-        window.location.replace(target);
-        return true;
-    } catch (e) {}
-
-    try {
-        window.location.assign(target);
-        return true;
-    } catch (e) {}
-
-    try {
-        window.location.href = target;
-        return true;
-    } catch (e) {}
-
-    try {
-        if (window.top && window.top !== window) {
-            window.top.location.href = target;
-            return true;
-        }
-    } catch (e) {}
-
-    return false;
 }
 
 
@@ -1670,95 +1374,54 @@ if (statLine && statMain && savedApt && savedApt.main) {
     showScreen('screen-final');
 }
 
-function redirectMaxFinish(payload) {
-    if (!API_BASE) {
-        console.warn('MAX finish redirect aborted: API base is empty');
-        return false;
-    }
-
-    const params = new URLSearchParams();
-    const maxInitData = getMaxInitDataRaw();
-    const mxToken = getMaxUserToken();
-    const botName = getMaxBotName();
-
-    params.set('score', String(payload?.score ?? 0));
-    if (payload?.aptitude_top) params.set('aptitude_top', String(payload.aptitude_top));
-    if (maxInitData) params.set('max_init_data', String(maxInitData));
-    if (mxToken) params.set('mx_token', String(mxToken));
-    if (botName) params.set('bot', String(botName));
-    params.set('_ts', String(Date.now()));
-
-    const target = apiUrl('/api/max/save_stats_finish') + '?' + params.toString();
-    try {
-        window.location.assign(target);
-        return true;
-    } catch (e) {}
-    try {
-        window.location.href = target;
-        return true;
-    } catch (e) {}
-    try {
-        window.location.replace(target);
-        return true;
-    } catch (e) {}
-    return false;
-}
-
-async function sendStatsAndClose() {
+function sendStatsAndClose() {
     const payload = buildStatsPayload();
 
-    // Telegram WebApp оставляем по прежней рабочей логике: сначала сохраняем,
-    // затем sendData/close.
-    if (tg?.initData) {
-        const directSaved = await saveStatsForTelegram(payload);
-        if (!directSaved) {
-            notify('Не удалось сохранить статистику. Проверьте подключение и попробуйте ещё раз.');
-            return;
-        }
-
-        if (tg?.sendData) {
-            try {
-                tg.sendData(JSON.stringify(payload));
-            } catch (e) {}
-            try {
-                tg.close();
-                return;
-            } catch (e) {
-                return;
-            }
-        }
-        return;
-    }
-
-    // MAX / встроенный браузер: сначала сохраняем напрямую в БД,
-    // затем делаем серверный финиш-редирект. Он надёжнее в MAX и во внешнем браузере:
-    // серверная страница пробует закрыть mini app, а если это не удалось —
-    // переводит пользователя обратно в чат с ботом по deep link.
-    const directSaved = await saveStatsForMax(payload);
-    if (directSaved) {
-        const redirected = redirectMaxFinish(payload);
-        if (redirected) return;
-
+    // В Telegram WebApp: отправляем данные и закрываем WebApp
+    if (tg?.sendData) {
         try {
-            if (mx?.close) {
-                mx.close();
-                return;
-            }
+            tg.sendData(JSON.stringify(payload));
+            // Закрываем, чтобы пользователь вернулся в Telegram и увидел сообщение бота
+            tg.close();
+            return;
         } catch (e) {}
-
-        const opened = openMaxBotChat();
-        if (opened) return;
-
-        notify('Статистика сохранена, но не удалось автоматически вернуться в чат с ботом.');
-        return;
     }
 
-    // Если прямое сохранение не прошло (например, из-за ограничений WebView),
-    // пробуем серверный HTML-финиш, который сам повторно выполнит сохранение.
-    const redirected = redirectMaxFinish(payload);
-    if (redirected) return;
+    // В MAX Mini App (MAX Bridge): просто закрываем мини‑приложение.
+    // ВАЖНО: close() работает только внутри MAX. Если страница открыта во внешнем браузере — этого метода нет.
+    if (mx?.close) {
+        try {
+            mx.close();
+            return;
+        } catch (e) {}
+    }
 
-    notify('Не удалось сохранить статистику. Проверьте подключение и попробуйте ещё раз.');
+    // Если мы оказались во внешнем браузере (часто так бывает в MAX, когда бот отправляет обычную ссылку),
+    // то "закрыть" и вернуться в MAX программно нельзя. Единственный рабочий путь — открыть диплинк MAX.
+    // Ссылка https://max.ru обычно подхватывается приложением MAX (если установлено).
+    try {
+        const returnUrl = (new URL(window.location.href)).searchParams.get('return') || '';
+        const target = returnUrl && /^https:\/\/max\.ru\//.test(returnUrl) ? returnUrl : 'https://max.ru';
+        window.location.href = target;
+        return;
+    } catch (e) {}
+
+
+    // В обычном браузере: скачиваем JSON
+    try {
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'apz_stats.json';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        notify('Файл статистики сохранён ✅');
+    } catch (e) {
+        notify('Не удалось сохранить статистику 😕');
+    }
 }
 
 // Подтверждение перед закрытием WebApp и переходом в Telegram к статистике.
@@ -1782,7 +1445,7 @@ function confirmSendStatsAndClose() {
                     ]
                 },
                 (btnId) => {
-                    if (btnId === 'go') void sendStatsAndClose();
+                    if (btnId === 'go') sendStatsAndClose();
                 }
             );
             return;
@@ -1796,7 +1459,7 @@ function confirmSendStatsAndClose() {
                 'Сейчас будет переход к статистике.\n\n' +
                 'Нажмите OK, чтобы продолжить, или Отмена, чтобы вернуться в игру.'
             );
-            if (ok) void sendStatsAndClose();
+            if (ok) sendStatsAndClose();
             return;
         }
     } catch (e) {}
