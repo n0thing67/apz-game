@@ -50,6 +50,18 @@ def _format_person_name(value: str | None) -> str:
     return ' '.join(_cap_token(p) for p in parts)
 
 
+
+
+def _is_valid_city_name(value: str | None) -> bool:
+    s = (value or '').strip()
+    if not s or len(s) < 2 or len(s) > 100:
+        return False
+
+    # Город: только русские буквы, пробелы и дефис.
+    # Поддерживаем варианты вроде «Санкт-Петербург» и «Нижний Новгород».
+    city_token = re.compile(r"^[А-ЯЁа-яё]+(?:-[А-ЯЁа-яё]+)*$")
+    parts = [p for p in s.split() if p]
+    return bool(parts) and all(city_token.fullmatch(p) for p in parts)
 def _game_url() -> str:
     game_url = os.getenv("GAME_URL", "https://n0thing67.github.io/APZ-games/").rstrip("/")
     admin_url = os.getenv("ADMIN_URL", os.getenv("WEBAPP_URL", "")).rstrip("/")
@@ -407,8 +419,17 @@ async def handle_update(app, update: dict) -> None:
 
         if st and st.get("step") == "waiting_for_city":
             city = text.strip()
-            if len(city) < 2 or len(city) > 100 or not re.fullmatch(r"[А-ЯЁа-яёA-Za-z0-9 .,-]+", city):
-                await send_message(session, token, user_id=int(max_user_id), text="Укажите корректный город проживания. Например: Арзамас")
+            if not _is_valid_city_name(city):
+                await send_message(
+                    session,
+                    token,
+                    user_id=int(max_user_id),
+                    text=(
+                        "❌ Город проживания должен быть написан только русскими буквами.\n"
+                        "Можно использовать пробел и дефис.\n"
+                        "Пример: Арзамас / Нижний Новгород / Санкт-Петербург"
+                    ),
+                )
                 return
 
             db_id = _max_to_db_id(int(max_user_id))
