@@ -164,7 +164,8 @@ async def send_message(
     session: aiohttp.ClientSession,
     token: str,
     *,
-    user_id: int,
+    user_id: int | None = None,
+    chat_id: int | str | None = None,
     text: str,
     attachments: list[dict] | None = None,
     fmt: str | None = None,
@@ -174,7 +175,16 @@ async def send_message(
         body["attachments"] = attachments
     if fmt:
         body["format"] = fmt
-    return await _max_api_post(session, token, "/messages", params={"user_id": int(user_id)}, json_body=body)
+
+    params: dict = {}
+    if user_id is not None:
+        params["user_id"] = int(user_id)
+    elif chat_id is not None:
+        params["chat_id"] = str(chat_id)
+    else:
+        raise ValueError("send_message requires user_id or chat_id")
+
+    return await _max_api_post(session, token, "/messages", params=params, json_body=body)
 
 
 async def answer_callback(
