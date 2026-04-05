@@ -602,6 +602,7 @@ function renderAwardsListFromCache() {
 
     keys.forEach((key) => {
       let active = !!levels[key];
+      const isAptitudeLevel = String(key) === "aptitude";
       const row = document.createElement("div");
       row.className = "level-card";
       row.style.margin = "0";
@@ -609,9 +610,11 @@ function renderAwardsListFromCache() {
       row.innerHTML = `
         <div class="level-title">${levelEmoji(key)} ${esc(levelTitle(key))}</div>
         <div class="level-stats">Статус: <b class="level-status">${active ? "ВКЛ" : "ВЫКЛ"}</b></div>
-        <button type="button" class="btn ${active ? "btn-secondary" : ""}" data-next="${active ? "0" : "1"}">
+        ${isAptitudeLevel && active
+          ? '<div class="level-stats" style="margin-top:10px;">Этот уровень нельзя отключить.</div>'
+          : `<button type="button" class="btn ${active ? "btn-secondary" : ""}" data-next="${active ? "0" : "1"}">
           ${active ? "Отключить" : "Включить"}
-        </button>
+        </button>`}
       `;
 
       const statusEl = row.querySelector(".level-status");
@@ -626,42 +629,44 @@ function renderAwardsListFromCache() {
         }
       }
 
-      btn.addEventListener("click", async () => {
-        const nextActive = btn.dataset.next === "1";
-        btn.disabled = true;
-        try {
-          if (hasAdminToken) {
-            // Для MAX/внешнего браузера делаем переключение по GET-параметрам,
-            // как и остальные запросы доступа по admin_token. Это обходит капризные WebView,
-            // где POST+JSON для этого экрана может не доходить стабильно.
-            const qs = new URLSearchParams({
-              level_key: key,
-              is_active: nextActive ? "1" : "0",
-              admin_token: ADMIN_TOKEN,
-              _: String(Date.now()),
-            });
-            await api(`/api/admin/set_level?${qs.toString()}`, {
-              method: "GET",
-              cache: "no-store",
-            });
-          } else {
-            await api("/api/admin/set_level", {
-              method: "POST",
-              body: JSON.stringify({ level_key: key, is_active: nextActive }),
-            });
+      if (btn) {
+        btn.addEventListener("click", async () => {
+          const nextActive = btn.dataset.next === "1";
+          btn.disabled = true;
+          try {
+            if (hasAdminToken) {
+              // Для MAX/внешнего браузера делаем переключение по GET-параметрам,
+              // как и остальные запросы доступа по admin_token. Это обходит капризные WebView,
+              // где POST+JSON для этого экрана может не доходить стабильно.
+              const qs = new URLSearchParams({
+                level_key: key,
+                is_active: nextActive ? "1" : "0",
+                admin_token: ADMIN_TOKEN,
+                _: String(Date.now()),
+              });
+              await api(`/api/admin/set_level?${qs.toString()}`, {
+                method: "GET",
+                cache: "no-store",
+              });
+            } else {
+              await api("/api/admin/set_level", {
+                method: "POST",
+                body: JSON.stringify({ level_key: key, is_active: nextActive }),
+              });
+            }
+            // Обновляем только эту карточку — без полного перерендера,
+            // чтобы не было рывков страницы вверх-вниз.
+            active = nextActive;
+            applyState();
+            // На некоторых мобильных WebView безопаснее сразу перечитать состояние с сервера.
+            try { await loadLevels(); } catch (_) {}
+          } catch (e) {
+            alert("Ошибка: " + e.message);
+          } finally {
+            btn.disabled = false;
           }
-          // Обновляем только эту карточку — без полного перерендера,
-          // чтобы не было рывков страницы вверх-вниз.
-          active = nextActive;
-          applyState();
-          // На некоторых мобильных WebView безопаснее сразу перечитать состояние с сервера.
-          try { await loadLevels(); } catch (_) {}
-        } catch (e) {
-          alert("Ошибка: " + e.message);
-        } finally {
-          btn.disabled = false;
-        }
-      });
+        });
+      }
 
       frag.appendChild(row);
     });
