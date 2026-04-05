@@ -54,6 +54,18 @@ def _format_person_name(value: str | None) -> str:
     return ' '.join(_cap_token(p) for p in parts)
 
 
+
+
+def _is_valid_city_name(value: str | None) -> bool:
+    s = (value or '').strip()
+    if not s or len(s) < 2 or len(s) > 100:
+        return False
+
+    # Город: только русские буквы, пробелы и дефис.
+    # Поддерживаем варианты вроде «Санкт-Петербург» и «Нижний Новгород».
+    city_token = re.compile(r"^[А-ЯЁа-яё]+(?:-[А-ЯЁа-яё]+)*$")
+    parts = [p for p in s.split() if p]
+    return bool(parts) and all(city_token.fullmatch(p) for p in parts)
 def _is_technical_aptitude(value: str | None) -> bool:
     if not value:
         return False
@@ -357,8 +369,12 @@ async def process_city(message: types.Message, state: FSMContext):
         await message.answer("Город проживания должен быть от 2 до 100 символов. Попробуйте ещё раз.")
         return
 
-    if not re.fullmatch(r"[А-ЯЁа-яёA-Za-z0-9 .,-]+", city):
-        await message.answer("Укажите город проживания без лишних символов. Например: Арзамас")
+    if not _is_valid_city_name(city):
+        await message.answer(
+            "❌ Город проживания должен быть написан только русскими буквами.\n"
+            "Можно использовать пробел и дефис.\n"
+            "Пример: Арзамас / Нижний Новгород / Санкт-Петербург"
+        )
         return
 
     data = await state.get_data()
