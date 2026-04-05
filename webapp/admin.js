@@ -45,6 +45,7 @@ async function init() {
   const $who = byId("who");
   const $statsAll = byId("stats-all");
   const $levels = byId("levels");
+  const $usersAll = byId("users-all");
 
   // USERS (delete) UI
   const $usersSearch = byId("users-search");
@@ -528,7 +529,23 @@ function renderAwardsListFromCache() {
 
   async function loadUsers() {
     const data = await api("/api/admin/stats");
-    usersCache = (data.users || []).slice(0, 200);
+    usersCache = (data.users || []).slice(0, 500);
+
+    if ($usersAll) {
+      if (!usersCache.length) {
+        $usersAll.textContent = "Пока пусто";
+      } else {
+        const orderedUsers = usersCache.slice().sort((a, b) => {
+          const an = `${a.first_name || ""} ${a.last_name || ""}`.trim();
+          const bn = `${b.first_name || ""} ${b.last_name || ""}`.trim();
+          return an.localeCompare(bn, "ru");
+        });
+        $usersAll.textContent = orderedUsers
+          .map((u, i) => `${i + 1}. ${u.first_name} ${u.last_name} (${u.city || "—"}) — ${u.score ?? 0}`)
+          .join("
+");
+      }
+    }
 
     // если выбранного уже нет — сбросим
     if (selectedDeleteId && !usersCache.some((u) => Number(u.telegram_id) === selectedDeleteId)) {
