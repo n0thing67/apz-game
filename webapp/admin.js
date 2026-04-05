@@ -542,8 +542,7 @@ function renderAwardsListFromCache() {
         });
         $usersAll.textContent = orderedUsers
           .map((u, i) => `${i + 1}. ${u.first_name} ${u.last_name} (${u.city || "—"}) — ${u.score ?? 0}`)
-          .join("
-");
+          .join("\n");
       }
     }
 
