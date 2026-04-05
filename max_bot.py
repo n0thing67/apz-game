@@ -13,6 +13,7 @@ from database.db import (
     register_user,
     get_user,
     get_user_profile,
+    get_user_rank,
 )
 
 
@@ -236,12 +237,22 @@ async def _send_stats_max(app, *, max_user_id: int):
     _tid, fname, lname, _age, city, score = user
     aptitude_top = profile[6] if profile and len(profile) >= 7 else None
 
+    rank_info = None
+    try:
+        rank_info = await get_user_rank(db_id)
+    except Exception:
+        rank_info = None
+
     lines = [
         "📊 Твоя статистика:",
         f"👤 {fname} {lname}",
         f"🏙 Город: {city or '—'}",
         f"⭐️ Лучший счёт: {score}",
     ]
+    if rank_info:
+        rank, total = rank_info
+        if total and total > 0:
+            lines.append(f"🏆 Рейтинг: {rank} из {total}")
     a = _apt_label(aptitude_top)
     if a:
         lines.append(a)
