@@ -1521,7 +1521,11 @@ const WELCOME_DIALOGUES = {
 };
 
 let welcomeDialogueTimer = null;
+let welcomeDialogueStartTimer = null;
 let welcomeDialogueStep = 0;
+
+const WELCOME_DIALOGUE_INTERVAL_MS = 3200;
+const WELCOME_DIALOGUE_FIRST_EXTRA_MS = 3000;
 
 function setWelcomeSpeechText(el, text) {
     if (!el) return;
@@ -1550,6 +1554,10 @@ function stopWelcomeDialogueRotation() {
         clearInterval(welcomeDialogueTimer);
         welcomeDialogueTimer = null;
     }
+    if (welcomeDialogueStartTimer) {
+        clearTimeout(welcomeDialogueStartTimer);
+        welcomeDialogueStartTimer = null;
+    }
 }
 
 function startWelcomeDialogueRotation() {
@@ -1562,11 +1570,17 @@ function startWelcomeDialogueRotation() {
     setWelcomeSpeechText(maxEl, WELCOME_DIALOGUES.max[0]);
     setWelcomeSpeechText(asyaEl, WELCOME_DIALOGUES.asya[0]);
 
-    welcomeDialogueTimer = setInterval(() => {
+    const rotateWelcomeDialogue = () => {
         welcomeDialogueStep = (welcomeDialogueStep + 1) % WELCOME_DIALOGUES.max.length;
         switchWelcomeSpeech(maxEl, WELCOME_DIALOGUES.max[welcomeDialogueStep]);
         switchWelcomeSpeech(asyaEl, WELCOME_DIALOGUES.asya[welcomeDialogueStep]);
-    }, 3200);
+    };
+
+    welcomeDialogueStartTimer = setTimeout(() => {
+        rotateWelcomeDialogue();
+        welcomeDialogueTimer = setInterval(rotateWelcomeDialogue, WELCOME_DIALOGUE_INTERVAL_MS);
+        welcomeDialogueStartTimer = null;
+    }, WELCOME_DIALOGUE_INTERVAL_MS + WELCOME_DIALOGUE_FIRST_EXTRA_MS);
 }
 
 function showScreen(screenId) {
