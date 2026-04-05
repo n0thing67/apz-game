@@ -292,7 +292,7 @@ async def handle_update(app, update: dict) -> None:
 
         if str(payload) == "stats":
             try:
-                await answer_callback(session, token, callback_id=str(callback_id), message={"text": "Открываю статистику…"})
+                await answer_callback(session, token, callback_id=str(callback_id), notification="📊")
             except Exception:
                 pass
             await _send_stats_max(app, max_user_id=int(max_user_id))
@@ -435,6 +435,7 @@ async def handle_update(app, update: dict) -> None:
             ])
             await send_message(session, token, user_id=int(max_user_id), text="Нажми кнопку ниже:", attachments=kb)
             return
+
         kb = _inline_keyboard([
             [{"type": "link", "text": "🏭 Зайти на завод (Играть)", "url": _factory_entry_url()}],
             [{"type": "callback", "text": "📊 Статистика", "payload": "stats"}],
