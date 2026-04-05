@@ -239,7 +239,7 @@ async def _send_stats_max(app, *, max_user_id: int):
     await send_message(session, token, user_id=max_user_id, text="\n".join(lines))
 
 
-_PD_CONSENT_TEXT = "Я ознакомлен(а) с Политикой обработки персональных данных и даю согласие на обработку моих персональных данных"
+_PD_CONSENT_TEXT = "Я ознакомлен(а) и согласен(на) с Политикой обработки персональных данных"
 
 
 def _pd_consent_keyboard():
