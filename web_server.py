@@ -195,9 +195,9 @@ def _render_award_png(template_filename: str, full_name: str, event_name: str, e
     group_bottom = date_y - gap
     group_h = name_h + gap + score_h
     if group_bottom > group_top + group_h:
-        name_y = int(group_top + (group_bottom - group_top - group_h) / 2)
+        name_y = int(group_top + (group_bottom - group_top - group_h) / 2) - 7
     else:
-        name_y = group_top
+        name_y = group_top - 7
     score_y = name_y + name_h + gap
 
     draw.text(((w - name_w) / 2, name_y), full_name, font=name_font, fill=(20, 30, 45, 255))
