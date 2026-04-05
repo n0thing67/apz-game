@@ -417,25 +417,36 @@ def _verify_admin_token(raw_token: str) -> int | None:
 
 
 async def _send_admin_log(app: web.Application, text: str) -> None:
-    """Отправляет запись в канал админки (если настроен ADMIN_CHANNEL_ID).
+    """Отправляет запись в канал/группу админки в Telegram и/или MAX.
+
+    Поддерживаем два независимых канала доставки:
+    - ADMIN_CHANNEL_ID / ADMIN_CHAT_ID для Telegram
+    - MAX_ADMIN_LOG_CHAT_ID для группы в MAX
 
     Логирование не должно ломать основной функционал: любые ошибки проглатываем.
     """
-    admin_channel_id_raw = (os.getenv("ADMIN_CHANNEL_ID") or "").strip()
-    if not admin_channel_id_raw:
-        return
+    admin_channel_id_raw = (os.getenv("ADMIN_CHANNEL_ID", os.getenv("ADMIN_CHAT_ID", "")) or "").strip()
+    if admin_channel_id_raw:
+        try:
+            admin_channel_id = int(admin_channel_id_raw)
+            bot: Bot = app["bot"]
+            await bot.send_message(chat_id=admin_channel_id, text=text)
+        except Exception:
+            # Канал может быть недоступен/бот не добавлен/нет прав — не блокируем админ-операции.
+            pass
 
-    try:
-        admin_channel_id = int(admin_channel_id_raw)
-    except Exception:
-        return
+    max_admin_chat_id = (os.getenv("MAX_ADMIN_LOG_CHAT_ID") or "").strip()
+    if max_admin_chat_id:
+        try:
+            from max_bot import send_message
 
-    try:
-        bot: Bot = app["bot"]
-        await bot.send_message(chat_id=admin_channel_id, text=text)
-    except Exception:
-        # Канал может быть недоступен/бот не добавлен/нет прав — не блокируем админ-операции.
-        return
+            token = (app.get("max_token") or "").strip()
+            if token:
+                session: aiohttp.ClientSession = app["max_session"]
+                await send_message(session, token, chat_id=max_admin_chat_id, text=text)
+        except Exception:
+            # Группа может быть недоступна/бот не добавлен/нет прав — не блокируем админ-операции.
+            pass
 
 
 async def _format_actor(admin_id: int) -> str:
