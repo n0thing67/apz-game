@@ -162,7 +162,7 @@ def _render_award_png(template_filename: str, full_name: str, event_name: str, e
     date_w = date_bbox[2] - date_bbox[0]
     date_h = date_bbox[3] - date_bbox[1]
     date_bottom_margin = max(36, int(h * 0.055))
-    date_y = h - date_bottom_margin - date_h
+    date_y = h - date_bottom_margin - date_h - 7
 
     # Мероприятие — чуть крупнее и ниже на 10px
     event_text = (event_name or "").strip()
