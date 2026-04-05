@@ -575,7 +575,7 @@ function renderAwardsListFromCache() {
     // Для админки всегда перечитываем уровни без кеша и с cache-buster.
     const levelsResp = await api(`/api/levels?_=${Date.now()}`, { cache: "no-store" });
     const levels = levelsResp.levels || {};
-    const keys = Object.keys(levels).sort();
+    const keys = Object.keys(levels).filter((k) => String(k) !== "aptitude").sort();
 
     if (!keys.length) {
       $levels.innerHTML = '<div class="muted">Нет данных по играм.</div>';
