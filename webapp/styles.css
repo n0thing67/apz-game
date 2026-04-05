@@ -1,6 +1,7 @@
 html, body {
     height: 100%;
 }
+
 body {
     font-family: Arial, sans-serif;
     background-color: #5f6062;
@@ -19,6 +20,7 @@ body {
     user-select: none; /* Чтобы текст не выделялся при кликах */
     -webkit-tap-highlight-color: transparent;
 }
+
 /* На мобильных WebView (Telegram Android/iOS) вертикальное центрирование body часто
    приводит к тому, что нижние элементы (кнопки на ФИНИШ) оказываются за пределами
    видимой области. На узких/низких экранах прижимаем контент к верху и даём отступы
@@ -31,6 +33,7 @@ body {
         min-height: 100vh;
         min-height: 100dvh;
     }
+
     /* На приветствии хотим "как на ПК": центр по вертикали.
        Для проблемных экранов (финал/уровни) остаётся прижим к верху. */
     #screen-welcome.screen.active{
@@ -45,6 +48,7 @@ body {
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
 }
+
 h1, h2 {
     margin-bottom: 10px;
 }
@@ -965,7 +969,12 @@ body.admin-body {
     position: relative;
     padding: 10px;
     box-sizing: border-box;
-    touch-action: manipulation;
+    /* Для MAX WebView полностью отдаём свайпы игровому полю,
+       иначе вертикальный жест вниз может закрывать мини-приложение. */
+    touch-action: none;
+    overscroll-behavior: contain;
+    -webkit-user-select: none;
+    user-select: none;
     /* PERF: изоляция области, чтобы перерисовка не затрагивала всю страницу */
     contain: layout paint style;
 }
