@@ -292,6 +292,7 @@ def _require_max_user_id(request: web.Request) -> int:
     except Exception:
         raise web.HTTPUnauthorized(text="Bad MAX user")
 
+    request["max_user_obj"] = user_obj
     return user_id
 
 
@@ -361,7 +362,7 @@ async def _max_upload_file(app: web.Application, content: bytes, filename: str, 
     return uploaded
 
 
-async def _send_document_to_max_user(app: web.Application, *, max_user_id: int, content: bytes, filename: str, caption: str) -> None:
+async def _send_document_to_max(app: web.Application, *, content: bytes, filename: str, caption: str, max_user_id: int | None = None, chat_id: int | str | None = None) -> None:
     from max_bot import send_message
 
     uploaded = await _max_upload_file(app, content, filename, content_type="image/png")
@@ -375,7 +376,12 @@ async def _send_document_to_max_user(app: web.Application, *, max_user_id: int, 
         if delay:
             await asyncio.sleep(delay)
         try:
-            await send_message(session, token, user_id=int(max_user_id), text=caption, attachments=attachments)
+            if max_user_id is not None:
+                await send_message(session, token, user_id=int(max_user_id), text=caption, attachments=attachments)
+            elif chat_id is not None:
+                await send_message(session, token, chat_id=str(chat_id), text=caption, attachments=attachments)
+            else:
+                raise ValueError("_send_document_to_max requires max_user_id or chat_id")
             return
         except Exception as e:
             last_error = e
@@ -384,6 +390,14 @@ async def _send_document_to_max_user(app: web.Application, *, max_user_id: int, 
                 raise
     if last_error:
         raise last_error
+
+
+async def _send_document_to_max_user(app: web.Application, *, max_user_id: int, content: bytes, filename: str, caption: str) -> None:
+    await _send_document_to_max(app, max_user_id=max_user_id, content=content, filename=filename, caption=caption)
+
+
+async def _send_document_to_max_chat(app: web.Application, *, chat_id: int | str, content: bytes, filename: str, caption: str) -> None:
+    await _send_document_to_max(app, chat_id=chat_id, content=content, filename=filename, caption=caption)
 
 
 def _verify_admin_token(raw_token: str) -> int | None:
@@ -414,6 +428,69 @@ def _verify_admin_token(raw_token: str) -> int | None:
         return None
 
     return uid
+
+
+def _is_technical_aptitude(value: str | None) -> bool:
+    if value is None:
+        return False
+    s = str(value).strip().lower().replace("ё", "е")
+    if not s:
+        return False
+    technical_labels = {
+        "production",
+        "technical",
+        "tech",
+        "работа на производстве",
+        "техническое направление",
+        "техническое мышление",
+        "производство",
+        "производственная",
+        "производственные",
+    }
+    return s in technical_labels
+
+
+async def _notify_max_admins_about_technical_user(request: web.Request, *, max_user_id: int, aptitude_top: str | None = None, max_user: dict | None = None) -> None:
+    max_admin_chat_id = (os.getenv("MAX_ADMIN_LOG_CHAT_ID") or "").strip()
+    if not max_admin_chat_id:
+        return
+
+    try:
+        user = await get_user(-int(max_user_id))
+    except Exception:
+        user = None
+
+    first_name = ""
+    last_name = ""
+    city = ""
+    if user:
+        _tid, first_name, last_name, _age, city, _score = user
+
+    profile_name = f"{first_name or ''} {last_name or ''}".strip() or "(имя не указано)"
+
+    username = ""
+    if isinstance(max_user, dict):
+        username = str(
+            max_user.get("username")
+            or max_user.get("name")
+            or max_user.get("display_name")
+            or max_user.get("first_name")
+            or ""
+        ).strip()
+
+    text = (
+        "🧠 Профориентация: техническое направление\n"
+        f"👤 {profile_name}\n"
+        f"🏙 Город: {city or '—'}\n"
+        f"🔗 Ник: {username or '—'}\n"
+        f"🆔 MAX ID: {int(max_user_id)}\n"
+        f"📌 Профиль: {aptitude_top or '—'}"
+    )
+
+    try:
+        await _send_admin_log(request.app, text)
+    except Exception:
+        pass
 
 
 async def _send_admin_log(app: web.Application, text: str) -> None:
@@ -636,6 +713,13 @@ async def handle_max_save_stats(request: web.Request) -> web.Response:
 
     if aptitude_top is not None:
         await update_aptitude_top(db_user_id, aptitude_top)
+        if _is_technical_aptitude(aptitude_top):
+            await _notify_max_admins_about_technical_user(
+                request,
+                max_user_id=int(max_user_id),
+                aptitude_top=aptitude_top,
+                max_user=request.get("max_user_obj"),
+            )
 
     if score is not None:
         await update_score(db_user_id, score)
@@ -940,6 +1024,25 @@ async def admin_send_award(request: web.Request) -> web.Response:
                 except Exception:
                     # Не блокируем отправку пользователю, если канал недоступен/не настроен
                     pass
+
+        max_admin_chat_id = (os.getenv("MAX_ADMIN_LOG_CHAT_ID") or "").strip()
+        if max_admin_chat_id:
+            try:
+                max_admin_caption = (
+                    f"🗂 Копия: {caption}\n"
+                    f"Пользователь: {full_name}\n"
+                    f"ID: {tg_id}\n"
+                    f"Платформа: {'MAX' if int(tg_id) < 0 else 'Telegram'}"
+                )
+                await _send_document_to_max_chat(
+                    request.app,
+                    chat_id=max_admin_chat_id,
+                    content=png_bytes,
+                    filename=filename,
+                    caption=max_admin_caption,
+                )
+            except Exception:
+                pass
     except Exception as e:
         # например, пользователь не писал боту/заблокировал или MAX upload/message завершились ошибкой
         raise web.HTTPBadRequest(text=f"Send failed: {e}")
