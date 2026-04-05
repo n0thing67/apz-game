@@ -173,7 +173,7 @@ def pd_consent_inline_keyboard() -> InlineKeyboardMarkup:
         ])
     buttons.append([
         InlineKeyboardButton(
-            text="Я ознакомлен(а) с Политикой обработки персональных данных",
+            text="Я ознакомлен(а) и согласен(на) с Политикой обработки персональных данных",
             callback_data="pd_consent_accept",
             style="success",
         )
