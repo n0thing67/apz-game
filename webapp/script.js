@@ -2993,8 +2993,15 @@ function setupSwipeListeners() {
     grid.addEventListener('touchstart', function(e) {
         const t = e.changedTouches && e.changedTouches[0];
         if (!t) return;
-        touchStartX2048 = t.screenX;
-        touchStartY2048 = t.screenY;
+        touchStartX2048 = t.clientX;
+        touchStartY2048 = t.clientY;
+        e.preventDefault();
+    }, {passive: false});
+
+    grid.addEventListener('touchmove', function(e) {
+        if (!game2048Active) return;
+        // В MAX WebView вертикальный свайп вниз может восприниматься как системный жест
+        // закрытия mini app. Жёстко забираем его в пределах игрового поля.
         e.preventDefault();
     }, {passive: false});
 
@@ -3002,8 +3009,8 @@ function setupSwipeListeners() {
         e.preventDefault();
         const t = e.changedTouches && e.changedTouches[0];
         if (!t) return;
-        let dx = t.screenX - touchStartX2048;
-        let dy = t.screenY - touchStartY2048;
+        let dx = t.clientX - touchStartX2048;
+        let dy = t.clientY - touchStartY2048;
 
         if(Math.abs(dx) > Math.abs(dy)) {
             if(Math.abs(dx) > 30) dx > 0 ? moveTiles(0, 1) : moveTiles(0, -1);
