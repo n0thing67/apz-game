@@ -45,7 +45,6 @@ CERT_TEMPLATES_DIR = os.path.join(WEBAPP_DIR, "assets", "cert_templates")
 # MAX bot webhook integration
 # -------------------------
 
-
 async def handle_max_webhook(request: web.Request) -> web.Response:
     """Webhook endpoint for MAX Bot API.
 
