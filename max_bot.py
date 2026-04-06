@@ -102,27 +102,36 @@ def _admin_entry_url(max_user_id: int | None = None) -> str:
     return f"{base}?admin_token={quote(token, safe='')}"
 
 
-def _factory_entry_url() -> str:
-    """URL для кнопки «Зайти на завод» в MAX.
+def _factory_start_payload() -> str:
+    """Payload для встроенной кнопки open_app в MAX.
 
-    Для MAX стараемся открывать именно Mini App внутри клиента, но при этом
-    передаём адресу игры базовый URL API (Render), чтобы мини‑веб мог читать
-    актуальные /api/levels даже если сама игра открывается с другого домена
-    (например, GitHub Pages).
+    Открываем мини‑приложение штатной кнопкой MAX (open_app), а не deep link'ом.
+    При этом сохраняем передачу API BASE в startapp-параметре, чтобы webapp,
+    открытый с другого домена, мог забирать актуальные /api/levels с Render.
+    """
+    api_base = (_admin_url() or "").strip().rstrip("/")
+    startapp = "game"
+    if api_base:
+        import base64
+        encoded = base64.urlsafe_b64encode(api_base.encode("utf-8")).decode("ascii").rstrip("=")
+        startapp = f"game__api__{encoded}"
+    return startapp
 
-    Формат startapp-параметра делаем простым и безопасным для deep link:
-    game__api__<base64url(API_BASE)>
+
+def _factory_open_app_button() -> dict:
+    """Кнопка запуска mini app в MAX только через штатный open_app.
+
+    Deep link запуска мини‑приложения полностью убран.
+    Для MAX используем только встроенную кнопку mini app без fallback на обычную ссылку.
     """
     bot_name = (os.getenv("MAX_BOT_NAME", "") or "").strip().lstrip("@")
-    if bot_name:
-        api_base = (_admin_url() or "").strip().rstrip("/")
-        startapp = "game"
-        if api_base:
-            import base64
-            encoded = base64.urlsafe_b64encode(api_base.encode("utf-8")).decode("ascii").rstrip("=")
-            startapp = f"game__api__{encoded}"
-        return f"https://max.ru/{bot_name}?startapp={quote(startapp, safe='')}"
-    return _game_url()
+    payload = _factory_start_payload()
+    return {
+        "type": "open_app",
+        "text": "🏭 Зайти на завод (Играть)",
+        "web_app": bot_name,
+        "payload": payload,
+    }
 
 def _admin_url() -> str:
     return (os.getenv("ADMIN_URL", os.getenv("WEBAPP_URL", "")) or "").rstrip("/")
@@ -293,7 +302,7 @@ async def handle_update(app, update: dict) -> None:
         if existing:
             fname = existing[1]
             kb = _inline_keyboard([
-                [{"type": "link", "text": "🏭 Зайти на завод (Играть)", "url": _factory_entry_url()}]
+                [_factory_open_app_button()]
             ])
             await send_message(session, token, user_id=int(max_user_id), text=f"С возвращением, {fname}! Нажми кнопку ниже, чтобы начать испытание.", attachments=kb)
             return
@@ -465,7 +474,7 @@ async def handle_update(app, update: dict) -> None:
             state.pop(str(max_user_id), None)
 
             kb = _inline_keyboard([
-                [{"type": "link", "text": "🏭 Зайти на завод (Играть)", "url": _factory_entry_url()}]
+                [_factory_open_app_button()]
             ])
             await send_message(session, token, user_id=int(max_user_id), text=f"Регистрация пройдена, {st.get('first_name')}! Нажми кнопку ниже, чтобы начать испытание.", attachments=kb)
             return
@@ -479,7 +488,7 @@ async def handle_update(app, update: dict) -> None:
             return
 
         kb = _inline_keyboard([
-            [{"type": "link", "text": "🏭 Зайти на завод (Играть)", "url": _factory_entry_url()}],
+            [_factory_open_app_button()],
             [{"type": "callback", "text": "📊 Статистика", "payload": "stats"}],
         ])
         await send_message(session, token, user_id=int(max_user_id), text="Выбери действие:", attachments=kb)
