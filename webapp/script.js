@@ -18,21 +18,40 @@ function assetPath(name, fallbackExt) {
 }
 
 // ==========================================
-// ЛЁГКИЙ СТАРТ + ФОНОВЫЙ ПРОГРЕВ ИЗОБРАЖЕНИЙ
-// Не блокируем открытие WebView долгой загрузкой.
-// Вместо этого быстро показываем экран, а ассеты догружаем в фоне
-// небольшими очередями, пока пользователь читает/выбирает уровень.
+// PRELOADER: при входе загружаем ТОЛЬКО изображения (assets/*)
+// Требование: показать прогресс (ползунок + %)...
 // ==========================================
 
-const BACKGROUND_WARMUP_GROUPS = [
-    ['logo', 'logo_3x3', 'logo_4x4'],
-    ['bolt', 'nut', 'gear', 'chip'],
-    ['board', 'case', 'sensor', 'device'],
-    ['hero', 'platform', 'spring', 'propeller', 'jetpack', 'part'],
-    ['after_puzzle', 'after_jumper', 'after_2048', 'after_quiz', 'gate']
+// Список ВСЕХ изображений в webapp/assets (добавлять сюда при появлении новых).
+const APP_IMAGE_MANIFEST = [
+    'after_2048',
+    'after_jumper',
+    'after_puzzle',
+    'after_quiz',
+    'board',
+    'bolt',
+    'case',
+    'chip',
+    'device',
+    'gate',
+    'gear',
+    'hero',
+    'jetpack',
+    'logo',
+    'logo_3x3',
+    'logo_4x4',
+    'nut',
+    'part',
+    'platform',
+    'propeller',
+    'sensor',
+    'spring'
 ];
 
 function preloadOneImage(url, timeoutMs = 8000) {
+    // В редких случаях WebView может «повиснуть» на загрузке ресурса
+    // без onload/onerror. Ставим страховочный таймаут, чтобы прелоадер
+    // не зависал навсегда.
     return new Promise((resolve) => {
         const img = new Image();
         let done = false;
@@ -47,6 +66,7 @@ function preloadOneImage(url, timeoutMs = 8000) {
         const t = setTimeout(finish, timeoutMs);
 
         img.onload = () => {
+            // decode() часто снимает фризы на первом рендере
             if (img.decode) {
                 img.decode().catch(() => {}).finally(finish);
             } else {
@@ -55,6 +75,7 @@ function preloadOneImage(url, timeoutMs = 8000) {
         };
         img.onerror = finish;
         img.src = url;
+        // если уже в кэше
         if (img.complete && img.naturalWidth) {
             if (img.decode) img.decode().catch(() => {}).finally(finish);
             else finish();
@@ -62,54 +83,63 @@ function preloadOneImage(url, timeoutMs = 8000) {
     });
 }
 
-function sleep(ms) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function warmupImageGroup(names) {
-    for (const name of names) {
-        await preloadOneImage(assetPath(name, 'png'), 7000);
-        await sleep(40);
-    }
-}
-
-let backgroundWarmupStarted = false;
-let backgroundWarmupPromise = null;
-
-function scheduleAppAssetWarmup() {
-    if (backgroundWarmupStarted) return backgroundWarmupPromise || Promise.resolve();
-    backgroundWarmupStarted = true;
-
-    const run = async () => {
-        // Даём WebView сначала спокойно показать интерфейс.
-        await sleep(900);
-        for (const group of BACKGROUND_WARMUP_GROUPS) {
-            await warmupImageGroup(group);
-            await sleep(180);
-        }
-    };
-
-    backgroundWarmupPromise = new Promise((resolve) => {
-        const starter = () => run().finally(resolve);
-        if (typeof window.requestIdleCallback === 'function') {
-            window.requestIdleCallback(starter, { timeout: 1800 });
-        } else {
-            setTimeout(starter, 1200);
-        }
-    });
-
-    return backgroundWarmupPromise;
-}
+let appImagesPreloaded = false;
+let appImagesPreloadPromise = null;
 
 function startAppImagePreloader() {
-    // Старый полноэкранный прелоадер оставляем только как защиту от старого HTML,
-    // но сразу скрываем: MAX заметно быстрее стартует без блокирующего overlay.
+    if (appImagesPreloaded) return Promise.resolve();
+    if (appImagesPreloadPromise) return appImagesPreloadPromise;
+
     const overlay = document.getElementById('preload-overlay');
-    if (overlay) {
-        overlay.classList.add('hidden');
-        overlay.setAttribute('aria-busy', 'false');
-    }
-    return scheduleAppAssetWarmup();
+    const bar = document.getElementById('preload-bar');
+    const percentEl = document.getElementById('preload-percent');
+    const currentEl = document.getElementById('preload-current');
+    const barWrap = overlay?.querySelector?.('.preload-bar-wrap');
+
+    if (overlay) overlay.classList.remove('hidden');
+
+    const total = APP_IMAGE_MANIFEST.length;
+    const setProgress = (loaded, currentFile) => {
+        const pct = total ? Math.round((loaded / total) * 100) : 100;
+        if (bar) bar.style.width = `${pct}%`;
+        if (percentEl) percentEl.textContent = `${pct}%`;
+        if (currentEl) currentEl.textContent = `Сейчас загружается: ${currentFile || '—'}`;
+        if (barWrap) barWrap.setAttribute('aria-valuenow', String(pct));
+    };
+
+    appImagesPreloadPromise = (async () => {
+        let loaded = 0;
+        setProgress(0, '—');
+
+        // Общая страховка (если WebView/сеть глючит):
+        // максимум 25 секунд на весь прогрев.
+        const hardStop = setTimeout(() => {
+            appImagesPreloaded = true;
+            if (overlay) {
+                overlay.classList.add('hidden');
+                overlay.setAttribute('aria-busy', 'false');
+            }
+        }, 25000);
+
+        // Важно: грузим последовательно — так текст “какой файл сейчас” будет точным.
+        for (const name of APP_IMAGE_MANIFEST) {
+            const url = assetPath(name, 'png');
+            const file = url.split('/').pop();
+            setProgress(loaded, file);
+            await preloadOneImage(url);
+            loaded++;
+            setProgress(loaded, file);
+        }
+
+        appImagesPreloaded = true;
+        clearTimeout(hardStop);
+        if (overlay) {
+            overlay.classList.add('hidden');
+            overlay.setAttribute('aria-busy', 'false');
+        }
+    })();
+
+    return appImagesPreloadPromise;
 }
 
 // ==========================================
@@ -1628,15 +1658,7 @@ if (statLine && statMain && savedApt && savedApt.main) {
     // На некоторых Android/WebView "стартовый" тап прилетает с задержкой,
     // поэтому держим блокировку чуть дольше.
     lockClicks(900);
-
-    // После первого перехода в меню уровней догреваем игровые ассеты в фоне,
-    // чтобы вход в уровни был быстрым без тяжёлого старта WebView.
-    scheduleAppAssetWarmup();
-    preloadPuzzleAssets().catch(() => {});
-    setTimeout(() => preload2048Assets(), 150);
-    setTimeout(() => preloadLevel2Assets().catch(() => {}), 350);
 }
-
 
 // При выходе из уровня важно остановить активные игровые циклы (особенно Jumper),
 // иначе они продолжат жечь CPU в фоне.
@@ -2119,17 +2141,12 @@ let canvasHeight = 480;
 // но значительно разгружает GPU/CPU. Логику и картинки не меняем.
 const MAX_DPR = 2;
 
-const imgHero = new Image();
-const imgPlatform = new Image();
-const imgSpring = new Image();
-const imgPropeller = new Image();
-const imgJetpack = new Image();
-const imgPart = new Image();
-
-function ensureImageSrc(img, name, fallbackExt = 'png') {
-    if (!img.src) img.src = assetPath(name, fallbackExt);
-    return img;
-}
+const imgHero = new Image(); imgHero.src = assetPath('hero', 'png');
+const imgPlatform = new Image(); imgPlatform.src = assetPath('platform', 'png');
+const imgSpring = new Image(); imgSpring.src = assetPath('spring', 'png');
+const imgPropeller = new Image(); imgPropeller.src = assetPath('propeller', 'png');
+const imgJetpack = new Image(); imgJetpack.src = assetPath('jetpack', 'png');
+const imgPart = new Image(); imgPart.src = assetPath('part', 'png');
 
 // ===== PERF: предзагрузка/декодирование изображений (убирает фризы на первом рендере) =====
 function decodeImage(img) {
@@ -2147,12 +2164,6 @@ let level2AssetsPromise = null;
 function preloadLevel2Assets() {
     if (level2AssetsLoaded) return Promise.resolve();
     if (level2AssetsPromise) return level2AssetsPromise;
-    ensureImageSrc(imgHero, 'hero');
-    ensureImageSrc(imgPlatform, 'platform');
-    ensureImageSrc(imgSpring, 'spring');
-    ensureImageSrc(imgPropeller, 'propeller');
-    ensureImageSrc(imgJetpack, 'jetpack');
-    ensureImageSrc(imgPart, 'part');
     level2AssetsPromise = Promise.all([
         decodeImage(imgHero),
         decodeImage(imgPlatform),
@@ -2166,13 +2177,11 @@ function preloadLevel2Assets() {
 
 let puzzleAssetsReady = false;
 function preloadPuzzleAssets() {
+    // Для любого размера пазла используем одну картинку board.webp
     if (puzzleAssetsReady) return puzzleAssetsReady;
-    const logos = ['logo', 'logo_3x3', 'logo_4x4'].map((name) => {
-        const img = new Image();
-        img.src = assetPath(name, 'jpg');
-        return decodeImage(img).catch(() => {});
-    });
-    puzzleAssetsReady = Promise.all(logos);
+    const img = new Image();
+    img.src = assetPath('logo', 'jpg');
+    puzzleAssetsReady = decodeImage(img).catch(() => {});
     return puzzleAssetsReady;
 }
 
@@ -2734,13 +2743,17 @@ function preload2048Assets() {
     if (tileAssets2048Ready) return;
     tileAssets2048Ready = true;
 
+    // Загружаем/декодируем в фоне, без блокировки игры
     Object.values(tileAssets2048).forEach((src) => {
         const img = new Image();
         img.src = src;
+        // decode() ускоряет момент первого рендера (где поддерживается)
         if (img.decode) img.decode().catch(() => {});
     });
 }
 
+// Запускаем предзагрузку сразу (скрипт подключен внизу страницы, DOM уже есть)
+preload2048Assets();
 
 const SIZE = 4;
 // Предвычисляем позиции для ускорения (чтобы не считать в цикле)
