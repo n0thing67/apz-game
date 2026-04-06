@@ -119,27 +119,18 @@ def _factory_start_payload() -> str:
 
 
 def _factory_open_app_button() -> dict:
-    """Кнопка запуска mini app в MAX.
+    """Кнопка запуска mini app в MAX только через штатный open_app.
 
-    По документации MAX у кнопки типа open_app используются поля:
-    - web_app: публичное имя бота или ссылка на него
-    - payload: startapp-параметр для mini app
-
-    Если публичное имя бота не задано, оставляем безопасный fallback на обычную link-кнопку.
+    Deep link запуска мини‑приложения полностью убран.
+    Для MAX используем только встроенную кнопку mini app без fallback на обычную ссылку.
     """
     bot_name = (os.getenv("MAX_BOT_NAME", "") or "").strip().lstrip("@")
     payload = _factory_start_payload()
-    if bot_name:
-        return {
-            "type": "open_app",
-            "text": "🏭 Зайти на завод (Играть)",
-            "web_app": bot_name,
-            "payload": payload,
-        }
     return {
-        "type": "link",
+        "type": "open_app",
         "text": "🏭 Зайти на завод (Играть)",
-        "url": _game_url(),
+        "web_app": bot_name,
+        "payload": payload,
     }
 
 def _admin_url() -> str:
