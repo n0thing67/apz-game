@@ -565,6 +565,23 @@ async def cors_middleware(request: web.Request, handler):
     return resp
 
 
+
+
+@web.middleware
+async def static_cache_middleware(request: web.Request, handler):
+    resp = await handler(request)
+    try:
+        path = request.path.lower()
+        if request.method == 'GET' and not path.startswith('/api/') and not path.startswith('/max/'):
+            if path.endswith(('.webp', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.mp3', '.woff', '.woff2')):
+                resp.headers['Cache-Control'] = 'public, max-age=2592000'
+            elif path.endswith(('.css', '.js')):
+                resp.headers['Cache-Control'] = 'public, max-age=86400'
+            elif path.endswith(('.html', '/')) or path in ('',):
+                resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+        return resp
+    except Exception:
+        return resp
 async def handle_levels(request: web.Request) -> web.Response:
     # ВАЖНО: сброс статистики в WebApp должен работать так же надёжно,
     # как и отключение уровней. /api/levels вызывается без кастомных заголовков
@@ -1067,7 +1084,7 @@ async def admin_send_award(request: web.Request) -> web.Response:
 
 
 def create_app() -> web.Application:
-    app = web.Application(middlewares=[cors_middleware])
+    app = web.Application(middlewares=[cors_middleware, static_cache_middleware])
 
     # Bot instance для отправки грамот из админ-панели
     token = os.getenv("BOT_TOKEN", "")
