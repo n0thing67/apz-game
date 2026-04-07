@@ -2305,6 +2305,7 @@ function initJumper() {
     document.getElementById('doodle-start-msg').style.display = 'flex';
 
     const startMsg = document.getElementById('doodle-start-msg');
+    const startHitbox = document.getElementById('doodle-start-hitbox');
     const pTag = startMsg ? startMsg.querySelector('p') : null;
     if (startMsg) {
         startMsg.style.pointerEvents = 'auto';
@@ -2314,12 +2315,12 @@ function initJumper() {
         if (!startMsg.dataset.boundStartHandlers) {
             let lastManualStartTs = 0;
             const manualStart = (e) => {
-                // На некоторых Android WebView (в т.ч. MAX) обычный click по div-оверлею
-                // может не приходить стабильно, поэтому дублируем запуск через pointer/touch.
-                // При этом защищаемся от двойного старта после touchend -> click.
+                // В MAX/WebView тап по обычному div может теряться.
+                // Поэтому запускаем и с контейнера, и с отдельной прозрачной кнопки-hitbox.
                 if (e) {
                     e.preventDefault?.();
                     e.stopPropagation?.();
+                    e.stopImmediatePropagation?.();
                 }
                 if (!startMsg.offsetParent || startMsg.style.display === 'none') return;
                 const now = Date.now();
@@ -2328,10 +2329,16 @@ function initJumper() {
                 unlockSfxOnce();
                 startDoodleLoop();
             };
+            const bindManualStart = (node) => {
+                if (!node || node.dataset.boundStartHandlers === '1') return;
+                node.addEventListener('click', manualStart, true);
+                node.addEventListener('pointerup', manualStart, true);
+                node.addEventListener('touchend', manualStart, { passive: false, capture: true });
+                node.dataset.boundStartHandlers = '1';
+            };
 
-            startMsg.addEventListener('click', manualStart, true);
-            startMsg.addEventListener('pointerup', manualStart, true);
-            startMsg.addEventListener('touchend', manualStart, { passive: false, capture: true });
+            bindManualStart(startMsg);
+            bindManualStart(startHitbox);
             startMsg.dataset.boundStartHandlers = '1';
         }
     }
