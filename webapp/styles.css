@@ -2063,8 +2063,8 @@ hr {
 
     .welcome-characters .welcome-character:first-child .character-img{
         height: 200px;
-        max-width: 210px;
-        transform: translate(-8px, 48px);
+        max-width: 220px;
+        transform: translate(-8px, 52px);
     }
     .welcome-characters .welcome-character:last-child .character-img{
         height: 160px;
