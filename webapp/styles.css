@@ -744,7 +744,12 @@ body.admin-body {
     box-shadow: 0 10px 20px rgba(0,0,0,0.15);
 
     overflow: hidden;
-    touch-action: manipulation;
+    /* Для MAX/WebView полностью отдаём тапы/жесты уровню,
+       чтобы контейнер стабильно принимал стартовый тап. */
+    touch-action: none;
+    overscroll-behavior: contain;
+    -webkit-user-select: none;
+    user-select: none;
 
     /* PERF: ограничиваем область перерисовки браузера только этим блоком */
     contain: layout paint;
@@ -836,7 +841,8 @@ body.admin-body {
     z-index: 10;
     border-radius: 16px;
     pointer-events: auto;
-    touch-action: manipulation;
+    touch-action: none;
+    overscroll-behavior: contain;
     user-select: none;
     -webkit-user-select: none;
 }
@@ -856,7 +862,8 @@ body.admin-body {
     -webkit-appearance: none;
     cursor: pointer;
     pointer-events: auto;
-    touch-action: manipulation;
+    touch-action: none;
+    overscroll-behavior: contain;
 }
 
 .doodle-start-content {
