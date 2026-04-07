@@ -2342,8 +2342,13 @@ function initJumper() {
             };
             const bindManualStart = (node) => {
                 if (!node || node.dataset.boundStartHandlers === '1') return;
+                // MAX WebView может не всегда стабильно отдавать только click/touchend,
+                // поэтому дублируем старт на ранние и поздние фазы касания.
                 node.addEventListener('click', manualStart, true);
+                node.addEventListener('pointerdown', manualStart, true);
                 node.addEventListener('pointerup', manualStart, true);
+                node.addEventListener('mousedown', manualStart, true);
+                node.addEventListener('touchstart', manualStart, { passive: false, capture: true });
                 node.addEventListener('touchend', manualStart, { passive: false, capture: true });
                 node.dataset.boundStartHandlers = '1';
             };
@@ -3530,6 +3535,6 @@ else if (action === 'save-stats') {
         }
     };
 
-    // click + pointerup для надёжности
+    // click для действий по всему приложению
     document.addEventListener('click', handleAction, true);
 });
