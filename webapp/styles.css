@@ -744,12 +744,7 @@ body.admin-body {
     box-shadow: 0 10px 20px rgba(0,0,0,0.15);
 
     overflow: hidden;
-    /* Для MAX/WebView полностью отдаём тапы/жесты уровню,
-       чтобы контейнер стабильно принимал стартовый тап. */
-    touch-action: none;
-    overscroll-behavior: contain;
-    -webkit-user-select: none;
-    user-select: none;
+    touch-action: manipulation;
 
     /* PERF: ограничиваем область перерисовки браузера только этим блоком */
     contain: layout paint;
@@ -840,11 +835,6 @@ body.admin-body {
     cursor: pointer;
     z-index: 10;
     border-radius: 16px;
-    pointer-events: auto;
-    touch-action: none;
-    overscroll-behavior: contain;
-    user-select: none;
-    -webkit-user-select: none;
 }
 
 .doodle-start-hitbox {
@@ -862,8 +852,7 @@ body.admin-body {
     -webkit-appearance: none;
     cursor: pointer;
     pointer-events: auto;
-    touch-action: none;
-    overscroll-behavior: contain;
+    touch-action: manipulation;
 }
 
 .doodle-start-content {
@@ -876,6 +865,7 @@ body.admin-body {
     pointer-events: none;
     padding: 24px;
 }
+
 
 .tap-icon {
     font-size: 40px;
@@ -1929,13 +1919,14 @@ hr {
 .welcome-characters{
     margin-top: 18px;
     display: flex;
-    justify-content: center;
+    justify-content: space-between;
     align-items: flex-end;
     gap: 18px;
     width: 100%;
     max-width: 420px;
     margin-left: auto;
     margin-right: auto;
+
     transform: translateY(-5px);
 }
 
@@ -1952,7 +1943,7 @@ hr {
 
 /* Макс */
 .welcome-characters .welcome-character:first-child{
-    transform: none;
+    transform: translateX(-70px); /* двигаем только персонажа */
 }
 
 .welcome-characters .welcome-character:first-child .character-img{
@@ -1963,7 +1954,8 @@ hr {
 
 /* Ася */
 .welcome-characters .welcome-character:last-child{
-    transform: none;
+    transform: translateX(70px);
+
 }
 
 .welcome-characters .welcome-character:last-child .character-img{
@@ -1978,34 +1970,34 @@ hr {
 .speech{
     position: absolute;
     bottom: 100%;
+    width: 140px;
+    height: 95px;
     display: flex;
     align-items: center;
     justify-content: center;
     background-repeat: no-repeat;
     background-size: contain;
     background-position: center;
+    padding: 16px;
     box-sizing: border-box;
     pointer-events: none;
 }
 
 /* Левое облако */
 .speech-left{
-    left: 50%;
-    width: 160px;
-    height: 108px;
-    transform: translate(-50%, 4px);
+    left: 90%;
+    transform: translate(-60%,2px);
     background-image: url("assets/bubble_left.webp");
-    padding: 16px 20px 28px 18px;
 }
 
 /* Правое облако */
 .speech-right{
-    left: 50%;
-    width: 250px;
-    height: 128px;
-    transform: translate(-50%, 8px);
+    left: 5%;
+    transform: translate(-50%, 30px);
     background-image: url("assets/bubble_right.webp");
-    padding: 16px 26px 36px 34px;
+    width: 290px;
+    height: 145px;
+    padding: 18px 26px 46px 40px;
 }
 
 .speech-text{
@@ -2044,24 +2036,15 @@ hr {
 */
 @media (max-width: 520px){
     .welcome-characters{
-        gap: 4px;
-        max-width: 332px;
+        gap: 12px;
+        max-width: 380px;
         margin-top: 14px;
         transform: translateY(35px);
     }
 
-    .welcome-character{
-        flex: 0 0 150px;
-        width: 150px;
-    }
-
-    /* поджимаем персонажей к центру, не трогая сам текст внутри облаков */
-    .welcome-characters .welcome-character:first-child{
-        transform: translateX(10px);
-    }
-    .welcome-characters .welcome-character:last-child{
-        transform: translateX(-10px);
-    }
+    /* уменьшаем разнос персонажей, чтобы ничего не уезжало за края */
+    .welcome-characters .welcome-character:first-child{ transform: translateX(-40px); }
+    .welcome-characters .welcome-character:last-child{  transform: translateX(40px);  }
 
     /* персонажи чуть компактнее */
     .welcome-characters .welcome-character:first-child .character-img{
@@ -2073,29 +2056,27 @@ hr {
         max-width: 180px;
     }
 
-    /* облака остаются по центру над персонажами */
+    /* облака ближе к "десктопному" виду: компактнее и ближе к головам */
+    .speech{
+        width: 140px;
+        height: 95px;
+        padding: 14px;
+    }
     .speech-left{
-        left: 50%;
-        width: 148px;
-        height: 100px;
-        transform: translate(-50%, 2px);
-        padding: 14px 18px 24px 16px;
+        left: 88%;
+        transform: translate(-60%, -1px);
     }
     .speech-right{
-        left: 50%;
-        width: 230px;
-        height: 118px;
-        transform: translate(-50%, 8px);
-        padding: 14px 22px 32px 30px;
+        left: 10%;
+        transform: translate(-50%, 18px);
+        width: 260px;
+        height: 132px;
+        padding: 16px 22px 42px 36px;
     }
     .speech-right .speech-text{
-        width: 160px;
-        max-width: 160px;
+        width: 165px;
+        max-width: 165px;
         margin: 0 auto 10px;
-        transform: translate(6px, 8px);
-    }
-    .speech-left .speech-text{
-        transform: translate(0px, -8px);
     }
     .speech-text{ font-size: 12px; }
 }
