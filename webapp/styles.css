@@ -20,6 +20,7 @@ body {
     user-select: none; /* Чтобы текст не выделялся при кликах */
     -webkit-tap-highlight-color: transparent;
 }
+
 /* На мобильных WebView (Telegram Android/iOS) вертикальное центрирование body часто
    приводит к тому, что нижние элементы (кнопки на ФИНИШ) оказываются за пределами
    видимой области. На узких/низких экранах прижимаем контент к верху и даём отступы
@@ -2073,15 +2074,15 @@ hr {
 
     .speech-left{
         left: 50%;
-        width: 126px;
-        height: 82px;
+        width: 140px;
+        height: 90px;
         transform: translate(-50%, -4px);
         padding: 11px 15px 19px 13px;
     }
     .speech-right{
         left: 50%;
-        width: 162px;
-        height: 86px;
+        width: 182px;
+        height: 99px;
         transform: translate(-50%, -2px);
         padding: 10px 16px 21px 19px;
     }
