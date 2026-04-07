@@ -1,7 +1,22 @@
-const tg = window.Telegram?.WebApp;
-if (tg?.expand) tg.expand();
-const mx = window.WebApp;
-if (mx?.ready) mx.ready();
+function getTg() { return window.Telegram?.WebApp || null; }
+function getMx() { return window.WebApp || null; }
+
+function initBridgeState() {
+    try {
+        const tg = getTg();
+        if (tg?.expand) tg.expand();
+    } catch (e) {}
+    try {
+        const mx = getMx();
+        if (mx?.ready) mx.ready();
+    } catch (e) {}
+}
+
+initBridgeState();
+window.addEventListener('load', () => {
+    setTimeout(initBridgeState, 0);
+    setTimeout(initBridgeState, 1200);
+});
 // ===== ASSETS: ускоряем загрузку через WebP (с fallback) =====
 function supportsWebP() {
     try {
@@ -198,11 +213,12 @@ const SFX_FILES = {
 };
 
 // Небольшие пулы, чтобы можно было быстро проигрывать один и тот же звук подряд
-const SFX_POOL_SIZE = 4;
+const SFX_POOL_SIZE = 2;
 const sfxPool = new Map();
 let sfxUnlocked = false;
 const SFX_MUTED_KEY = 'apzSfxMutedV1';
 let sfxMuted = false;
+let sfxPoolInitialized = false;
 
 try {
     sfxMuted = localStorage.getItem(SFX_MUTED_KEY) === '1';
@@ -226,12 +242,13 @@ function setSfxMuted(v) {
 }
 
 function initSfxPool() {
-    // Создаём аудио-объекты один раз
+    if (sfxPoolInitialized) return;
+    sfxPoolInitialized = true;
     for (const [key, file] of Object.entries(SFX_FILES)) {
         const arr = [];
         for (let i = 0; i < SFX_POOL_SIZE; i++) {
             const a = new Audio(SFX_BASE + file);
-            a.preload = 'auto';
+            a.preload = 'none';
             a.volume = 0.9;
             arr.push(a);
         }
@@ -240,6 +257,7 @@ function initSfxPool() {
 }
 
 function unlockSfxOnce() {
+    initSfxPool();
     if (sfxUnlocked) return;
     sfxUnlocked = true;
     // Попытка "разлочить" звук на iOS/Android WebView
@@ -259,6 +277,7 @@ function unlockSfxOnce() {
 
 function playSfx(key) {
     if (sfxMuted) return;
+    if (!sfxPoolInitialized) initSfxPool();
     const pack = sfxPool.get(key);
     if (!pack) return;
     const a = pack.arr[pack.idx];
@@ -270,8 +289,6 @@ function playSfx(key) {
         if (p && p.catch) p.catch(() => {});
     } catch (e) {}
 }
-
-initSfxPool();
 
 
 // ==========================================
@@ -936,20 +953,20 @@ function parseBridgeInitData(raw) {
 
 function getApiBaseFromBridge() {
     const candidates = [
-        tg?.initDataUnsafe?.start_param,
-        tg?.initDataUnsafe?.startapp,
-        tg?.initDataUnsafe?.startApp,
-        tg?.initDataUnsafe?.api,
-        mx?.initDataUnsafe?.start_param,
-        mx?.initDataUnsafe?.startapp,
-        mx?.initDataUnsafe?.startApp,
-        mx?.initDataUnsafe?.api,
-        mx?.startParam,
-        mx?.start_param,
-        mx?.startapp,
-        mx?.api,
-        ...parseBridgeInitData(mx?.initData),
-        ...parseBridgeInitData(tg?.initData),
+        getTg()?.initDataUnsafe?.start_param,
+        getTg()?.initDataUnsafe?.startapp,
+        getTg()?.initDataUnsafe?.startApp,
+        getTg()?.initDataUnsafe?.api,
+        getMx()?.initDataUnsafe?.start_param,
+        getMx()?.initDataUnsafe?.startapp,
+        getMx()?.initDataUnsafe?.startApp,
+        getMx()?.initDataUnsafe?.api,
+        getMx()?.startParam,
+        getMx()?.start_param,
+        getMx()?.startapp,
+        getMx()?.api,
+        ...parseBridgeInitData(getMx()?.initData),
+        ...parseBridgeInitData(getTg()?.initData),
     ];
 
     for (const item of candidates) {
@@ -989,12 +1006,12 @@ async function syncAptitudeWithServer() {
     try {
         // API_BASE может быть пустым, если WebApp и API находятся на одном домене.
         // В этом случае apiUrl('/api/me') вернёт относительный путь и fetch() должен работать.
-        if (!tg?.initData) return;
+        if (!getTg()?.initData) return;
 
         const res = await fetch(apiUrl('/api/me'), {
             method: 'GET',
             cache: 'no-store',
-            headers: { 'X-Telegram-InitData': tg.initData }
+            headers: { 'X-Telegram-InitData': getTg().initData }
         });
         if (!res.ok) return;
 
@@ -1105,7 +1122,7 @@ function syncResetAndRefreshUIThrottled() {
 
 async function loadLevelAvailability() {
     try {
-        const uid = tg?.initDataUnsafe?.user?.id;
+        const uid = getTg()?.initDataUnsafe?.user?.id;
         const levelsPath = uid ? `/api/levels?uid=${encodeURIComponent(String(uid))}` : '/api/levels';
         const res = await fetch(apiUrl(levelsPath), { cache: 'no-store' });
         const data = await res.json();
@@ -1258,8 +1275,8 @@ function renderLevelMenuStats() {
 
 function notify(msg) {
     try {
-        if (tg?.showPopup) {
-            tg.showPopup({ message: msg, buttons: [{ type: 'ok', text: 'OK' }] });
+        if (getTg()?.showPopup) {
+            getTg().showPopup({ message: msg, buttons: [{ type: 'ok', text: 'OK' }] });
         } else if (typeof alert === 'function') {
             alert(msg);
         }
@@ -1395,14 +1412,14 @@ if (statLine && statMain && savedApt && savedApt.main) {
 }
 
 async function saveStatsForMax(payload) {
-    if (!mx?.initData) return false;
+    if (!getMx()?.initData) return false;
 
     const res = await fetch(apiUrl('/api/max/save_stats'), {
         method: 'POST',
         cache: 'no-store',
         headers: {
             'Content-Type': 'application/json',
-            'X-Max-InitData': mx.initData
+            'X-Max-InitData': getMx().initData
         },
         body: JSON.stringify(payload)
     });
@@ -1420,17 +1437,17 @@ async function sendStatsAndClose() {
     const payload = buildStatsPayload();
 
     // В Telegram WebApp: отправляем данные и закрываем WebApp
-    if (tg?.sendData) {
+    if (getTg()?.sendData) {
         try {
-            tg.sendData(JSON.stringify(payload));
+            getTg().sendData(JSON.stringify(payload));
             // Закрываем, чтобы пользователь вернулся в Telegram и увидел сообщение бота
-            tg.close();
+            getTg().close();
             return;
         } catch (e) {}
     }
 
     // В MAX Mini App: сначала сохраняем статистику на сервере, потом закрываем mini app.
-    if (mx?.initData) {
+    if (getMx()?.initData) {
         try {
             await saveStatsForMax(payload);
         } catch (e) {
@@ -1438,9 +1455,9 @@ async function sendStatsAndClose() {
             return;
         }
 
-        if (mx?.close) {
+        if (getMx()?.close) {
             try {
-                mx.close();
+                getMx().close();
                 return;
             } catch (e) {}
         }
@@ -1448,9 +1465,9 @@ async function sendStatsAndClose() {
 
     // В MAX Mini App (MAX Bridge): просто закрываем мини‑приложение.
     // ВАЖНО: close() работает только внутри MAX. Если страница открыта во внешнем браузере — этого метода нет.
-    if (mx?.close) {
+    if (getMx()?.close) {
         try {
-            mx.close();
+            getMx().close();
             return;
         } catch (e) {}
     }
@@ -1493,9 +1510,9 @@ function confirmSendStatsAndClose() {
         'После перехода веб‑приложение будет закрыто.';
 
     // Telegram WebApp: показываем системный popup с 2 кнопками.
-    if (tg?.showPopup) {
+    if (getTg()?.showPopup) {
         try {
-            tg.showPopup(
+            getTg().showPopup(
                 {
                     message: msg,
                     buttons: [
@@ -3204,8 +3221,8 @@ function finishQuizLevel() {
 function closeApp() {
     // Отправляем общую сумму
     let totalScore = levelScores[1] + levelScores[2] + levelScores[3] + levelScores[4];
-    if (tg?.sendData) tg.sendData(JSON.stringify({score: totalScore}));
-    if (tg?.close) tg.close();
+    if (getTg()?.sendData) getTg().sendData(JSON.stringify({score: totalScore}));
+    if (getTg()?.close) getTg().close();
 }
 
 // Инициализация меню уровней
@@ -3233,12 +3250,12 @@ let levelLaunchArmed = false;
 window.addEventListener('DOMContentLoaded', () => {
     // Прелоадер изображений при входе в приложение (assets/*) с прогрессом.
     // Никакую игровую логику не меняем — просто прогреваем кэш браузера.
-    startEssentialImagePreloader();
+    requestAnimationFrame(() => { startEssentialImagePreloader(); });
 
-    // Синхронизируем профтест с сервером (на случай удаления/сброса пользователя в админке)
-    // Важно: Telegram может не перезагружать страницу при повторном открытии мини‑веба,
-    // поэтому синк должен выполняться не только один раз на загрузке.
-    syncResetAndRefreshUIThrottled();
+    // Синхронизацию откладываем на короткое время, чтобы не тормозить первый рендер mini app.
+    setTimeout(() => {
+        syncResetAndRefreshUIThrottled();
+    }, 900);
 
     // Повторный синх при возврате в WebView (после закрытия/сворачивания/повторного открытия)
     // — именно тут чаще всего «оживают» очки/рекомендации из localStorage.
@@ -3254,7 +3271,7 @@ window.addEventListener('DOMContentLoaded', () => {
         if (!window.__apzResetSyncTimer) {
             window.__apzResetSyncTimer = setInterval(() => {
                 syncResetAndRefreshUIThrottled();
-            }, 5000);
+            }, 15000);
         }
     } catch (e) {}
 
@@ -3277,11 +3294,12 @@ window.addEventListener('DOMContentLoaded', () => {
     // Глушим клики сразу после загрузки WebView
     lockClicks(900);
 
-    // Подтягиваем доступность уровней (админ мог отключить некоторые)
-    // и применяем к меню.
-    loadLevelAvailability().then(() => {
-        applyLevelAvailabilityToMenu();
-    });
+    // Подтягиваем доступность уровней с небольшой задержкой, чтобы не блокировать стартовый экран.
+    setTimeout(() => {
+        loadLevelAvailability().then(() => {
+            applyLevelAvailabilityToMenu();
+        });
+    }, 700);
     // На некоторых WebView (особенно Android) первый рендер может привести к тому,
     // что глобальные кнопки остаются видимыми. Принудительно синхронизируем UI:
     // на приветственном экране кнопка "К уровням" показываться не должна.
