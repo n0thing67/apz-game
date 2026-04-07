@@ -18,35 +18,25 @@ function assetPath(name, fallbackExt) {
 }
 
 // ==========================================
-// PRELOADER: при входе загружаем ТОЛЬКО изображения (assets/*)
-// Требование: показать прогресс (ползунок + %)...
+// PRELOADER: на старте грузим только приветственный экран,
+// а ассеты уровней — непосредственно перед запуском уровня.
 // ==========================================
 
-// Список ВСЕХ изображений в webapp/assets (добавлять сюда при появлении новых).
-const APP_IMAGE_MANIFEST = [
-    'after_2048',
-    'after_jumper',
-    'after_puzzle',
-    'after_quiz',
-    'board',
-    'bolt',
-    'case',
-    'chip',
-    'device',
-    'gate',
-    'gear',
-    'hero',
-    'jetpack',
-    'logo',
-    'logo_3x3',
-    'logo_4x4',
-    'nut',
-    'part',
-    'platform',
-    'propeller',
-    'sensor',
-    'spring'
+const ESSENTIAL_WELCOME_IMAGE_MANIFEST = [
+    'max',
+    'asya',
+    'bubble_left',
+    'bubble_right'
 ];
+
+const LEVEL_IMAGE_MANIFESTS = {
+    'puzzle-2x2': ['logo', 'after_puzzle'],
+    'puzzle-3x3': ['logo_3x3', 'after_puzzle'],
+    'puzzle-4x4': ['logo_4x4', 'after_puzzle'],
+    'jumper': ['hero', 'platform', 'spring', 'propeller', 'jetpack', 'part', 'after_jumper'],
+    'factory-2048': ['bolt', 'nut', 'gear', 'chip', 'board', 'case', 'sensor', 'device', 'after_2048'],
+    'quiz': ['after_quiz']
+};
 
 function preloadOneImage(url, timeoutMs = 8000) {
     // В редких случаях WebView может «повиснуть» на загрузке ресурса
@@ -83,63 +73,93 @@ function preloadOneImage(url, timeoutMs = 8000) {
     });
 }
 
-let appImagesPreloaded = false;
-let appImagesPreloadPromise = null;
+let essentialWelcomeImagesPreloaded = false;
+let essentialWelcomePreloadPromise = null;
+const levelPreloadPromises = new Map();
+const levelPreloadDone = new Set();
 
-function startAppImagePreloader() {
-    if (appImagesPreloaded) return Promise.resolve();
-    if (appImagesPreloadPromise) return appImagesPreloadPromise;
-
+function updatePreloadOverlayState({ title = '🏭 Загружаем изображения…', loaded = 0, total = 1, currentFile = '—', visible = true } = {}) {
     const overlay = document.getElementById('preload-overlay');
+    const titleEl = overlay?.querySelector?.('.preload-title');
     const bar = document.getElementById('preload-bar');
     const percentEl = document.getElementById('preload-percent');
     const currentEl = document.getElementById('preload-current');
     const barWrap = overlay?.querySelector?.('.preload-bar-wrap');
+    if (!overlay) return;
 
-    if (overlay) overlay.classList.remove('hidden');
+    const safeTotal = Math.max(1, total || 1);
+    const pct = Math.max(0, Math.min(100, Math.round((loaded / safeTotal) * 100)));
 
-    const total = APP_IMAGE_MANIFEST.length;
-    const setProgress = (loaded, currentFile) => {
-        const pct = total ? Math.round((loaded / total) * 100) : 100;
-        if (bar) bar.style.width = `${pct}%`;
-        if (percentEl) percentEl.textContent = `${pct}%`;
-        if (currentEl) currentEl.textContent = `Сейчас загружается: ${currentFile || '—'}`;
-        if (barWrap) barWrap.setAttribute('aria-valuenow', String(pct));
-    };
+    if (titleEl) titleEl.textContent = title;
+    if (bar) bar.style.width = `${pct}%`;
+    if (percentEl) percentEl.textContent = `${pct}%`;
+    if (currentEl) currentEl.textContent = `Сейчас загружается: ${currentFile || '—'}`;
+    if (barWrap) barWrap.setAttribute('aria-valuenow', String(pct));
+    overlay.setAttribute('aria-busy', visible ? 'true' : 'false');
+    overlay.classList.toggle('hidden', !visible);
+}
 
-    appImagesPreloadPromise = (async () => {
+async function preloadImageManifest(manifest, title) {
+    const list = Array.from(new Set((manifest || []).filter(Boolean)));
+    if (!list.length) return;
+
+    updatePreloadOverlayState({ title, loaded: 0, total: list.length, currentFile: '—', visible: true });
+
+    const hardStop = setTimeout(() => {
+        updatePreloadOverlayState({ title, loaded: list.length, total: list.length, currentFile: 'Готово', visible: false });
+    }, 25000);
+
+    try {
         let loaded = 0;
-        setProgress(0, '—');
-
-        // Общая страховка (если WebView/сеть глючит):
-        // максимум 25 секунд на весь прогрев.
-        const hardStop = setTimeout(() => {
-            appImagesPreloaded = true;
-            if (overlay) {
-                overlay.classList.add('hidden');
-                overlay.setAttribute('aria-busy', 'false');
-            }
-        }, 25000);
-
-        // Важно: грузим последовательно — так текст “какой файл сейчас” будет точным.
-        for (const name of APP_IMAGE_MANIFEST) {
-            const url = assetPath(name, 'png');
+        for (const name of list) {
+            const fallbackExt = /^logo/.test(name) ? 'jpg' : 'png';
+            const url = assetPath(name, fallbackExt);
             const file = url.split('/').pop();
-            setProgress(loaded, file);
+            updatePreloadOverlayState({ title, loaded, total: list.length, currentFile: file, visible: true });
             await preloadOneImage(url);
             loaded++;
-            setProgress(loaded, file);
+            updatePreloadOverlayState({ title, loaded, total: list.length, currentFile: file, visible: true });
         }
-
-        appImagesPreloaded = true;
+    } finally {
         clearTimeout(hardStop);
-        if (overlay) {
-            overlay.classList.add('hidden');
-            overlay.setAttribute('aria-busy', 'false');
-        }
-    })();
+        updatePreloadOverlayState({ title, loaded: list.length, total: list.length, currentFile: 'Готово', visible: false });
+    }
+}
 
-    return appImagesPreloadPromise;
+function startEssentialImagePreloader() {
+    if (essentialWelcomeImagesPreloaded) return Promise.resolve();
+    if (essentialWelcomePreloadPromise) return essentialWelcomePreloadPromise;
+
+    essentialWelcomePreloadPromise = preloadImageManifest(ESSENTIAL_WELCOME_IMAGE_MANIFEST, '🏭 Загружаем стартовый экран…')
+        .finally(() => {
+            essentialWelcomeImagesPreloaded = true;
+        });
+
+    return essentialWelcomePreloadPromise;
+}
+
+function preloadLevelAssets(levelId) {
+    if (levelPreloadDone.has(levelId)) return Promise.resolve();
+    if (levelPreloadPromises.has(levelId)) return levelPreloadPromises.get(levelId);
+
+    const titleMap = {
+        'puzzle-2x2': '🧩 Загружаем уровень…',
+        'puzzle-3x3': '🧩 Загружаем уровень…',
+        'puzzle-4x4': '🧩 Загружаем уровень…',
+        'jumper': '🏃 Загружаем уровень…',
+        'factory-2048': '⚙️ Загружаем уровень…',
+        'quiz': '🎓 Загружаем уровень…'
+    };
+
+    const manifest = LEVEL_IMAGE_MANIFESTS[levelId] || [];
+    const promise = preloadImageManifest(manifest, titleMap[levelId] || '🏭 Загружаем уровень…')
+        .finally(() => {
+            levelPreloadDone.add(levelId);
+            levelPreloadPromises.delete(levelId);
+        });
+
+    levelPreloadPromises.set(levelId, promise);
+    return promise;
 }
 
 // ==========================================
@@ -1879,7 +1899,7 @@ let levelStartTime = 0; // Для засекания времени
 let levelCompleted = false; // Для переключения кнопок "К уровням" (верх/низ)
 let afterLevelShown = false; // Появление нижней кнопки только на экране после уровня
 
-function startLevel(levelId) {
+async function startLevel(levelId) {
     hideAfterLevel();
 
     // защита от старых вызовов
@@ -1892,6 +1912,11 @@ function startLevel(levelId) {
         return;
     }
 
+    const def = LEVEL_DEFS[levelId];
+    if (!def) return showLevels();
+
+    await preloadLevelAssets(levelId);
+
     currentLevelId = levelId;
     levelStartTime = Date.now();
     levelCompleted = false;
@@ -1900,9 +1925,6 @@ function startLevel(levelId) {
     stats[levelId] = stats[levelId] || { plays: 0, completions: 0 };
     stats[levelId].plays = (stats[levelId].plays || 0) + 1;
     saveStats(stats);
-
-    const def = LEVEL_DEFS[levelId];
-    if (!def) return showLevels();
 
     if (def.type === 'puzzle') {
         showScreen('screen-level1');
@@ -1978,39 +2000,35 @@ function initPuzzle(size = 3) {
         h2.textContent = `🧩 Уровень: Логотип (${label})`;
     }
 
-    // Во время входа в уровень НЕ показываем “Загружаю…”.
-    // Картинки уже предзагружены глобальным прелоадером при входе.
     const status = document.getElementById('puzzle-status');
     if (status) { status.textContent = ''; }
 
-    preloadPuzzleAssets().then(() => {
-        const total = puzzleSize * puzzleSize;
-        puzzleState = Array.from({ length: total }, (_, i) => i + 1);
-        puzzleSolved = false;
-        selectedPieceNum = null;
+    const total = puzzleSize * puzzleSize;
+    puzzleState = Array.from({ length: total }, (_, i) => i + 1);
+    puzzleSolved = false;
+    selectedPieceNum = null;
 
-        // Перемешиваем так, чтобы пазл НЕ стартовал уже собранным
-        // (в 2×2 шанс «сразу собран» заметный, поэтому добавляем проверку).
-        const isSolved = (arr) => arr.every((val, idx) => val === idx + 1);
-        const fisherYates = (arr) => {
-            for (let i = arr.length - 1; i > 0; i--) {
-                const j = (Math.random() * (i + 1)) | 0;
-                [arr[i], arr[j]] = [arr[j], arr[i]];
-            }
-        };
-        // На всякий случай ограничим попытки, но обычно хватает 1–2.
-        let tries = 0;
-        do {
-            fisherYates(puzzleState);
-            tries++;
-        } while (isSolved(puzzleState) && tries < 20);
+    // Перемешиваем так, чтобы пазл НЕ стартовал уже собранным
+    // (в 2×2 шанс «сразу собран» заметный, поэтому добавляем проверку).
+    const isSolved = (arr) => arr.every((val, idx) => val === idx + 1);
+    const fisherYates = (arr) => {
+        for (let i = arr.length - 1; i > 0; i--) {
+            const j = (Math.random() * (i + 1)) | 0;
+            [arr[i], arr[j]] = [arr[j], arr[i]];
+        }
+    };
+    // На всякий случай ограничим попытки, но обычно хватает 1–2.
+    let tries = 0;
+    do {
+        fisherYates(puzzleState);
+        tries++;
+    } while (isSolved(puzzleState) && tries < 20);
 
-        createPuzzleElements();
-        updatePuzzlePositions();
+    createPuzzleElements();
+    updatePuzzlePositions();
 
-        if (status) { status.textContent = ''; }
-        // Кнопки "Далее" убраны — после прохождения остаётся только возврат в меню уровней.
-    });
+    if (status) { status.textContent = ''; }
+    // Кнопки "Далее" убраны — после прохождения остаётся только возврат в меню уровней.
 }
 function createPuzzleElements() {
     const board = document.getElementById('puzzle-board');
@@ -2175,16 +2193,6 @@ function preloadLevel2Assets() {
     return level2AssetsPromise;
 }
 
-let puzzleAssetsReady = false;
-function preloadPuzzleAssets() {
-    // Для любого размера пазла используем одну картинку board.webp
-    if (puzzleAssetsReady) return puzzleAssetsReady;
-    const img = new Image();
-    img.src = assetPath('logo', 'jpg');
-    puzzleAssetsReady = decodeImage(img).catch(() => {});
-    return puzzleAssetsReady;
-}
-
 
 const TOTAL_ITEMS = 10;
 const GRAVITY = 0.25;
@@ -2271,25 +2279,13 @@ function initJumper() {
     document.getElementById('victory-overlay').classList.remove('visible');
     document.getElementById('doodle-start-msg').style.display = 'flex';
 
-    // На мобильных декодирование/декодирование ассетов может лагать на первом кадре.
-    // Поэтому декодируем картинки ДО старта и только потом разрешаем начать.
     const startMsg = document.getElementById('doodle-start-msg');
     const pTag = startMsg ? startMsg.querySelector('p') : null;
     if (startMsg) {
-        startMsg.style.pointerEvents = 'none';
-        startMsg.dataset.ready = '0';
+        startMsg.style.pointerEvents = 'auto';
+        startMsg.dataset.ready = '1';
     }
-    // Во время входа в уровень НЕ показываем “Загружаю…”.
-    // Ассеты уже прогружены на старте приложения; здесь только "страховка".
     if (pTag) pTag.textContent = 'Нажми, чтобы начать!';
-    preloadLevel2Assets().finally(() => {
-        if (startMsg) {
-            startMsg.style.pointerEvents = 'auto';
-            startMsg.dataset.ready = '1';
-        }
-        if (pTag) pTag.textContent = 'Нажми, чтобы начать!';
-    });
-
 
     // Подсказка управления: стрелки пульсируют на стартовом экране
     setDoodleControlsState('hint');
@@ -2751,9 +2747,6 @@ function preload2048Assets() {
         if (img.decode) img.decode().catch(() => {});
     });
 }
-
-// Запускаем предзагрузку сразу (скрипт подключен внизу страницы, DOM уже есть)
-preload2048Assets();
 
 const SIZE = 4;
 // Предвычисляем позиции для ускорения (чтобы не считать в цикле)
@@ -3232,7 +3225,7 @@ let levelLaunchArmed = false;
 window.addEventListener('DOMContentLoaded', () => {
     // Прелоадер изображений при входе в приложение (assets/*) с прогрессом.
     // Никакую игровую логику не меняем — просто прогреваем кэш браузера.
-    startAppImagePreloader();
+    startEssentialImagePreloader();
 
     // Синхронизируем профтест с сервером (на случай удаления/сброса пользователя в админке)
     // Важно: Telegram может не перезагружать страницу при повторном открытии мини‑веба,
