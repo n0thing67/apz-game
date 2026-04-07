@@ -33,7 +33,7 @@ const LEVEL_IMAGE_MANIFESTS = {
     'puzzle-2x2': ['logo', 'after_puzzle'],
     'puzzle-3x3': ['logo_3x3', 'after_puzzle'],
     'puzzle-4x4': ['logo_4x4', 'after_puzzle'],
-    'jumper': ['hero', 'platform', 'spring', 'propeller', 'jetpack', 'part', 'after_jumper'],
+    'jumper': ['hero', 'platform', 'spring', 'propeller', 'jetpack', 'part'],
     'factory-2048': ['bolt', 'nut', 'gear', 'chip', 'board', 'case', 'sensor', 'device', 'after_2048'],
     'quiz': ['after_quiz']
 };
@@ -1930,6 +1930,7 @@ async function startLevel(levelId) {
         showScreen('screen-level1');
         initPuzzle(def.puzzleSize);
     } else if (def.type === 'jumper') {
+        preloadAfterJumperInBackground();
         showScreen('screen-level2');
         initJumper();
     } else if (def.type === '2048') {
@@ -2191,6 +2192,13 @@ function preloadLevel2Assets() {
         decodeImage(imgPart),
     ]).then(() => { level2AssetsLoaded = true; });
     return level2AssetsPromise;
+}
+
+let afterJumperPreloaded = false;
+function preloadAfterJumperInBackground() {
+    if (afterJumperPreloaded) return;
+    afterJumperPreloaded = true;
+    preloadOneImage(assetPath('after_jumper', 'png')).catch(() => {});
 }
 
 
