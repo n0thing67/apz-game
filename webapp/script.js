@@ -2308,7 +2308,32 @@ function initJumper() {
     const pTag = startMsg ? startMsg.querySelector('p') : null;
     if (startMsg) {
         startMsg.style.pointerEvents = 'auto';
+        startMsg.style.touchAction = 'manipulation';
         startMsg.dataset.ready = '1';
+
+        if (!startMsg.dataset.boundStartHandlers) {
+            let lastManualStartTs = 0;
+            const manualStart = (e) => {
+                // На некоторых Android WebView (в т.ч. MAX) обычный click по div-оверлею
+                // может не приходить стабильно, поэтому дублируем запуск через pointer/touch.
+                // При этом защищаемся от двойного старта после touchend -> click.
+                if (e) {
+                    e.preventDefault?.();
+                    e.stopPropagation?.();
+                }
+                if (!startMsg.offsetParent || startMsg.style.display === 'none') return;
+                const now = Date.now();
+                if (now - lastManualStartTs < 450) return;
+                lastManualStartTs = now;
+                unlockSfxOnce();
+                startDoodleLoop();
+            };
+
+            startMsg.addEventListener('click', manualStart, true);
+            startMsg.addEventListener('pointerup', manualStart, true);
+            startMsg.addEventListener('touchend', manualStart, { passive: false, capture: true });
+            startMsg.dataset.boundStartHandlers = '1';
+        }
     }
     if (pTag) pTag.textContent = 'Нажми, чтобы начать!';
 
