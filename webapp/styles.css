@@ -2044,7 +2044,7 @@ hr {
 */
 @media (max-width: 520px){
     .welcome-characters{
-        gap: 16px;
+        gap: 10px;
         max-width: 292px;
         margin-top: 12px;
         transform: translateY(12px);
@@ -2062,9 +2062,9 @@ hr {
     }
 
     .welcome-characters .welcome-character:first-child .character-img{
-        height: 200px;
+        height: 210px;
         max-width: 220px;
-        transform: translate(-8px, 52px);
+        transform: translate(-8px, 55px);
     }
     .welcome-characters .welcome-character:last-child .character-img{
         height: 160px;
