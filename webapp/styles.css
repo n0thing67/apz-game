@@ -2064,12 +2064,12 @@ hr {
     .welcome-characters .welcome-character:first-child .character-img{
         height: 150px;
         max-width: 200px;
-        transform: translate(-8px, 0px);
+        transform: translate(-8px, 10px);
     }
     .welcome-characters .welcome-character:last-child .character-img{
         height: 150px;
         max-width: 200px;
-        transform: translate(8px, 0px);
+        transform: translate(8px, 10px);
     }
 
     .speech-left{
