@@ -2310,7 +2310,18 @@ function initJumper() {
     if (startMsg) {
         startMsg.style.pointerEvents = 'auto';
         startMsg.style.touchAction = 'manipulation';
-        startMsg.dataset.ready = '1';
+        startMsg.dataset.ready = level2AssetsLoaded ? '1' : '0';
+
+        preloadLevel2Assets()
+            .then(() => {
+                if (startMsg) startMsg.dataset.ready = '1';
+            })
+            .catch(() => {
+                // Не блокируем запуск даже если какая-то картинка не загрузилась:
+                // у игры есть безопасные fallback-отрисовки.
+                if (startMsg) startMsg.dataset.ready = '1';
+                level2AssetsLoaded = true;
+            });
 
         if (!startMsg.dataset.boundStartHandlers) {
             let lastManualStartTs = 0;
@@ -2492,11 +2503,22 @@ function setupControls(canvas) {
 }
 
 function startDoodleLoop() {
-    if (!level2AssetsLoaded) return; // ждём декодирования ассетов
-
-    // Если ассеты ещё декодируются — не стартуем (иначе будет фриз)
+    // Если ассеты ещё декодируются — не стартуем, но обязательно дожидаемся их подготовки.
     const startMsg = document.getElementById('doodle-start-msg');
-    if (startMsg && startMsg.dataset && startMsg.dataset.ready === '0') return;
+    if (!level2AssetsLoaded || (startMsg && startMsg.dataset && startMsg.dataset.ready === '0')) {
+        preloadLevel2Assets()
+            .then(() => {
+                if (startMsg) startMsg.dataset.ready = '1';
+                startDoodleLoop();
+            })
+            .catch(() => {
+                // Даже при ошибке загрузки отдельных картинок запускаем уровень с fallback-графикой.
+                level2AssetsLoaded = true;
+                if (startMsg) startMsg.dataset.ready = '1';
+                startDoodleLoop();
+            });
+        return;
+    }
 
     document.getElementById('doodle-container').classList.add('game-running');
     document.getElementById('doodle-start-msg').style.display = 'none';
