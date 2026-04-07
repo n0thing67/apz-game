@@ -1952,12 +1952,12 @@ hr {
 
 /* Макс */
 .welcome-characters .welcome-character:first-child{
-    transform: none;
+    transform: translate(-18px, 0px);
 }
 
 .welcome-characters .welcome-character:first-child .character-img{
-    height: 135px;
-    max-width: 210px;
+    height: 150px;
+    max-width: 220px;
     object-fit: contain;
 }
 
@@ -1967,8 +1967,8 @@ hr {
 }
 
 .welcome-characters .welcome-character:last-child .character-img{
-    height: 135px;
-    max-width: 190px;
+    height: 150px;
+    max-width: 220px;
     object-fit: contain;
 }
 
@@ -1993,7 +1993,7 @@ hr {
     left: 50%;
     width: 160px;
     height: 108px;
-    transform: translate(-50%, 4px);
+    transform: translate(-30%, 4px);
     background-image: url("assets/bubble_left.webp");
     padding: 16px 20px 28px 18px;
 }
@@ -2001,9 +2001,9 @@ hr {
 /* Правое облако */
 .speech-right{
     left: 50%;
-    width: 250px;
-    height: 128px;
-    transform: translate(-50%, 8px);
+    width: 300px;
+    height: 150px;
+    transform: translate(-70%, 8px);
     background-image: url("assets/bubble_right.webp");
     padding: 16px 26px 36px 34px;
 }
