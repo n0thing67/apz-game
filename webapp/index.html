@@ -18,27 +18,13 @@
       #preload-overlay .preload-percent{font-weight:800;font-size:18px}
       #preload-overlay .preload-current{font-size:13px;opacity:.85;word-break:break-word}
     </style>
+    <link rel="dns-prefetch" href="//telegram.org">
     <link rel="dns-prefetch" href="//st.max.ru">
+    <link rel="preconnect" href="https://telegram.org" crossorigin>
     <link rel="preconnect" href="https://st.max.ru" crossorigin>
-    <script>
-      (function () {
-        function loadScript(src, delay) {
-          var start = function () {
-            var s = document.createElement('script');
-            s.src = src;
-            s.async = true;
-            document.head.appendChild(s);
-          };
-          if (delay > 0) setTimeout(start, delay); else start();
-        }
-        var ua = navigator.userAgent || '';
-        var ref = document.referrer || '';
-        var isMaxLike = /max|mail\.ru|vk/i.test(ua + ' ' + ref);
-        // MAX bridge стараемся подтянуть первым, Telegram — чуть позже, чтобы не утяжелять старт.
-        loadScript('https://st.max.ru/js/max-web-app.js', 0);
-        loadScript('https://telegram.org/js/telegram-web-app.js', isMaxLike ? 1400 : 0);
-      })();
-    </script>
+    <!-- Подключаем bridge-скрипты неблокирующе, чтобы HTML и прелоадер отрисовывались раньше -->
+    <script defer src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script defer src="https://st.max.ru/js/max-web-app.js"></script>
 </head>
 <body>
 
