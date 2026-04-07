@@ -1889,14 +1889,13 @@ hr {
 .welcome-characters{
     margin-top: 18px;
     display: flex;
-    justify-content: space-between;
+    justify-content: center;
     align-items: flex-end;
     gap: 18px;
     width: 100%;
     max-width: 420px;
     margin-left: auto;
     margin-right: auto;
-
     transform: translateY(-5px);
 }
 
@@ -1913,7 +1912,7 @@ hr {
 
 /* Макс */
 .welcome-characters .welcome-character:first-child{
-    transform: translateX(-70px); /* двигаем только персонажа */
+    transform: none;
 }
 
 .welcome-characters .welcome-character:first-child .character-img{
@@ -1924,8 +1923,7 @@ hr {
 
 /* Ася */
 .welcome-characters .welcome-character:last-child{
-    transform: translateX(70px);
-
+    transform: none;
 }
 
 .welcome-characters .welcome-character:last-child .character-img{
@@ -1940,34 +1938,34 @@ hr {
 .speech{
     position: absolute;
     bottom: 100%;
-    width: 140px;
-    height: 95px;
     display: flex;
     align-items: center;
     justify-content: center;
     background-repeat: no-repeat;
     background-size: contain;
     background-position: center;
-    padding: 16px;
     box-sizing: border-box;
     pointer-events: none;
 }
 
 /* Левое облако */
 .speech-left{
-    left: 90%;
-    transform: translate(-60%,2px);
+    left: 50%;
+    width: 160px;
+    height: 108px;
+    transform: translate(-50%, 4px);
     background-image: url("assets/bubble_left.webp");
+    padding: 16px 20px 28px 18px;
 }
 
 /* Правое облако */
 .speech-right{
-    left: 5%;
-    transform: translate(-50%, 30px);
+    left: 50%;
+    width: 250px;
+    height: 128px;
+    transform: translate(-50%, 8px);
     background-image: url("assets/bubble_right.webp");
-    width: 290px;
-    height: 145px;
-    padding: 18px 26px 46px 40px;
+    padding: 16px 26px 36px 34px;
 }
 
 .speech-text{
@@ -2012,9 +2010,10 @@ hr {
         transform: translateY(35px);
     }
 
-    /* уменьшаем разнос персонажей, чтобы ничего не уезжало за края */
-    .welcome-characters .welcome-character:first-child{ transform: translateX(-40px); }
-    .welcome-characters .welcome-character:last-child{  transform: translateX(40px);  }
+    .welcome-characters .welcome-character:first-child,
+    .welcome-characters .welcome-character:last-child{
+        transform: none;
+    }
 
     /* персонажи чуть компактнее */
     .welcome-characters .welcome-character:first-child .character-img{
@@ -2026,26 +2025,24 @@ hr {
         max-width: 180px;
     }
 
-    /* облака ближе к "десктопному" виду: компактнее и ближе к головам */
-    .speech{
-        width: 140px;
-        height: 95px;
-        padding: 14px;
-    }
+    /* облака по центру над персонажами */
     .speech-left{
-        left: 88%;
-        transform: translate(-60%, -1px);
+        left: 50%;
+        width: 148px;
+        height: 100px;
+        transform: translate(-50%, 2px);
+        padding: 14px 18px 24px 16px;
     }
     .speech-right{
-        left: 10%;
-        transform: translate(-50%, 18px);
-        width: 260px;
-        height: 132px;
-        padding: 16px 22px 42px 36px;
+        left: 50%;
+        width: 230px;
+        height: 118px;
+        transform: translate(-50%, 8px);
+        padding: 14px 22px 32px 30px;
     }
     .speech-right .speech-text{
-        width: 165px;
-        max-width: 165px;
+        width: 160px;
+        max-width: 160px;
         margin: 0 auto 10px;
     }
     .speech-text{ font-size: 12px; }
