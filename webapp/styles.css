@@ -2063,7 +2063,7 @@ hr {
 
     .welcome-characters .welcome-character:first-child .character-img{
         height: 200px;
-        max-width: 250px;
+        max-width: 230px;
         transform: translate(-8px, 55px);
     }
     .welcome-characters .welcome-character:last-child .character-img{
