@@ -1,22 +1,7 @@
-function getTg() { return window.Telegram?.WebApp || null; }
-function getMx() { return window.WebApp || null; }
-
-function initBridgeState() {
-    try {
-        const tg = getTg();
-        if (tg?.expand) tg.expand();
-    } catch (e) {}
-    try {
-        const mx = getMx();
-        if (mx?.ready) mx.ready();
-    } catch (e) {}
-}
-
-initBridgeState();
-window.addEventListener('load', () => {
-    setTimeout(initBridgeState, 0);
-    setTimeout(initBridgeState, 1200);
-});
+const tg = window.Telegram?.WebApp;
+if (tg?.expand) tg.expand();
+const mx = window.WebApp;
+if (mx?.ready) mx.ready();
 // ===== ASSETS: ускоряем загрузку через WebP (с fallback) =====
 function supportsWebP() {
     try {
@@ -33,25 +18,35 @@ function assetPath(name, fallbackExt) {
 }
 
 // ==========================================
-// PRELOADER: на старте грузим только приветственный экран,
-// а ассеты уровней — непосредственно перед запуском уровня.
+// PRELOADER: при входе загружаем ТОЛЬКО изображения (assets/*)
+// Требование: показать прогресс (ползунок + %)...
 // ==========================================
 
-const ESSENTIAL_WELCOME_IMAGE_MANIFEST = [
-    'max',
-    'asya',
-    'bubble_left',
-    'bubble_right'
+// Список ВСЕХ изображений в webapp/assets (добавлять сюда при появлении новых).
+const APP_IMAGE_MANIFEST = [
+    'after_2048',
+    'after_jumper',
+    'after_puzzle',
+    'after_quiz',
+    'board',
+    'bolt',
+    'case',
+    'chip',
+    'device',
+    'gate',
+    'gear',
+    'hero',
+    'jetpack',
+    'logo',
+    'logo_3x3',
+    'logo_4x4',
+    'nut',
+    'part',
+    'platform',
+    'propeller',
+    'sensor',
+    'spring'
 ];
-
-const LEVEL_IMAGE_MANIFESTS = {
-    'puzzle-2x2': ['logo', 'after_puzzle'],
-    'puzzle-3x3': ['logo_3x3', 'after_puzzle'],
-    'puzzle-4x4': ['logo_4x4', 'after_puzzle'],
-    'jumper': ['hero', 'platform', 'spring', 'propeller', 'jetpack', 'part'],
-    'factory-2048': ['bolt', 'nut', 'gear', 'chip', 'board', 'case', 'sensor', 'device', 'after_2048'],
-    'quiz': ['after_quiz']
-};
 
 function preloadOneImage(url, timeoutMs = 8000) {
     // В редких случаях WebView может «повиснуть» на загрузке ресурса
@@ -88,93 +83,63 @@ function preloadOneImage(url, timeoutMs = 8000) {
     });
 }
 
-let essentialWelcomeImagesPreloaded = false;
-let essentialWelcomePreloadPromise = null;
-const levelPreloadPromises = new Map();
-const levelPreloadDone = new Set();
+let appImagesPreloaded = false;
+let appImagesPreloadPromise = null;
 
-function updatePreloadOverlayState({ title = '🏭 Загружаем изображения…', loaded = 0, total = 1, currentFile = '—', visible = true } = {}) {
+function startAppImagePreloader() {
+    if (appImagesPreloaded) return Promise.resolve();
+    if (appImagesPreloadPromise) return appImagesPreloadPromise;
+
     const overlay = document.getElementById('preload-overlay');
-    const titleEl = overlay?.querySelector?.('.preload-title');
     const bar = document.getElementById('preload-bar');
     const percentEl = document.getElementById('preload-percent');
     const currentEl = document.getElementById('preload-current');
     const barWrap = overlay?.querySelector?.('.preload-bar-wrap');
-    if (!overlay) return;
 
-    const safeTotal = Math.max(1, total || 1);
-    const pct = Math.max(0, Math.min(100, Math.round((loaded / safeTotal) * 100)));
+    if (overlay) overlay.classList.remove('hidden');
 
-    if (titleEl) titleEl.textContent = title;
-    if (bar) bar.style.width = `${pct}%`;
-    if (percentEl) percentEl.textContent = `${pct}%`;
-    if (currentEl) currentEl.textContent = `Сейчас загружается: ${currentFile || '—'}`;
-    if (barWrap) barWrap.setAttribute('aria-valuenow', String(pct));
-    overlay.setAttribute('aria-busy', visible ? 'true' : 'false');
-    overlay.classList.toggle('hidden', !visible);
-}
-
-async function preloadImageManifest(manifest, title) {
-    const list = Array.from(new Set((manifest || []).filter(Boolean)));
-    if (!list.length) return;
-
-    updatePreloadOverlayState({ title, loaded: 0, total: list.length, currentFile: '—', visible: true });
-
-    const hardStop = setTimeout(() => {
-        updatePreloadOverlayState({ title, loaded: list.length, total: list.length, currentFile: 'Готово', visible: false });
-    }, 25000);
-
-    try {
-        let loaded = 0;
-        for (const name of list) {
-            const fallbackExt = /^logo/.test(name) ? 'jpg' : 'png';
-            const url = assetPath(name, fallbackExt);
-            const file = url.split('/').pop();
-            updatePreloadOverlayState({ title, loaded, total: list.length, currentFile: file, visible: true });
-            await preloadOneImage(url);
-            loaded++;
-            updatePreloadOverlayState({ title, loaded, total: list.length, currentFile: file, visible: true });
-        }
-    } finally {
-        clearTimeout(hardStop);
-        updatePreloadOverlayState({ title, loaded: list.length, total: list.length, currentFile: 'Готово', visible: false });
-    }
-}
-
-function startEssentialImagePreloader() {
-    if (essentialWelcomeImagesPreloaded) return Promise.resolve();
-    if (essentialWelcomePreloadPromise) return essentialWelcomePreloadPromise;
-
-    essentialWelcomePreloadPromise = preloadImageManifest(ESSENTIAL_WELCOME_IMAGE_MANIFEST, '🏭 Загружаем стартовый экран…')
-        .finally(() => {
-            essentialWelcomeImagesPreloaded = true;
-        });
-
-    return essentialWelcomePreloadPromise;
-}
-
-function preloadLevelAssets(levelId) {
-    if (levelPreloadDone.has(levelId)) return Promise.resolve();
-    if (levelPreloadPromises.has(levelId)) return levelPreloadPromises.get(levelId);
-
-    const titleMap = {
-        'puzzle-2x2': '🧩 Загружаем уровень…',
-        'puzzle-3x3': '🧩 Загружаем уровень…',
-        'puzzle-4x4': '🧩 Загружаем уровень…',
-        'jumper': '🏃 Загружаем уровень…',
-        'factory-2048': '⚙️ Загружаем уровень…',
-        'quiz': '🎓 Загружаем уровень…'
+    const total = APP_IMAGE_MANIFEST.length;
+    const setProgress = (loaded, currentFile) => {
+        const pct = total ? Math.round((loaded / total) * 100) : 100;
+        if (bar) bar.style.width = `${pct}%`;
+        if (percentEl) percentEl.textContent = `${pct}%`;
+        if (currentEl) currentEl.textContent = `Сейчас загружается: ${currentFile || '—'}`;
+        if (barWrap) barWrap.setAttribute('aria-valuenow', String(pct));
     };
 
-    const manifest = LEVEL_IMAGE_MANIFESTS[levelId] || [];
-    const promise = preloadImageManifest(manifest, titleMap[levelId] || '🏭 Загружаем уровень…')
-        .finally(() => {
-            levelPreloadDone.add(levelId);
-            levelPreloadPromises.delete(levelId);
-        });
+    appImagesPreloadPromise = (async () => {
+        let loaded = 0;
+        setProgress(0, '—');
 
-    levelPreloadPromises.set(levelId, promise);
-    return promise;
+        // Общая страховка (если WebView/сеть глючит):
+        // максимум 25 секунд на весь прогрев.
+        const hardStop = setTimeout(() => {
+            appImagesPreloaded = true;
+            if (overlay) {
+                overlay.classList.add('hidden');
+                overlay.setAttribute('aria-busy', 'false');
+            }
+        }, 25000);
+
+        // Важно: грузим последовательно — так текст “какой файл сейчас” будет точным.
+        for (const name of APP_IMAGE_MANIFEST) {
+            const url = assetPath(name, 'png');
+            const file = url.split('/').pop();
+            setProgress(loaded, file);
+            await preloadOneImage(url);
+            loaded++;
+            setProgress(loaded, file);
+        }
+
+        appImagesPreloaded = true;
+        clearTimeout(hardStop);
+        if (overlay) {
+            overlay.classList.add('hidden');
+            overlay.setAttribute('aria-busy', 'false');
+        }
+    })();
+
+    return appImagesPreloadPromise;
 }
 
 // ==========================================
@@ -213,12 +178,11 @@ const SFX_FILES = {
 };
 
 // Небольшие пулы, чтобы можно было быстро проигрывать один и тот же звук подряд
-const SFX_POOL_SIZE = 2;
+const SFX_POOL_SIZE = 4;
 const sfxPool = new Map();
 let sfxUnlocked = false;
 const SFX_MUTED_KEY = 'apzSfxMutedV1';
 let sfxMuted = false;
-let sfxPoolInitialized = false;
 
 try {
     sfxMuted = localStorage.getItem(SFX_MUTED_KEY) === '1';
@@ -242,13 +206,12 @@ function setSfxMuted(v) {
 }
 
 function initSfxPool() {
-    if (sfxPoolInitialized) return;
-    sfxPoolInitialized = true;
+    // Создаём аудио-объекты один раз
     for (const [key, file] of Object.entries(SFX_FILES)) {
         const arr = [];
         for (let i = 0; i < SFX_POOL_SIZE; i++) {
             const a = new Audio(SFX_BASE + file);
-            a.preload = 'none';
+            a.preload = 'auto';
             a.volume = 0.9;
             arr.push(a);
         }
@@ -257,7 +220,6 @@ function initSfxPool() {
 }
 
 function unlockSfxOnce() {
-    initSfxPool();
     if (sfxUnlocked) return;
     sfxUnlocked = true;
     // Попытка "разлочить" звук на iOS/Android WebView
@@ -277,7 +239,6 @@ function unlockSfxOnce() {
 
 function playSfx(key) {
     if (sfxMuted) return;
-    if (!sfxPoolInitialized) initSfxPool();
     const pack = sfxPool.get(key);
     if (!pack) return;
     const a = pack.arr[pack.idx];
@@ -289,6 +250,8 @@ function playSfx(key) {
         if (p && p.catch) p.catch(() => {});
     } catch (e) {}
 }
+
+initSfxPool();
 
 
 // ==========================================
@@ -953,20 +916,20 @@ function parseBridgeInitData(raw) {
 
 function getApiBaseFromBridge() {
     const candidates = [
-        getTg()?.initDataUnsafe?.start_param,
-        getTg()?.initDataUnsafe?.startapp,
-        getTg()?.initDataUnsafe?.startApp,
-        getTg()?.initDataUnsafe?.api,
-        getMx()?.initDataUnsafe?.start_param,
-        getMx()?.initDataUnsafe?.startapp,
-        getMx()?.initDataUnsafe?.startApp,
-        getMx()?.initDataUnsafe?.api,
-        getMx()?.startParam,
-        getMx()?.start_param,
-        getMx()?.startapp,
-        getMx()?.api,
-        ...parseBridgeInitData(getMx()?.initData),
-        ...parseBridgeInitData(getTg()?.initData),
+        tg?.initDataUnsafe?.start_param,
+        tg?.initDataUnsafe?.startapp,
+        tg?.initDataUnsafe?.startApp,
+        tg?.initDataUnsafe?.api,
+        mx?.initDataUnsafe?.start_param,
+        mx?.initDataUnsafe?.startapp,
+        mx?.initDataUnsafe?.startApp,
+        mx?.initDataUnsafe?.api,
+        mx?.startParam,
+        mx?.start_param,
+        mx?.startapp,
+        mx?.api,
+        ...parseBridgeInitData(mx?.initData),
+        ...parseBridgeInitData(tg?.initData),
     ];
 
     for (const item of candidates) {
@@ -1006,12 +969,12 @@ async function syncAptitudeWithServer() {
     try {
         // API_BASE может быть пустым, если WebApp и API находятся на одном домене.
         // В этом случае apiUrl('/api/me') вернёт относительный путь и fetch() должен работать.
-        if (!getTg()?.initData) return;
+        if (!tg?.initData) return;
 
         const res = await fetch(apiUrl('/api/me'), {
             method: 'GET',
             cache: 'no-store',
-            headers: { 'X-Telegram-InitData': getTg().initData }
+            headers: { 'X-Telegram-InitData': tg.initData }
         });
         if (!res.ok) return;
 
@@ -1122,7 +1085,7 @@ function syncResetAndRefreshUIThrottled() {
 
 async function loadLevelAvailability() {
     try {
-        const uid = getTg()?.initDataUnsafe?.user?.id;
+        const uid = tg?.initDataUnsafe?.user?.id;
         const levelsPath = uid ? `/api/levels?uid=${encodeURIComponent(String(uid))}` : '/api/levels';
         const res = await fetch(apiUrl(levelsPath), { cache: 'no-store' });
         const data = await res.json();
@@ -1275,8 +1238,8 @@ function renderLevelMenuStats() {
 
 function notify(msg) {
     try {
-        if (getTg()?.showPopup) {
-            getTg().showPopup({ message: msg, buttons: [{ type: 'ok', text: 'OK' }] });
+        if (tg?.showPopup) {
+            tg.showPopup({ message: msg, buttons: [{ type: 'ok', text: 'OK' }] });
         } else if (typeof alert === 'function') {
             alert(msg);
         }
@@ -1412,14 +1375,14 @@ if (statLine && statMain && savedApt && savedApt.main) {
 }
 
 async function saveStatsForMax(payload) {
-    if (!getMx()?.initData) return false;
+    if (!mx?.initData) return false;
 
     const res = await fetch(apiUrl('/api/max/save_stats'), {
         method: 'POST',
         cache: 'no-store',
         headers: {
             'Content-Type': 'application/json',
-            'X-Max-InitData': getMx().initData
+            'X-Max-InitData': mx.initData
         },
         body: JSON.stringify(payload)
     });
@@ -1437,17 +1400,17 @@ async function sendStatsAndClose() {
     const payload = buildStatsPayload();
 
     // В Telegram WebApp: отправляем данные и закрываем WebApp
-    if (getTg()?.sendData) {
+    if (tg?.sendData) {
         try {
-            getTg().sendData(JSON.stringify(payload));
+            tg.sendData(JSON.stringify(payload));
             // Закрываем, чтобы пользователь вернулся в Telegram и увидел сообщение бота
-            getTg().close();
+            tg.close();
             return;
         } catch (e) {}
     }
 
     // В MAX Mini App: сначала сохраняем статистику на сервере, потом закрываем mini app.
-    if (getMx()?.initData) {
+    if (mx?.initData) {
         try {
             await saveStatsForMax(payload);
         } catch (e) {
@@ -1455,9 +1418,9 @@ async function sendStatsAndClose() {
             return;
         }
 
-        if (getMx()?.close) {
+        if (mx?.close) {
             try {
-                getMx().close();
+                mx.close();
                 return;
             } catch (e) {}
         }
@@ -1465,9 +1428,9 @@ async function sendStatsAndClose() {
 
     // В MAX Mini App (MAX Bridge): просто закрываем мини‑приложение.
     // ВАЖНО: close() работает только внутри MAX. Если страница открыта во внешнем браузере — этого метода нет.
-    if (getMx()?.close) {
+    if (mx?.close) {
         try {
-            getMx().close();
+            mx.close();
             return;
         } catch (e) {}
     }
@@ -1510,9 +1473,9 @@ function confirmSendStatsAndClose() {
         'После перехода веб‑приложение будет закрыто.';
 
     // Telegram WebApp: показываем системный popup с 2 кнопками.
-    if (getTg()?.showPopup) {
+    if (tg?.showPopup) {
         try {
-            getTg().showPopup(
+            tg.showPopup(
                 {
                     message: msg,
                     buttons: [
@@ -1916,7 +1879,7 @@ let levelStartTime = 0; // Для засекания времени
 let levelCompleted = false; // Для переключения кнопок "К уровням" (верх/низ)
 let afterLevelShown = false; // Появление нижней кнопки только на экране после уровня
 
-async function startLevel(levelId) {
+function startLevel(levelId) {
     hideAfterLevel();
 
     // защита от старых вызовов
@@ -1929,11 +1892,6 @@ async function startLevel(levelId) {
         return;
     }
 
-    const def = LEVEL_DEFS[levelId];
-    if (!def) return showLevels();
-
-    await preloadLevelAssets(levelId);
-
     currentLevelId = levelId;
     levelStartTime = Date.now();
     levelCompleted = false;
@@ -1943,11 +1901,13 @@ async function startLevel(levelId) {
     stats[levelId].plays = (stats[levelId].plays || 0) + 1;
     saveStats(stats);
 
+    const def = LEVEL_DEFS[levelId];
+    if (!def) return showLevels();
+
     if (def.type === 'puzzle') {
         showScreen('screen-level1');
         initPuzzle(def.puzzleSize);
     } else if (def.type === 'jumper') {
-        preloadAfterJumperInBackground();
         showScreen('screen-level2');
         initJumper();
     } else if (def.type === '2048') {
@@ -2018,35 +1978,39 @@ function initPuzzle(size = 3) {
         h2.textContent = `🧩 Уровень: Логотип (${label})`;
     }
 
+    // Во время входа в уровень НЕ показываем “Загружаю…”.
+    // Картинки уже предзагружены глобальным прелоадером при входе.
     const status = document.getElementById('puzzle-status');
     if (status) { status.textContent = ''; }
 
-    const total = puzzleSize * puzzleSize;
-    puzzleState = Array.from({ length: total }, (_, i) => i + 1);
-    puzzleSolved = false;
-    selectedPieceNum = null;
+    preloadPuzzleAssets().then(() => {
+        const total = puzzleSize * puzzleSize;
+        puzzleState = Array.from({ length: total }, (_, i) => i + 1);
+        puzzleSolved = false;
+        selectedPieceNum = null;
 
-    // Перемешиваем так, чтобы пазл НЕ стартовал уже собранным
-    // (в 2×2 шанс «сразу собран» заметный, поэтому добавляем проверку).
-    const isSolved = (arr) => arr.every((val, idx) => val === idx + 1);
-    const fisherYates = (arr) => {
-        for (let i = arr.length - 1; i > 0; i--) {
-            const j = (Math.random() * (i + 1)) | 0;
-            [arr[i], arr[j]] = [arr[j], arr[i]];
-        }
-    };
-    // На всякий случай ограничим попытки, но обычно хватает 1–2.
-    let tries = 0;
-    do {
-        fisherYates(puzzleState);
-        tries++;
-    } while (isSolved(puzzleState) && tries < 20);
+        // Перемешиваем так, чтобы пазл НЕ стартовал уже собранным
+        // (в 2×2 шанс «сразу собран» заметный, поэтому добавляем проверку).
+        const isSolved = (arr) => arr.every((val, idx) => val === idx + 1);
+        const fisherYates = (arr) => {
+            for (let i = arr.length - 1; i > 0; i--) {
+                const j = (Math.random() * (i + 1)) | 0;
+                [arr[i], arr[j]] = [arr[j], arr[i]];
+            }
+        };
+        // На всякий случай ограничим попытки, но обычно хватает 1–2.
+        let tries = 0;
+        do {
+            fisherYates(puzzleState);
+            tries++;
+        } while (isSolved(puzzleState) && tries < 20);
 
-    createPuzzleElements();
-    updatePuzzlePositions();
+        createPuzzleElements();
+        updatePuzzlePositions();
 
-    if (status) { status.textContent = ''; }
-    // Кнопки "Далее" убраны — после прохождения остаётся только возврат в меню уровней.
+        if (status) { status.textContent = ''; }
+        // Кнопки "Далее" убраны — после прохождения остаётся только возврат в меню уровней.
+    });
 }
 function createPuzzleElements() {
     const board = document.getElementById('puzzle-board');
@@ -2211,11 +2175,14 @@ function preloadLevel2Assets() {
     return level2AssetsPromise;
 }
 
-let afterJumperPreloaded = false;
-function preloadAfterJumperInBackground() {
-    if (afterJumperPreloaded) return;
-    afterJumperPreloaded = true;
-    preloadOneImage(assetPath('after_jumper', 'png')).catch(() => {});
+let puzzleAssetsReady = false;
+function preloadPuzzleAssets() {
+    // Для любого размера пазла используем одну картинку board.webp
+    if (puzzleAssetsReady) return puzzleAssetsReady;
+    const img = new Image();
+    img.src = assetPath('logo', 'jpg');
+    puzzleAssetsReady = decodeImage(img).catch(() => {});
+    return puzzleAssetsReady;
 }
 
 
@@ -2304,6 +2271,8 @@ function initJumper() {
     document.getElementById('victory-overlay').classList.remove('visible');
     document.getElementById('doodle-start-msg').style.display = 'flex';
 
+    // На мобильных декодирование/декодирование ассетов может лагать на первом кадре.
+    // Поэтому декодируем картинки ДО старта и только потом разрешаем начать.
     const startMsg = document.getElementById('doodle-start-msg');
     const startHitbox = document.getElementById('doodle-start-hitbox');
     const pTag = startMsg ? startMsg.querySelector('p') : null;
@@ -2317,8 +2286,6 @@ function initJumper() {
                 if (startMsg) startMsg.dataset.ready = '1';
             })
             .catch(() => {
-                // Не блокируем запуск даже если какая-то картинка не загрузилась:
-                // у игры есть безопасные fallback-отрисовки.
                 if (startMsg) startMsg.dataset.ready = '1';
                 level2AssetsLoaded = true;
             });
@@ -2326,8 +2293,6 @@ function initJumper() {
         if (!startMsg.dataset.boundStartHandlers) {
             let lastManualStartTs = 0;
             const manualStart = (e) => {
-                // В MAX/WebView тап по обычному div может теряться.
-                // Поэтому запускаем и с контейнера, и с отдельной прозрачной кнопки-hitbox.
                 if (e) {
                     e.preventDefault?.();
                     e.stopPropagation?.();
@@ -2342,14 +2307,12 @@ function initJumper() {
             };
             const bindManualStart = (node) => {
                 if (!node || node.dataset.boundStartHandlers === '1') return;
-                // MAX WebView может не всегда стабильно отдавать только click/touchend,
-                // поэтому дублируем старт на ранние и поздние фазы касания.
                 node.addEventListener('click', manualStart, true);
                 node.addEventListener('pointerdown', manualStart, true);
                 node.addEventListener('pointerup', manualStart, true);
-                node.addEventListener('mousedown', manualStart, true);
                 node.addEventListener('touchstart', manualStart, { passive: false, capture: true });
                 node.addEventListener('touchend', manualStart, { passive: false, capture: true });
+                node.addEventListener('mousedown', manualStart, true);
                 node.dataset.boundStartHandlers = '1';
             };
 
@@ -2359,6 +2322,7 @@ function initJumper() {
         }
     }
     if (pTag) pTag.textContent = 'Нажми, чтобы начать!';
+
 
     // Подсказка управления: стрелки пульсируют на стартовом экране
     setDoodleControlsState('hint');
@@ -2517,7 +2481,6 @@ function startDoodleLoop() {
                 startDoodleLoop();
             })
             .catch(() => {
-                // Даже при ошибке загрузки отдельных картинок запускаем уровень с fallback-графикой.
                 level2AssetsLoaded = true;
                 if (startMsg) startMsg.dataset.ready = '1';
                 startDoodleLoop();
@@ -2831,6 +2794,9 @@ function preload2048Assets() {
         if (img.decode) img.decode().catch(() => {});
     });
 }
+
+// Запускаем предзагрузку сразу (скрипт подключен внизу страницы, DOM уже есть)
+preload2048Assets();
 
 const SIZE = 4;
 // Предвычисляем позиции для ускорения (чтобы не считать в цикле)
@@ -3280,8 +3246,8 @@ function finishQuizLevel() {
 function closeApp() {
     // Отправляем общую сумму
     let totalScore = levelScores[1] + levelScores[2] + levelScores[3] + levelScores[4];
-    if (getTg()?.sendData) getTg().sendData(JSON.stringify({score: totalScore}));
-    if (getTg()?.close) getTg().close();
+    if (tg?.sendData) tg.sendData(JSON.stringify({score: totalScore}));
+    if (tg?.close) tg.close();
 }
 
 // Инициализация меню уровней
@@ -3309,12 +3275,12 @@ let levelLaunchArmed = false;
 window.addEventListener('DOMContentLoaded', () => {
     // Прелоадер изображений при входе в приложение (assets/*) с прогрессом.
     // Никакую игровую логику не меняем — просто прогреваем кэш браузера.
-    requestAnimationFrame(() => { startEssentialImagePreloader(); });
+    startAppImagePreloader();
 
-    // Синхронизацию откладываем на короткое время, чтобы не тормозить первый рендер mini app.
-    setTimeout(() => {
-        syncResetAndRefreshUIThrottled();
-    }, 900);
+    // Синхронизируем профтест с сервером (на случай удаления/сброса пользователя в админке)
+    // Важно: Telegram может не перезагружать страницу при повторном открытии мини‑веба,
+    // поэтому синк должен выполняться не только один раз на загрузке.
+    syncResetAndRefreshUIThrottled();
 
     // Повторный синх при возврате в WebView (после закрытия/сворачивания/повторного открытия)
     // — именно тут чаще всего «оживают» очки/рекомендации из localStorage.
@@ -3330,7 +3296,7 @@ window.addEventListener('DOMContentLoaded', () => {
         if (!window.__apzResetSyncTimer) {
             window.__apzResetSyncTimer = setInterval(() => {
                 syncResetAndRefreshUIThrottled();
-            }, 15000);
+            }, 5000);
         }
     } catch (e) {}
 
@@ -3353,12 +3319,11 @@ window.addEventListener('DOMContentLoaded', () => {
     // Глушим клики сразу после загрузки WebView
     lockClicks(900);
 
-    // Подтягиваем доступность уровней с небольшой задержкой, чтобы не блокировать стартовый экран.
-    setTimeout(() => {
-        loadLevelAvailability().then(() => {
-            applyLevelAvailabilityToMenu();
-        });
-    }, 700);
+    // Подтягиваем доступность уровней (админ мог отключить некоторые)
+    // и применяем к меню.
+    loadLevelAvailability().then(() => {
+        applyLevelAvailabilityToMenu();
+    });
     // На некоторых WebView (особенно Android) первый рендер может привести к тому,
     // что глобальные кнопки остаются видимыми. Принудительно синхронизируем UI:
     // на приветственном экране кнопка "К уровням" показываться не должна.
@@ -3535,6 +3500,6 @@ else if (action === 'save-stats') {
         }
     };
 
-    // click для действий по всему приложению
+    // click + pointerup для надёжности
     document.addEventListener('click', handleAction, true);
 });
