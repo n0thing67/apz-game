@@ -2008,15 +2008,23 @@ hr {
 */
 @media (max-width: 520px){
     .welcome-characters{
-        gap: 12px;
-        max-width: 380px;
+        gap: 4px;
+        max-width: 332px;
         margin-top: 14px;
         transform: translateY(35px);
     }
 
-    .welcome-characters .welcome-character:first-child,
+    .welcome-character{
+        flex: 0 0 150px;
+        width: 150px;
+    }
+
+    /* поджимаем персонажей к центру, не трогая сам текст внутри облаков */
+    .welcome-characters .welcome-character:first-child{
+        transform: translateX(10px);
+    }
     .welcome-characters .welcome-character:last-child{
-        transform: none;
+        transform: translateX(-10px);
     }
 
     /* персонажи чуть компактнее */
@@ -2029,7 +2037,7 @@ hr {
         max-width: 180px;
     }
 
-    /* облака по центру над персонажами */
+    /* облака остаются по центру над персонажами */
     .speech-left{
         left: 50%;
         width: 148px;
@@ -2048,6 +2056,10 @@ hr {
         width: 160px;
         max-width: 160px;
         margin: 0 auto 10px;
+        transform: translate(6px, 8px);
+    }
+    .speech-left .speech-text{
+        transform: translate(0px, -8px);
     }
     .speech-text{ font-size: 12px; }
 }
