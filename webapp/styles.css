@@ -2062,12 +2062,14 @@ hr {
     }
 
     .welcome-characters .welcome-character:first-child .character-img{
-        height: 112px;
-        max-width: 150px;
+        height: 150px;
+        max-width: 200px;
+        transform: translate(-8px, 0px);
     }
     .welcome-characters .welcome-character:last-child .character-img{
-        height: 116px;
-        max-width: 150px;
+        height: 150px;
+        max-width: 200px;
+        transform: translate(8px, 0px);
     }
 
     .speech-left{
