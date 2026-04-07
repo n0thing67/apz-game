@@ -2062,9 +2062,9 @@ hr {
     }
 
     .welcome-characters .welcome-character:first-child .character-img{
-        height: 190px;
-        max-width: 230px;
-        transform: translate(-8px, 35px);
+        height: 210px;
+        max-width: 250px;
+        transform: translate(-8px, 55px);
     }
     .welcome-characters .welcome-character:last-child .character-img{
         height: 160px;
