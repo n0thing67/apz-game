@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>АПЗ — админ-панель</title>
   <link rel="stylesheet" href="styles.css" />
-  <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body class="admin-body">
 
@@ -180,8 +179,8 @@
 
         <div class="level-stats" style="margin-top:10px;">
           <div class="muted">Превью шаблона:</div>
-          <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:8px; justify-content:center; width:100%;">
-            <img src="assets/cert_templates/sertificat.png" alt="Сертификат" style="width:120px; border-radius:10px;" />
+          <div id="award-preview-wrap" style="display:flex; gap:10px; flex-wrap:wrap; margin-top:8px; justify-content:center; width:100%; min-height:120px;">
+            <button type="button" class="btn btn-secondary" id="award-preview-load">Показать превью</button>
           </div>
         </div>
       </div>
@@ -200,6 +199,61 @@
   </div>
 
 
-  <script src="admin.js"></script>
+  <script>
+    (function () {
+      const params = new URLSearchParams(window.location.search);
+      const hasAdminToken = Boolean(params.get("admin_token"));
+      const shouldLoadTelegram = !hasAdminToken;
+
+      function loadScript(src) {
+        return new Promise((resolve, reject) => {
+          const s = document.createElement("script");
+          s.src = src;
+          s.onload = resolve;
+          s.onerror = reject;
+          document.head.appendChild(s);
+        });
+      }
+
+      function loadAdminBundle() {
+        const s = document.createElement("script");
+        s.src = "admin.js";
+        s.defer = true;
+        document.body.appendChild(s);
+      }
+
+      function mountAwardPreview() {
+        const wrap = document.getElementById("award-preview-wrap");
+        if (!wrap || wrap.dataset.loaded === "1") return;
+        wrap.dataset.loaded = "1";
+        wrap.innerHTML = '';
+        const img = document.createElement("img");
+        img.src = "assets/cert_templates/sertificat.webp";
+        img.alt = "Сертификат";
+        img.loading = "lazy";
+        img.decoding = "async";
+        img.style.width = "120px";
+        img.style.borderRadius = "10px";
+        img.onerror = function () {
+          this.onerror = null;
+          this.src = "assets/cert_templates/sertificat.png";
+        };
+        wrap.appendChild(img);
+      }
+
+      document.addEventListener("DOMContentLoaded", function () {
+        const goAwards = document.getElementById("go-awards");
+        const loadPreviewBtn = document.getElementById("award-preview-load");
+        goAwards && goAwards.addEventListener("click", mountAwardPreview, { once: true });
+        loadPreviewBtn && loadPreviewBtn.addEventListener("click", mountAwardPreview, { once: true });
+      });
+
+      if (shouldLoadTelegram) {
+        loadScript("https://telegram.org/js/telegram-web-app.js").finally(loadAdminBundle);
+      } else {
+        loadAdminBundle();
+      }
+    })();
+  </script>
 </body>
 </html>
