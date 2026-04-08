@@ -152,6 +152,39 @@
       font-size: 14px;
     }
 
+    .consent-bar {
+      margin-top: 24px;
+      padding: 18px;
+      border-radius: 18px;
+      background: linear-gradient(180deg, rgba(49, 94, 251, 0.08) 0%, rgba(49, 94, 251, 0.03) 100%);
+      border: 1px solid var(--border);
+      text-align: center;
+    }
+
+    .consent-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      max-width: 420px;
+      min-height: 52px;
+      padding: 14px 18px;
+      border: 0;
+      border-radius: 16px;
+      background: var(--accent);
+      color: #fff;
+      font-size: 16px;
+      font-weight: 700;
+      text-decoration: none;
+      box-shadow: 0 12px 24px rgba(49, 94, 251, 0.20);
+    }
+
+    .consent-help {
+      margin: 0 0 12px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
     @media (max-width: 640px) {
       .wrap {
         padding: 16px 12px 28px;
@@ -334,7 +367,48 @@
         Актуальная редакция Политики применяется с даты её размещения и действует до публикации
         новой редакции документа.
       </div>
+
+      <div class="consent-bar">
+        <p class="consent-help">После ознакомления нажмите кнопку ниже, чтобы вернуться в чат-бот и продолжить регистрацию.</p>
+        <a id="consent-btn" class="consent-btn" href="#">Я ознакомлен(а) и согласен(на)</a>
+      </div>
     </div>
   </div>
+
+  <script>
+    (function () {
+      var btn = document.getElementById('consent-btn');
+      if (!btn) return;
+
+      var params = new URLSearchParams(window.location.search);
+      var platform = (params.get('platform') || '').toLowerCase();
+      var bot = (params.get('bot') || '').replace(/^@+/, '');
+      var explicitReturn = (params.get('return') || '').trim();
+      var href = explicitReturn || '#';
+
+      if (!href && href !== '#') href = '#';
+
+      if (explicitReturn) {
+        href = explicitReturn;
+      } else if (platform === 'tg' && bot) {
+        href = 'https://t.me/' + encodeURIComponent(bot) + '?start=privacy_accept';
+      } else if (platform === 'max' && bot) {
+        href = 'https://max.ru/' + encodeURIComponent(bot) + '?start=privacy_accept';
+      }
+
+      btn.href = href;
+      btn.addEventListener('click', function (event) {
+        if (btn.href && btn.href !== '#') {
+          return;
+        }
+        event.preventDefault();
+        if (window.history.length > 1) {
+          window.history.back();
+          return;
+        }
+        alert('Не удалось определить ссылку возврата в чат-бот.');
+      });
+    })();
+  </script>
 </body>
 </html>
