@@ -2074,9 +2074,9 @@ hr {
 
     .speech-left{
         left: 50%;
-        width: 160px;
+        width: 145px;
         height: 110px;
-        transform: translate(-50%, 10px);
+        transform: translate(-50%, 40px);
         padding: 11px 15px 19px 13px;
     }
     .speech-right{
