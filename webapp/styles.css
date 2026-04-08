@@ -1959,7 +1959,6 @@ hr {
     height: 150px;
     max-width: 220px;
     object-fit: contain;
-    transform: translateY(5px);
 }
 
 /* Ася */
@@ -1971,7 +1970,7 @@ hr {
     height: 150px;
     max-width: 220px;
     object-fit: contain;
-    transform: translateY(5px);
+    transform: translateY(15px);
 }
 
 
@@ -2015,8 +2014,7 @@ hr {
     max-width: 100%;
     font-size: 12px;
     line-height: 1.35;
-    color: #000 !important;
-    -webkit-text-fill-color: #000 !important;
+    color: #111;
     text-align: center;
     white-space: normal;
     overflow-wrap: break-word;
@@ -2024,14 +2022,6 @@ hr {
     hyphens: auto;
     transition: opacity 0.35s ease;
     opacity: 1;
-}
-
-.speech-left,
-.speech-right,
-.speech-left *,
-.speech-right *{
-    color: #000 !important;
-    -webkit-text-fill-color: #000 !important;
 }
 
 .speech-right .speech-text{
@@ -2075,12 +2065,12 @@ hr {
     .welcome-characters .welcome-character:first-child .character-img{
         height: 220px;
         max-width: 230px;
-        transform: translate(-8px, 70px);
+        transform: translate(-8px, 80px);
     }
     .welcome-characters .welcome-character:last-child .character-img{
         height: 160px;
         max-width: 210px;
-        transform: translate(8px, 40px);
+        transform: translate(8px, 50px);
     }
 
     /* облака ближе к "десктопному" виду: компактнее и ближе к головам */
