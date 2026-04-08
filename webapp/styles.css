@@ -2076,14 +2076,14 @@ hr {
         left: 50%;
         width: 145px;
         height: 110px;
-        transform: translate(-50%, 40px);
+        transform: translate(-50%, 80px);
         padding: 11px 15px 19px 13px;
     }
     .speech-right{
         left: 50%;
-        width: 262px;
+        width: 242px;
         height: 159px;
-        transform: translate(-50%, -2px);
+        transform: translate(-50%, 60px);
         padding: 10px 16px 21px 19px;
     }
     .speech-right .speech-text{
