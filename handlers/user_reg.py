@@ -162,22 +162,36 @@ ADMIN_URL = os.getenv("ADMIN_URL", os.getenv("WEBAPP_URL", "")).rstrip("/")
 PRIVACY_POLICY_URL = os.getenv("PRIVACY_POLICY_URL", f"{ADMIN_URL}/privacy.html" if ADMIN_URL else "").rstrip("/")
 
 
+def _privacy_policy_url_for_telegram() -> str:
+    base = PRIVACY_POLICY_URL
+    if not base:
+        return ""
+    from urllib.parse import urlencode
+
+    bot_name = (
+        os.getenv("TELEGRAM_BOT_USERNAME", "")
+        or os.getenv("BOT_USERNAME", "")
+        or os.getenv("TG_BOT_USERNAME", "")
+    ).strip().lstrip("@")
+
+    params = {"platform": "tg"}
+    if bot_name:
+        params["bot"] = bot_name
+
+    sep = "&" if "?" in base else "?"
+    return f"{base}{sep}{urlencode(params)}"
+
+
 def pd_consent_inline_keyboard() -> InlineKeyboardMarkup:
     buttons = []
-    if PRIVACY_POLICY_URL:
+    privacy_url = _privacy_policy_url_for_telegram()
+    if privacy_url:
         buttons.append([
             InlineKeyboardButton(
                 text="Открыть Политику обработки персональных данных",
-                url=PRIVACY_POLICY_URL,
+                url=privacy_url,
             )
         ])
-    buttons.append([
-        InlineKeyboardButton(
-            text="Я ознакомлен(а) и согласен(на) с Политикой обработки персональных данных",
-            callback_data="pd_consent_accept",
-            style="success",
-        )
-    ])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
@@ -258,6 +272,14 @@ def stats_inline_keyboard() -> InlineKeyboardMarkup:
 
 @router.message(Command("start"))
 async def cmd_start(message: types.Message, state: FSMContext):
+    start_arg = ""
+    try:
+        parts = (message.text or "").split(maxsplit=1)
+        if len(parts) > 1:
+            start_arg = parts[1].strip()
+    except Exception:
+        start_arg = ""
+
     await state.clear()
 
     user = await get_user(message.from_user.id)
@@ -267,6 +289,14 @@ async def cmd_start(message: types.Message, state: FSMContext):
             f"С возвращением, {first_name}! Нажми кнопку ниже, чтобы начать испытание.",
             reply_markup=game_keyboard(),
         )
+        return
+
+    if start_arg == "privacy_accept":
+        await message.answer(
+            registration_prompt_text(),
+            parse_mode="HTML",
+        )
+        await state.set_state(RegState.waiting_for_fullname)
         return
 
     await message.answer(
