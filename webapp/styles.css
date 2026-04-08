@@ -1936,6 +1936,7 @@ hr {
     max-width: 420px;
     margin-left: auto;
     margin-right: auto;
+    position: relative;
     transform: translateY(-5px);
 }
 
@@ -1944,21 +1945,32 @@ hr {
 .welcome-character{
     margin-top: 18px;
     flex: 1 1 0;
+    min-width: 0;
+    min-height: 170px;
     display: flex;
     flex-direction: column;
+    justify-content: flex-end;
     align-items: center;
     position: relative;
 }
 
+.welcome-character .character-img{
+    display: block;
+    width: auto;
+    max-width: 100%;
+    object-fit: contain;
+    object-position: center bottom;
+    flex-shrink: 0;
+}
+
 /* Макс */
 .welcome-characters .welcome-character:first-child{
-    transform: translate(-18px, 0px);
+    transform: translateX(-18px);
 }
 
 .welcome-characters .welcome-character:first-child .character-img{
     height: 150px;
     max-width: 220px;
-    object-fit: contain;
 }
 
 /* Ася */
@@ -1969,8 +1981,7 @@ hr {
 .welcome-characters .welcome-character:last-child .character-img{
     height: 150px;
     max-width: 220px;
-    object-fit: contain;
-    transform: translateY(7px);
+    margin-bottom: -7px;
 }
 
 
@@ -2054,6 +2065,7 @@ hr {
     .welcome-character{
         flex: 0 0 132px;
         width: 132px;
+        min-height: 236px;
         margin-top: 0;
     }
 
@@ -2063,14 +2075,15 @@ hr {
     }
 
     .welcome-characters .welcome-character:first-child .character-img{
-        height: 220px;
+        height: clamp(180px, 58vw, 220px);
         max-width: 230px;
-        transform: translate(-8px, 72px);
+        transform: translateX(-8px);
     }
     .welcome-characters .welcome-character:last-child .character-img{
-        height: 160px;
+        height: clamp(145px, 44vw, 160px);
         max-width: 210px;
-        transform: translate(8px, 42px);
+        transform: translateX(8px);
+        margin-bottom: -7px;
     }
 
     /* облака ближе к "десктопному" виду: компактнее и ближе к головам */
