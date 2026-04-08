@@ -2848,7 +2848,6 @@ const overlay2048Victory = document.getElementById('overlay-2048-victory');
 let swipe2048Bound = false;
 let touchStartX2048 = 0;
 let touchStartY2048 = 0;
-let touchTracking2048 = false;
 
 let board2048 = [];
 let score2048 = 0;
@@ -3100,66 +3099,64 @@ function setupSwipeListeners() {
     if (swipe2048Bound) return;
     swipe2048Bound = true;
 
-    const levelScreen = document.getElementById('screen-level3');
-    if (!levelScreen) return;
+    const levelScreen2048 = document.getElementById('screen-level3');
+    let swipeGesture2048Active = false;
 
-    function is2048InteractiveTarget(target) {
+    function isInteractive2048Target(target) {
         return !!(target && target.closest && target.closest('button, a, input, textarea, select, label, [data-action]'));
     }
 
-    function is2048ScreenActive() {
-        return game2048Active && levelScreen.classList.contains('active');
-    }
+    levelScreen2048.addEventListener('touchstart', function(e) {
+        if (!game2048Active || !levelScreen2048.classList.contains('active')) {
+            swipeGesture2048Active = false;
+            return;
+        }
 
-    function on2048TouchStart(e) {
-        if (!is2048ScreenActive()) return;
-        if (is2048InteractiveTarget(e.target)) {
-            touchTracking2048 = false;
+        if (isInteractive2048Target(e.target)) {
+            swipeGesture2048Active = false;
             return;
         }
 
         const t = e.changedTouches && e.changedTouches[0];
-        if (!t) return;
+        if (!t) {
+            swipeGesture2048Active = false;
+            return;
+        }
+
+        swipeGesture2048Active = true;
         touchStartX2048 = t.clientX;
         touchStartY2048 = t.clientY;
-        touchTracking2048 = true;
-    }
-
-    function on2048TouchMove(e) {
-        if (!is2048ScreenActive() || !touchTracking2048) return;
-        // В MAX WebView жест с любого края экрана может интерпретироваться как системная навигация
-        // или попытка закрыть mini app. Пока активен экран 2048, перехватываем движение
-        // на всём документе, чтобы вниз/вверх/влево/вправо обрабатывались самой игрой.
         e.preventDefault();
-    }
+    }, {passive: false});
 
-    function on2048TouchEnd(e) {
-        if (!touchTracking2048) return;
-        touchTracking2048 = false;
-        if (!is2048ScreenActive()) return;
+    levelScreen2048.addEventListener('touchmove', function(e) {
+        if (!game2048Active || !swipeGesture2048Active || !levelScreen2048.classList.contains('active')) return;
+        // В MAX WebView системный жест может перехватывать любой свайп по экрану уровня,
+        // поэтому блокируем его не только в пределах поля, а на всём экране 2048.
+        e.preventDefault();
+    }, {passive: false});
+
+    levelScreen2048.addEventListener('touchend', function(e) {
+        if (!swipeGesture2048Active) return;
+        swipeGesture2048Active = false;
+        e.preventDefault();
 
         const t = e.changedTouches && e.changedTouches[0];
         if (!t) return;
-        e.preventDefault();
 
-        const dx = t.clientX - touchStartX2048;
-        const dy = t.clientY - touchStartY2048;
+        let dx = t.clientX - touchStartX2048;
+        let dy = t.clientY - touchStartY2048;
 
         if (Math.abs(dx) > Math.abs(dy)) {
             if (Math.abs(dx) > 30) dx > 0 ? moveTiles(0, 1) : moveTiles(0, -1);
         } else {
             if (Math.abs(dy) > 30) dy > 0 ? moveTiles(1, 0) : moveTiles(-1, 0);
         }
-    }
+    }, {passive: false});
 
-    function on2048TouchCancel() {
-        touchTracking2048 = false;
-    }
-
-    document.addEventListener('touchstart', on2048TouchStart, { passive: true, capture: true });
-    document.addEventListener('touchmove', on2048TouchMove, { passive: false, capture: true });
-    document.addEventListener('touchend', on2048TouchEnd, { passive: false, capture: true });
-    document.addEventListener('touchcancel', on2048TouchCancel, { passive: true, capture: true });
+    levelScreen2048.addEventListener('touchcancel', function() {
+        swipeGesture2048Active = false;
+    }, {passive: true});
 }
 
 
