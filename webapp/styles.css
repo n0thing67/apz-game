@@ -2081,8 +2081,8 @@ hr {
     }
     .speech-right{
         left: 50%;
-        width: 242px;
-        height: 159px;
+        width: 232px;
+        height: 139px;
         transform: translate(-50%, 60px);
         padding: 10px 16px 21px 19px;
     }
