@@ -1052,16 +1052,19 @@ body.admin-body {
 }
 
 /* Анимации появления и слияния */
-.tile-new { animation: appear 0.2s ease; }
-.tile-merged { animation: pop 0.2s ease; z-index: 20; }
+.tile-new { animation: appear 0.16s ease-out; }
+.tile-merged {
+    animation: mergePulse 0.12s ease-out;
+    z-index: 20;
+}
 
 @keyframes appear {
-    0% { opacity: 0; transform: translate3d(var(--tx, 0px), var(--ty, 0px), 0) scale(0); }
+    0% { opacity: 0; transform: translate3d(var(--tx, 0px), var(--ty, 0px), 0) scale(0.96); }
     100% { opacity: 1; transform: translate3d(var(--tx, 0px), var(--ty, 0px), 0) scale(1); }
 }
-@keyframes pop {
-    0% { transform: translate3d(var(--tx, 0px), var(--ty, 0px), 0) scale(0.8); }
-    50% { transform: translate3d(var(--tx, 0px), var(--ty, 0px), 0) scale(1.1); }
+@keyframes mergePulse {
+    0% { transform: translate3d(var(--tx, 0px), var(--ty, 0px), 0) scale(1); }
+    55% { transform: translate3d(var(--tx, 0px), var(--ty, 0px), 0) scale(1.06); }
     100% { transform: translate3d(var(--tx, 0px), var(--ty, 0px), 0) scale(1); }
 }
 
