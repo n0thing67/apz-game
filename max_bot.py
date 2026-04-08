@@ -5,7 +5,7 @@ import logging
 import time
 import hmac
 import hashlib
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 import aiohttp
 
@@ -94,12 +94,24 @@ def _admin_entry_url(max_user_id: int | None = None) -> str:
     if not au:
         return ""
     base = f"{au}/admin.html"
-    if max_user_id is None:
+
+    params: dict[str, str] = {}
+
+    if max_user_id is not None:
+        token = _make_admin_token(_max_to_db_id(int(max_user_id)))
+        if token:
+            params["admin_token"] = token
+
+    # Для MAX админка открывается обычной ссылкой во внешнем браузере.
+    # Чтобы кнопка «Назад» внутри admin.js возвращала не на сайт max.ru,
+    # а сразу в диалог с ботом, заранее передаём корректный deep link.
+    bot_name = (os.getenv("MAX_BOT_NAME", "") or "").strip().lstrip("@")
+    if bot_name:
+        params["return"] = f"https://max.ru/{bot_name}?start=admin"
+
+    if not params:
         return base
-    token = _make_admin_token(_max_to_db_id(int(max_user_id)))
-    if not token:
-        return base
-    return f"{base}?admin_token={quote(token, safe='')}"
+    return f"{base}?{urlencode(params)}"
 
 
 def _factory_start_payload() -> str:
