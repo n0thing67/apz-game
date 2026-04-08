@@ -2079,11 +2079,11 @@ hr {
         padding: 14px;
     }
     .speech-left{
-        left: 60%;
-        transform: translate(-60%, 110px);
+        left: 50%;
+        transform: translate(-60%, 95px);
     }
     .speech-right{
-        left: 20%;
+        left: 30%;
         transform: translate(-50%, 78px);
         width: 260px;
         height: 132px;
