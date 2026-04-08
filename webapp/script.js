@@ -3107,9 +3107,12 @@ function setupSwipeListeners() {
         return !!(target && target.closest && target.closest('button, a, input, textarea, select, label, [data-action]'));
     }
 
+    function is2048ScreenActive() {
+        return game2048Active && levelScreen.classList.contains('active');
+    }
+
     function on2048TouchStart(e) {
-        if (!game2048Active) return;
-        if (!levelScreen.classList.contains('active')) return;
+        if (!is2048ScreenActive()) return;
         if (is2048InteractiveTarget(e.target)) {
             touchTracking2048 = false;
             return;
@@ -3123,18 +3126,17 @@ function setupSwipeListeners() {
     }
 
     function on2048TouchMove(e) {
-        if (!game2048Active || !touchTracking2048) return;
-        if (!levelScreen.classList.contains('active')) return;
-        // В MAX WebView свайп вниз за пределами поля тоже может закрывать mini app.
-        // Перехватываем жест на всём экране уровня 2048, но не ломаем обычные тапы по кнопкам.
+        if (!is2048ScreenActive() || !touchTracking2048) return;
+        // В MAX WebView жест с любого края экрана может интерпретироваться как системная навигация
+        // или попытка закрыть mini app. Пока активен экран 2048, перехватываем движение
+        // на всём документе, чтобы вниз/вверх/влево/вправо обрабатывались самой игрой.
         e.preventDefault();
     }
 
     function on2048TouchEnd(e) {
         if (!touchTracking2048) return;
         touchTracking2048 = false;
-        if (!game2048Active) return;
-        if (!levelScreen.classList.contains('active')) return;
+        if (!is2048ScreenActive()) return;
 
         const t = e.changedTouches && e.changedTouches[0];
         if (!t) return;
@@ -3154,10 +3156,10 @@ function setupSwipeListeners() {
         touchTracking2048 = false;
     }
 
-    levelScreen.addEventListener('touchstart', on2048TouchStart, { passive: true, capture: true });
-    levelScreen.addEventListener('touchmove', on2048TouchMove, { passive: false, capture: true });
-    levelScreen.addEventListener('touchend', on2048TouchEnd, { passive: false, capture: true });
-    levelScreen.addEventListener('touchcancel', on2048TouchCancel, { passive: true, capture: true });
+    document.addEventListener('touchstart', on2048TouchStart, { passive: true, capture: true });
+    document.addEventListener('touchmove', on2048TouchMove, { passive: false, capture: true });
+    document.addEventListener('touchend', on2048TouchEnd, { passive: false, capture: true });
+    document.addEventListener('touchcancel', on2048TouchCancel, { passive: true, capture: true });
 }
 
 
