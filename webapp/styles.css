@@ -2003,7 +2003,7 @@ hr {
     left: 50%;
     width: 330px;
     height: 165px;
-    transform: translate(-70%, 24px);
+    transform: translate(-50%, 76px) scale(0.95);
     background-image: url("assets/bubble_right.webp");
     padding: 18px 28px 40px 38px;
 }
@@ -2084,7 +2084,7 @@ hr {
         width: 252px;
         height: 176px;
         transform: translate(-50%, 76px);
-        padding: 13px 19px 12px 23px;
+        padding: 13px 19px 16px 23px;
     }
     .speech-right .speech-text{
         width: 142px;
