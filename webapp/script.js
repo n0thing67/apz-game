@@ -3106,8 +3106,12 @@ function setupSwipeListeners() {
         return !!(target && target.closest && target.closest('button, a, input, textarea, select, label, [data-action]'));
     }
 
-    levelScreen2048.addEventListener('touchstart', function(e) {
-        if (!game2048Active || !levelScreen2048.classList.contains('active')) {
+    function is2048ScreenActive() {
+        return game2048Active && levelScreen2048 && levelScreen2048.classList.contains('active');
+    }
+
+    function handle2048TouchStart(e) {
+        if (!is2048ScreenActive()) {
             swipeGesture2048Active = false;
             return;
         }
@@ -3127,16 +3131,17 @@ function setupSwipeListeners() {
         touchStartX2048 = t.clientX;
         touchStartY2048 = t.clientY;
         e.preventDefault();
-    }, {passive: false});
+    }
 
-    levelScreen2048.addEventListener('touchmove', function(e) {
-        if (!game2048Active || !swipeGesture2048Active || !levelScreen2048.classList.contains('active')) return;
-        // В MAX WebView системный жест может перехватывать любой свайп по экрану уровня,
-        // поэтому блокируем его не только в пределах поля, а на всём экране 2048.
+    function handle2048TouchMove(e) {
+        if (!is2048ScreenActive() || !swipeGesture2048Active) return;
+        // В MAX WebView системный жест может перехватывать свайпы не только по полю,
+        // но и по нижней области экрана вокруг него. Поэтому перехватываем жест глобально,
+        // пока активен экран 2048.
         e.preventDefault();
-    }, {passive: false});
+    }
 
-    levelScreen2048.addEventListener('touchend', function(e) {
+    function handle2048TouchEnd(e) {
         if (!swipeGesture2048Active) return;
         swipeGesture2048Active = false;
         e.preventDefault();
@@ -3152,11 +3157,16 @@ function setupSwipeListeners() {
         } else {
             if (Math.abs(dy) > 30) dy > 0 ? moveTiles(1, 0) : moveTiles(-1, 0);
         }
-    }, {passive: false});
+    }
 
-    levelScreen2048.addEventListener('touchcancel', function() {
+    function handle2048TouchCancel() {
         swipeGesture2048Active = false;
-    }, {passive: true});
+    }
+
+    document.addEventListener('touchstart', handle2048TouchStart, { passive: false, capture: true });
+    document.addEventListener('touchmove', handle2048TouchMove, { passive: false, capture: true });
+    document.addEventListener('touchend', handle2048TouchEnd, { passive: false, capture: true });
+    document.addEventListener('touchcancel', handle2048TouchCancel, { passive: true, capture: true });
 }
 
 
