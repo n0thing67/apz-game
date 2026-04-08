@@ -11,7 +11,6 @@ from urllib.parse import parse_qsl
 
 from aiohttp import web
 import aiohttp
-
 from aiogram import Bot
 from aiogram.types import BufferedInputFile
 from PIL import Image, ImageDraw, ImageFont
