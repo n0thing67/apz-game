@@ -2044,24 +2044,32 @@ hr {
 */
 @media (max-width: 520px){
     .welcome-characters{
-        gap: 12px;
-        max-width: 380px;
-        margin-top: 14px;
-        transform: translateY(35px);
+        gap: 10px;
+        max-width: 292px;
+        margin-top: 12px;
+        transform: translateY(12px);
     }
 
-    /* уменьшаем разнос персонажей, чтобы ничего не уезжало за края */
-    .welcome-characters .welcome-character:first-child{ transform: translateX(-40px); }
-    .welcome-characters .welcome-character:last-child{  transform: translateX(40px);  }
+    .welcome-character{
+        flex: 0 0 132px;
+        width: 132px;
+        margin-top: 0;
+    }
 
-    /* персонажи чуть компактнее */
+    .welcome-characters .welcome-character:first-child,
+    .welcome-characters .welcome-character:last-child{
+        transform: none;
+    }
+
     .welcome-characters .welcome-character:first-child .character-img{
-        height: 125px;
-        max-width: 190px;
+        height: 210px;
+        max-width: 220px;
+        transform: translate(-8px, 55px);
     }
     .welcome-characters .welcome-character:last-child .character-img{
-        height: 125px;
-        max-width: 180px;
+        height: 160px;
+        max-width: 210px;
+        transform: translate(8px, 35px);
     }
 
     /* облака ближе к "десктопному" виду: компактнее и ближе к головам */
@@ -2091,6 +2099,6 @@ hr {
 
 /* Extra small screens */
 @media (max-width: 380px){
-    .welcome-characters{ max-width: 360px; }
-    .speech-text{ font-size: 11px; }
+    .welcome-characters{ max-width: 280px; }
+    .speech-text{ font-size: 10px; }
 }
