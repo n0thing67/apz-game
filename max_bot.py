@@ -15,6 +15,8 @@ from database.db import (
     get_user_profile,
     get_user_rank,
 )
+
+
 MAX_API_BASE = os.getenv("MAX_API_BASE", "https://platform-api.max.ru").rstrip("/")
 
 
@@ -342,6 +344,25 @@ async def handle_update(app, update: dict) -> None:
             return
 
         start_token = _extract_start_token(update)
+
+        db_id = _max_to_db_id(int(max_user_id))
+        existing = await get_user(db_id)
+
+        if start_token == "privacy_accept" and existing:
+            fname = existing[1]
+            kb = _inline_keyboard([
+                [_factory_open_app_button()]
+            ])
+            await send_message(
+                session,
+                token,
+                user_id=int(max_user_id),
+                text=f"С возвращением, {fname}! Нажми кнопку ниже, чтобы начать испытание.",
+                attachments=kb,
+            )
+            state.pop(str(max_user_id), None)
+            return
+
         if start_token == "privacy_accept":
             state[str(max_user_id)] = {"step": "waiting_for_fullname", "pd_consent": True}
             await send_message(
@@ -356,8 +377,6 @@ async def handle_update(app, update: dict) -> None:
             )
             return
 
-        db_id = _max_to_db_id(int(max_user_id))
-        existing = await get_user(db_id)
         if existing:
             fname = existing[1]
             kb = _inline_keyboard([
