@@ -2069,7 +2069,7 @@ hr {
     .welcome-characters .welcome-character:last-child .character-img{
         height: 160px;
         max-width: 210px;
-        transform: translate(18px, 45px);
+        transform: translate(18px, 75px);
     }
 
     /* облака ближе к "десктопному" виду: компактнее и ближе к головам */
@@ -2079,8 +2079,8 @@ hr {
         padding: 14px;
     }
     .speech-left{
-        left: 67%;
-        transform: translate(-60%, 119px);
+        left: 57%;
+        transform: translate(-60%, 129px);
     }
     .speech-right{
         left: 33%;
