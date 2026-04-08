@@ -2081,14 +2081,14 @@ hr {
     }
     .speech-right{
         left: 50%;
-        width: 242px;
-        height: 168px;
+        width: 252px;
+        height: 176px;
         transform: translate(-50%, 76px);
-        padding: 12px 18px 24px 22px;
+        padding: 13px 19px 26px 23px;
     }
     .speech-right .speech-text{
-        width: 136px;
-        max-width: 136px;
+        width: 142px;
+        max-width: 142px;
         margin: 0 auto 6px;
         transform: translate(0px, 2px);
     }
