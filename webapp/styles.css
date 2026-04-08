@@ -2082,7 +2082,7 @@ hr {
     .speech-right{
         left: 50%;
         width: 211px;
-        height: 139px;
+        height: 150px;
         transform: translate(-50%, 76px);
         padding: 10px 16px 21px 19px;
     }
