@@ -2074,7 +2074,7 @@ hr {
 
     .speech-left{
         left: 50%;
-        top: 20px;
+        top: 1px;
         width: 145px;
         height: 110px;
         transform: translate(-50%, 80px);
@@ -2082,9 +2082,9 @@ hr {
     }
     .speech-right{
         left: 50%;
-        top: 20px;
+        top: 1px;
         width: 211px;
-        height: 139px;
+        height: 169px;
         transform: translate(-50%, 60px);
         padding: 10px 16px 21px 19px;
     }
