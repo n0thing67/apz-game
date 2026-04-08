@@ -16,7 +16,6 @@ from database.db import (
     get_user_rank,
 )
 
-
 MAX_API_BASE = os.getenv("MAX_API_BASE", "https://platform-api.max.ru").rstrip("/")
 
 
