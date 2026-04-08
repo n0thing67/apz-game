@@ -2047,7 +2047,7 @@ hr {
 */
 @media (max-width: 520px){
     .welcome-characters{
-        gap: 17px;
+        gap: 30px;
         max-width: 292px;
         margin-top: 12px;
         transform: translateY(12px);
@@ -2082,7 +2082,7 @@ hr {
         padding: 14px;
     }
     .speech-left{
-        left: 40%;
+        left: 50%;
         transform: translate(-60%, 103px);
     }
     .speech-right{
