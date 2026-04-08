@@ -2848,6 +2848,7 @@ const overlay2048Victory = document.getElementById('overlay-2048-victory');
 let swipe2048Bound = false;
 let touchStartX2048 = 0;
 let touchStartY2048 = 0;
+let touchTracking2048 = false;
 
 let board2048 = [];
 let score2048 = 0;
@@ -3099,37 +3100,64 @@ function setupSwipeListeners() {
     if (swipe2048Bound) return;
     swipe2048Bound = true;
 
-    // Используем уже найденный элемент
-    const grid = gridContainer;
+    const levelScreen = document.getElementById('screen-level3');
+    if (!levelScreen) return;
 
-    grid.addEventListener('touchstart', function(e) {
+    function is2048InteractiveTarget(target) {
+        return !!(target && target.closest && target.closest('button, a, input, textarea, select, label, [data-action]'));
+    }
+
+    function on2048TouchStart(e) {
+        if (!game2048Active) return;
+        if (!levelScreen.classList.contains('active')) return;
+        if (is2048InteractiveTarget(e.target)) {
+            touchTracking2048 = false;
+            return;
+        }
+
         const t = e.changedTouches && e.changedTouches[0];
         if (!t) return;
         touchStartX2048 = t.clientX;
         touchStartY2048 = t.clientY;
-        e.preventDefault();
-    }, {passive: false});
+        touchTracking2048 = true;
+    }
 
-    grid.addEventListener('touchmove', function(e) {
+    function on2048TouchMove(e) {
+        if (!game2048Active || !touchTracking2048) return;
+        if (!levelScreen.classList.contains('active')) return;
+        // В MAX WebView свайп вниз за пределами поля тоже может закрывать mini app.
+        // Перехватываем жест на всём экране уровня 2048, но не ломаем обычные тапы по кнопкам.
+        e.preventDefault();
+    }
+
+    function on2048TouchEnd(e) {
+        if (!touchTracking2048) return;
+        touchTracking2048 = false;
         if (!game2048Active) return;
-        // В MAX WebView вертикальный свайп вниз может восприниматься как системный жест
-        // закрытия mini app. Жёстко забираем его в пределах игрового поля.
-        e.preventDefault();
-    }, {passive: false});
+        if (!levelScreen.classList.contains('active')) return;
 
-    grid.addEventListener('touchend', function(e) {
-        e.preventDefault();
         const t = e.changedTouches && e.changedTouches[0];
         if (!t) return;
-        let dx = t.clientX - touchStartX2048;
-        let dy = t.clientY - touchStartY2048;
+        e.preventDefault();
 
-        if(Math.abs(dx) > Math.abs(dy)) {
-            if(Math.abs(dx) > 30) dx > 0 ? moveTiles(0, 1) : moveTiles(0, -1);
+        const dx = t.clientX - touchStartX2048;
+        const dy = t.clientY - touchStartY2048;
+
+        if (Math.abs(dx) > Math.abs(dy)) {
+            if (Math.abs(dx) > 30) dx > 0 ? moveTiles(0, 1) : moveTiles(0, -1);
         } else {
-            if(Math.abs(dy) > 30) dy > 0 ? moveTiles(1, 0) : moveTiles(-1, 0);
+            if (Math.abs(dy) > 30) dy > 0 ? moveTiles(1, 0) : moveTiles(-1, 0);
         }
-    }, {passive: false});
+    }
+
+    function on2048TouchCancel() {
+        touchTracking2048 = false;
+    }
+
+    levelScreen.addEventListener('touchstart', on2048TouchStart, { passive: true, capture: true });
+    levelScreen.addEventListener('touchmove', on2048TouchMove, { passive: false, capture: true });
+    levelScreen.addEventListener('touchend', on2048TouchEnd, { passive: false, capture: true });
+    levelScreen.addEventListener('touchcancel', on2048TouchCancel, { passive: true, capture: true });
 }
 
 
