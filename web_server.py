@@ -137,6 +137,13 @@ def _fit_font(draw: ImageDraw.ImageDraw, text: str, font_path: str, max_width: i
 
 def _render_award_png(template_filename: str, full_name: str, event_name: str, event_date: str, score: int | None = None, font_key: str = "sans") -> bytes:
     template_path = os.path.join(CERT_TEMPLATES_DIR, template_filename)
+    if not os.path.exists(template_path):
+        base_name, _ = os.path.splitext(template_filename)
+        for ext in (".png", ".webp", ".jpg", ".jpeg"):
+            candidate = os.path.join(CERT_TEMPLATES_DIR, base_name + ext)
+            if os.path.exists(candidate):
+                template_path = candidate
+                break
     img = Image.open(template_path).convert("RGBA")
     w, h = img.size
     draw = ImageDraw.Draw(img)
