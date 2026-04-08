@@ -222,11 +222,33 @@ async function init() {
   }
 
   function exit() {
-    try {
-      tg?.close();
-    } catch (_) {
-      history.back();
+    // Telegram WebApp: закрываем штатно, как и раньше.
+    if (tg?.close) {
+      try {
+        tg.close();
+        return;
+      } catch (_) {}
     }
+
+    // Если страница была открыта обычной навигацией и есть куда вернуться,
+    // пробуем историю браузера.
+    try {
+      if (window.history.length > 1) {
+        window.history.back();
+        return;
+      }
+    } catch (_) {}
+
+    // MAX / внешний браузер: history.back() часто бесполезен,
+    // поэтому возвращаем через диплинк. Если return уже передан в URL,
+    // используем его. Иначе открываем MAX как безопасный fallback.
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const returnUrl = (params.get("return") || "").trim();
+      const target = /^https:\/\/max\.ru\//.test(returnUrl) ? returnUrl : "https://max.ru";
+      window.location.href = target;
+      return;
+    } catch (_) {}
   }
 
   const hasAdminToken = Boolean(ADMIN_TOKEN);
