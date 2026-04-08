@@ -2080,7 +2080,7 @@ hr {
     }
     .speech-left{
         left: 95%;
-        transform: translate(-60%, 10px);
+        transform: translate(-60%, 25px);
     }
     .speech-right{
         left: 10%;
