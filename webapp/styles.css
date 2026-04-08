@@ -2097,7 +2097,6 @@ hr {
     }
     .speech-text{ font-size: 12px; }
 }
-
 /* Extra small screens */
 @media (max-width: 380px){
     .welcome-characters{ max-width: 280px; }
