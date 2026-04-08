@@ -1931,7 +1931,7 @@ hr {
     display: flex;
     justify-content: center;
     align-items: flex-end;
-    gap: 18px;
+    gap: 26px;
     width: 100%;
     max-width: 420px;
     margin-left: auto;
@@ -1993,7 +1993,7 @@ hr {
     left: 50%;
     width: 160px;
     height: 108px;
-    transform: translate(-30%, 20px);
+    transform: translate(-30%, 24px);
     background-image: url("assets/bubble_left.webp");
     padding: 16px 20px 28px 18px;
 }
@@ -2044,7 +2044,7 @@ hr {
 */
 @media (max-width: 520px){
     .welcome-characters{
-        gap: 10px;
+        gap: 16px;
         max-width: 292px;
         margin-top: 12px;
         transform: translateY(12px);
@@ -2080,7 +2080,7 @@ hr {
     }
     .speech-left{
         left: 47%;
-        transform: translate(-60%, 85px);
+        transform: translate(-60%, 89px);
     }
     .speech-right{
         left: 33%;
