@@ -1970,7 +1970,7 @@ hr {
     height: 150px;
     max-width: 220px;
     object-fit: contain;
-    transform: translateY(15px);
+    transform: translateY(7px);
 }
 
 
@@ -2065,12 +2065,12 @@ hr {
     .welcome-characters .welcome-character:first-child .character-img{
         height: 220px;
         max-width: 230px;
-        transform: translate(-8px, 80px);
+        transform: translate(-8px, 72px);
     }
     .welcome-characters .welcome-character:last-child .character-img{
         height: 160px;
         max-width: 210px;
-        transform: translate(8px, 50px);
+        transform: translate(8px, 42px);
     }
 
     /* облака ближе к "десктопному" виду: компактнее и ближе к головам */
