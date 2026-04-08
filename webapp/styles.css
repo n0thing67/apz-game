@@ -2080,11 +2080,11 @@ hr {
     }
     .speech-left{
         left: 95%;
-        transform: translate(-60%, -1px);
+        transform: translate(-60%, 10px);
     }
     .speech-right{
         left: 10%;
-        transform: translate(-50%, 18px);
+        transform: translate(-50%, 28px);
         width: 260px;
         height: 132px;
         padding: 16px 22px 42px 36px;
