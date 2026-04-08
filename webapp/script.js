@@ -2921,6 +2921,26 @@ function createTile(r, c, val) {
 
     gridContainer.appendChild(tileDom);
     board2048[r][c] = { val: val, dom: tileDom, merged: false };
+
+    // Снимаем класс появления после короткой анимации,
+    // чтобы он не мешал повторным лёгким анимациям слияния.
+    setTimeout(() => {
+        if (tileDom.isConnected) tileDom.classList.remove('tile-new');
+    }, 200);
+}
+
+function triggerMergeAnimation(tileDom, val) {
+    if (!tileDom) return;
+
+    // Сначала обновляем только базовые классы плитки,
+    // затем принудительно перезапускаем очень лёгкую CSS-анимацию слияния.
+    tileDom.className = `tile tile-${val}`;
+    void tileDom.offsetWidth;
+    tileDom.classList.add('tile-merged');
+
+    setTimeout(() => {
+        if (tileDom.isConnected) tileDom.classList.remove('tile-merged');
+    }, 220);
 }
 
 function handle2048Input(e) {
@@ -2990,8 +3010,9 @@ function moveTiles(dr, dc) {
                     // Удаляем старую плитку после анимации
                     setTimeout(() => {
                         if(tile.dom.parentNode) tile.dom.remove();
-                        // Обновляем вид целевой плитки
-                        targetTile.dom.className = `tile tile-${targetTile.val} tile-merged`;
+                        // Обновляем вид целевой плитки и гарантированно
+                        // перезапускаем анимацию для каждого слияния.
+                        triggerMergeAnimation(targetTile.dom, targetTile.val);
                     }, 150);
                     moved = true;
                 }
