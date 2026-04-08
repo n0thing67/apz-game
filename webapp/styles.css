@@ -2044,63 +2044,53 @@ hr {
 */
 @media (max-width: 520px){
     .welcome-characters{
-        gap: 10px;
-        max-width: 292px;
-        margin-top: 12px;
-        transform: translateY(12px);
+        gap: 12px;
+        max-width: 380px;
+        margin-top: 14px;
+        transform: translateY(35px);
     }
 
-    .welcome-character{
-        flex: 0 0 132px;
-        width: 132px;
-        margin-top: 0;
-    }
+    /* уменьшаем разнос персонажей, чтобы ничего не уезжало за края */
+    .welcome-characters .welcome-character:first-child{ transform: translateX(-40px); }
+    .welcome-characters .welcome-character:last-child{  transform: translateX(40px);  }
 
-    .welcome-characters .welcome-character:first-child,
-    .welcome-characters .welcome-character:last-child{
-        transform: none;
-    }
-
+    /* персонажи чуть компактнее */
     .welcome-characters .welcome-character:first-child .character-img{
-        height: 210px;
-        max-width: 220px;
-        transform: translate(-8px, 55px);
+        height: 125px;
+        max-width: 190px;
     }
     .welcome-characters .welcome-character:last-child .character-img{
-        height: 160px;
-        max-width: 210px;
-        transform: translate(8px, 35px);
+        height: 125px;
+        max-width: 180px;
     }
 
+    /* облака ближе к "десктопному" виду: компактнее и ближе к головам */
+    .speech{
+        width: 140px;
+        height: 95px;
+        padding: 14px;
+    }
     .speech-left{
-        left: 50%;
-        width: 145px;
-        height: 110px;
-        transform: translate(-50%, 96px);
-        padding: 11px 15px 19px 13px;
+        left: 88%;
+        transform: translate(-60%, -1px);
     }
     .speech-right{
-        left: 50%;
-        width: 252px;
-        height: 176px;
-        transform: translate(-50%, 76px);
-        padding: 13px 19px 16px 23px;
-        background-size: 26% 26%;
+        left: 10%;
+        transform: translate(-50%, 18px);
+        width: 260px;
+        height: 132px;
+        padding: 16px 22px 42px 36px;
     }
     .speech-right .speech-text{
-        width: 142px;
-        max-width: 142px;
-        margin: 0 auto 6px;
-        transform: translate(0px, 2px);
+        width: 165px;
+        max-width: 165px;
+        margin: 0 auto 10px;
     }
-    .speech-left .speech-text{
-        transform: translate(0px, -2px);
-    }
-    .speech-text{ font-size: 10.5px; line-height: 1.28; }
+    .speech-text{ font-size: 12px; }
 }
 
 /* Extra small screens */
 @media (max-width: 380px){
-    .welcome-characters{ max-width: 280px; }
-    .speech-text{ font-size: 10px; }
+    .welcome-characters{ max-width: 360px; }
+    .speech-text{ font-size: 11px; }
 }
