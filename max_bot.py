@@ -152,10 +152,18 @@ def _admin_url() -> str:
 def _privacy_policy_url() -> str:
     explicit = (os.getenv("PRIVACY_POLICY_URL", "") or "").strip()
     if explicit:
-        return explicit
+        base = explicit
+    else:
+        host_base = (_admin_url() or _game_url().rstrip("/"))
+        base = f"{host_base}/privacy.html" if host_base else "privacy.html"
 
-    base = _admin_url() or _game_url().rstrip("/")
-    return f"{base}/privacy.html" if base else "privacy.html"
+    bot_name = (os.getenv("MAX_BOT_NAME", "") or "").strip().lstrip("@")
+    params = {"platform": "max"}
+    if bot_name:
+        params["bot"] = bot_name
+
+    sep = "&" if "?" in base else "?"
+    return f"{base}{sep}{urlencode(params)}"
 
 
 def _inline_keyboard(buttons: list[list[dict]]) -> list[dict]:
@@ -287,8 +295,34 @@ _PD_CONSENT_TEXT = "Я ознакомлен(а) и согласен(на) с П�
 def _pd_consent_keyboard():
     return _inline_keyboard([
         [{"type": "link", "text": "Открыть Политику обработки персональных данных", "url": _privacy_policy_url()}],
-        [{"type": "callback", "text": _PD_CONSENT_TEXT, "payload": "pd_consent_accept"}],
     ])
+
+
+def _extract_start_token(update: dict) -> str:
+    candidates = []
+
+    def add_value(val):
+        if isinstance(val, str) and val.strip():
+            candidates.append(val.strip())
+
+    for key in ("start", "start_param", "start_payload", "payload", "text"):
+        add_value(update.get(key))
+
+    for obj_key in ("user", "message", "chat", "body"):
+        obj = update.get(obj_key) or {}
+        if isinstance(obj, dict):
+            for key in ("start", "start_param", "start_payload", "payload", "text"):
+                add_value(obj.get(key))
+
+    for raw in candidates:
+        low = raw.lower()
+        if low == "privacy_accept":
+            return "privacy_accept"
+        if low.startswith("/start "):
+            return low.split(None, 1)[1].strip()
+        if low.startswith("start "):
+            return low.split(None, 1)[1].strip()
+    return ""
 
 
 async def handle_update(app, update: dict) -> None:
@@ -309,6 +343,21 @@ async def handle_update(app, update: dict) -> None:
         if max_user_id is None:
             return
 
+        start_token = _extract_start_token(update)
+        if start_token == "privacy_accept":
+            state[str(max_user_id)] = {"step": "waiting_for_fullname", "pd_consent": True}
+            await send_message(
+                session,
+                token,
+                user_id=int(max_user_id),
+                text=(
+                    "Добро пожаловать на АПЗ! Для начала работы, пожалуйста, представьтесь.\n"
+                    "✍️ Введите Имя и Фамилию одним сообщением (через пробел).\n"
+                    "Пример: Иван Иванов"
+                ),
+            )
+            return
+
         db_id = _max_to_db_id(int(max_user_id))
         existing = await get_user(db_id)
         if existing:
@@ -326,8 +375,8 @@ async def handle_update(app, update: dict) -> None:
             text=(
                 "Перед регистрацией необходимо ознакомиться с Политикой обработки персональных данных.\n\n"
                 f"Открыть документ: {_privacy_policy_url()}\n\n"
-                "После ознакомления нажмите кнопку ниже, чтобы подтвердить согласие "
-                "на обработку персональных данных."
+                "После ознакомления нажмите кнопку согласия внизу страницы с Политикой, "
+                "чтобы вернуться в чат-бот и продолжить регистрацию."
             ),
             attachments=_pd_consent_keyboard(),
         )
@@ -387,8 +436,12 @@ async def handle_update(app, update: dict) -> None:
         body = msg.get("body") or {}
         text = (body.get("text") or "").strip()
 
-        if text == "/start" or text.lower() == "начать":
-            await handle_update(app, {"update_type": "bot_started", "user": {"user_id": int(max_user_id)}})
+        low_text = text.lower()
+        if text == "/start" or low_text == "начать" or low_text.startswith("/start "):
+            start_payload = ""
+            if low_text.startswith("/start "):
+                start_payload = text.split(None, 1)[1].strip()
+            await handle_update(app, {"update_type": "bot_started", "user": {"user_id": int(max_user_id)}, "start": start_payload})
             return
 
         if text == "/admin":
@@ -415,8 +468,8 @@ async def handle_update(app, update: dict) -> None:
                 text=(
                 "Перед регистрацией необходимо ознакомиться с Политикой обработки персональных данных.\n\n"
                 f"Открыть документ: {_privacy_policy_url()}\n\n"
-                "После ознакомления нажмите кнопку ниже, чтобы подтвердить согласие "
-                "на обработку персональных данных."
+                "После ознакомления нажмите кнопку согласия внизу страницы с Политикой, "
+                "чтобы вернуться в чат-бот и продолжить регистрацию."
             ),
                 attachments=_pd_consent_keyboard(),
             )
