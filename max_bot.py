@@ -501,7 +501,7 @@ async def handle_update(app, update: dict) -> None:
                 await send_message(session, token, user_id=int(max_user_id), text="⚙️ Панель администратора", attachments=kb)
                 return
 
-            await send_message(session, token, user_id=int(max_user_id), text="Неверный пароль")
+            await send_message(session, token, user_id=int(max_user_id), text="Неверный пароль.")
             return
         if st and st.get("step") == "waiting_for_consent":
             await send_message(
