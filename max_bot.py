@@ -39,6 +39,13 @@ def _is_admin(db_user_id: int) -> bool:
     return int(db_user_id) in _get_admin_ids()
 
 
+def _secure_password_equals(input_password: str | None) -> bool:
+    """Безопасно сравнивает пароль, включая строки с кириллицей."""
+    entered = (input_password or "").strip().encode("utf-8")
+    expected = ADMIN_PASSWORD.encode("utf-8")
+    return hmac.compare_digest(entered, expected)
+
+
 def _format_person_name(value: str | None) -> str:
     s = (value or '').strip()
     if not s:
@@ -482,7 +489,7 @@ async def handle_update(app, update: dict) -> None:
                 await send_message(session, token, user_id=int(max_user_id), text="Нет доступа")
                 return
 
-            if hmac.compare_digest(text.strip(), ADMIN_PASSWORD):
+            if _secure_password_equals(text):
                 state.pop(str(max_user_id), None)
                 admin_entry = _admin_entry_url(int(max_user_id))
                 if not admin_entry:
