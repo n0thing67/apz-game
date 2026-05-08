@@ -540,7 +540,7 @@ async def admin_password_entered(message: types.Message, state: FSMContext):
         )
         return
 
-    await message.answer("Неверный пароль")
+    await message.answer("Неверный пароль.")
 
 
 async def _send_stats(message: types.Message, tg_id: int) -> None:
