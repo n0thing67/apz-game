@@ -43,6 +43,13 @@ def is_admin(user_id: int) -> bool:
     return user_id in ADMIN_IDS
 
 
+def _secure_password_equals(input_password: str | None) -> bool:
+    """Безопасно сравнивает пароль, включая строки с кириллицей."""
+    entered = (input_password or "").strip().encode("utf-8")
+    expected = ADMIN_PASSWORD.encode("utf-8")
+    return hmac.compare_digest(entered, expected)
+
+
 def _format_person_name(value: str | None) -> str:
     s = (value or '').strip()
     if not s:
@@ -525,7 +532,7 @@ async def admin_password_entered(message: types.Message, state: FSMContext):
         await message.answer("Нет доступа")
         return
 
-    if hmac.compare_digest((message.text or "").strip(), ADMIN_PASSWORD):
+    if _secure_password_equals(message.text):
         await state.clear()
         await message.answer(
             "⚙️ Панель администратора",
