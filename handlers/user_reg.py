@@ -2,6 +2,7 @@ import json
 import os
 import re
 import html
+import hmac
 
 from aiogram import Router, F, types
 from aiogram.filters import Command
@@ -30,6 +31,7 @@ router = Router()
 # --- Админы ---
 raw_admins = os.getenv("ADMIN_IDS", "")
 ADMIN_IDS = {int(x.strip()) for x in raw_admins.split(",") if x.strip().isdigit()}
+ADMIN_PASSWORD = (os.getenv("ADMIN_PASSWORD") or "").strip()
 
 # Канал/чат для уведомлений администратора (например, канал, где бот — админ)
 raw_admin_channel = os.getenv("ADMIN_CHANNEL_ID", os.getenv("ADMIN_CHAT_ID", "")).strip()
@@ -152,6 +154,10 @@ class RegState(StatesGroup):
     waiting_for_fullname = State()
     waiting_for_age = State()
     waiting_for_city = State()
+
+
+class AdminState(StatesGroup):
+    waiting_for_password = State()
 
 
 # --- URL'ы ---
@@ -499,15 +505,35 @@ async def handle_web_app_data(message: types.Message):
 
 # --- Админ-панель ---
 @router.message(Command("admin"))
-async def cmd_admin(message: types.Message):
+async def cmd_admin(message: types.Message, state: FSMContext):
     if not is_admin(message.from_user.id):
         await message.answer("Нет доступа")
         return
 
-    await message.answer(
-        "⚙️ Панель администратора",
-        reply_markup=admin_inline_keyboard(),
-    )
+    if not ADMIN_PASSWORD:
+        await message.answer("Пароль администратора не настроен")
+        return
+
+    await state.set_state(AdminState.waiting_for_password)
+    await message.answer("Введите пароль администратора")
+
+
+@router.message(AdminState.waiting_for_password)
+async def admin_password_entered(message: types.Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        await state.clear()
+        await message.answer("Нет доступа")
+        return
+
+    if hmac.compare_digest((message.text or "").strip(), ADMIN_PASSWORD):
+        await state.clear()
+        await message.answer(
+            "⚙️ Панель администратора",
+            reply_markup=admin_inline_keyboard(),
+        )
+        return
+
+    await message.answer("Неверный пароль")
 
 
 async def _send_stats(message: types.Message, tg_id: int) -> None:
