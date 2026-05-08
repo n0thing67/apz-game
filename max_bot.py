@@ -18,6 +18,7 @@ from database.db import (
 
 
 MAX_API_BASE = os.getenv("MAX_API_BASE", "https://platform-api.max.ru").rstrip("/")
+ADMIN_PASSWORD = (os.getenv("ADMIN_PASSWORD") or "").strip()
 
 
 def _max_to_db_id(max_user_id: int) -> int:
@@ -465,18 +466,36 @@ async def handle_update(app, update: dict) -> None:
             if not _is_admin(_max_to_db_id(int(max_user_id))):
                 await send_message(session, token, user_id=int(max_user_id), text="Нет доступа")
                 return
-            admin_entry = _admin_entry_url(int(max_user_id))
-            if not admin_entry:
-                await send_message(session, token, user_id=int(max_user_id), text="Админ-панель не настроена (ADMIN_URL/WEBAPP_URL).")
+            if not ADMIN_PASSWORD:
+                await send_message(session, token, user_id=int(max_user_id), text="Пароль администратора не настроен")
                 return
-            kb = _inline_keyboard([
-                [{"type": "link", "text": "Админ-панель", "url": admin_entry}]
-            ])
-            await send_message(session, token, user_id=int(max_user_id), text="⚙️ Панель администратора", attachments=kb)
+            state[str(max_user_id)] = {"step": "waiting_for_admin_password"}
+            await send_message(session, token, user_id=int(max_user_id), text="Введите пароль администратора")
             return
 
-        # FSM регистрация
+        # FSM регистрация / админ-пароль
         st = state.get(str(max_user_id))
+
+        if st and st.get("step") == "waiting_for_admin_password":
+            if not _is_admin(_max_to_db_id(int(max_user_id))):
+                state.pop(str(max_user_id), None)
+                await send_message(session, token, user_id=int(max_user_id), text="Нет доступа")
+                return
+
+            if hmac.compare_digest(text.strip(), ADMIN_PASSWORD):
+                state.pop(str(max_user_id), None)
+                admin_entry = _admin_entry_url(int(max_user_id))
+                if not admin_entry:
+                    await send_message(session, token, user_id=int(max_user_id), text="Админ-панель не настроена (ADMIN_URL/WEBAPP_URL).")
+                    return
+                kb = _inline_keyboard([
+                    [{"type": "link", "text": "Админ-панель", "url": admin_entry}]
+                ])
+                await send_message(session, token, user_id=int(max_user_id), text="⚙️ Панель администратора", attachments=kb)
+                return
+
+            await send_message(session, token, user_id=int(max_user_id), text="Неверный пароль")
+            return
         if st and st.get("step") == "waiting_for_consent":
             await send_message(
                 session,
