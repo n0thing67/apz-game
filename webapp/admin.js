@@ -770,6 +770,31 @@ function renderAwardsListFromCache() {
     }
   });
 
+  byId("btn-create-backup")?.addEventListener("click", async () => {
+    const ok = confirm("Создать резервную копию базы данных и отправить её администратору?");
+    if (!ok) return;
+
+    const btn = byId("btn-create-backup");
+    btn.disabled = true;
+    const oldText = btn.textContent;
+    btn.textContent = "Создание копии…";
+
+    try {
+      const result = await api("/api/admin/create_backup", {
+        method: "POST",
+        timeoutMs: 60000,
+        body: "{}",
+      });
+      alert(`Резервная копия создана и отправлена ✅
+Файл: ${result.filename || "—"}`);
+    } catch (e) {
+      alert("Ошибка создания резервной копии: " + e.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = oldText;
+    }
+  });
+
   // --- HOME actions ---
   byId("btn-exit").addEventListener("click", exit);
 
