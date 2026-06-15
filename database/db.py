@@ -1,7 +1,35 @@
 import os
 import time
 import asyncio
+from datetime import datetime
 from pathlib import Path
+
+
+def _project_root() -> Path:
+    return Path(__file__).resolve().parents[1]
+
+
+def _backup_dir() -> Path:
+    """Возвращает директорию для резервных копий и создаёт её при необходимости."""
+    env_dir = (os.getenv("BACKUP_DIR") or "").strip()
+    if env_dir:
+        target = Path(env_dir)
+    else:
+        render_disk = (os.getenv("RENDER_DISK_PATH") or "").strip()
+        target = (Path(render_disk) / "backups") if render_disk else (_project_root() / "backups")
+    target.mkdir(parents=True, exist_ok=True)
+    return target
+
+
+def _sql_literal(value) -> str:
+    """Безопасное представление значения для простого SQL-дампа PostgreSQL."""
+    if value is None:
+        return "NULL"
+    if isinstance(value, bool):
+        return "TRUE" if value else "FALSE"
+    if isinstance(value, int):
+        return str(value)
+    return "'" + str(value).replace("'", "''") + "'"
 
 
 def _format_person_name(value: str | None) -> str | None:
@@ -479,6 +507,38 @@ if not _using_postgres:
         ) as cursor:
             return await cursor.fetchall()
 
+
+    async def create_database_backup() -> dict:
+        """Создаёт резервную копию SQLite-БД и возвращает сведения о файле.
+
+        Используется SQLite backup API, а не обычное копирование файла: так копия
+        корректно создаётся даже при включённом WAL и работающем приложении.
+        """
+        db = await get_db()
+        await db.commit()
+
+        backup_dir = _backup_dir()
+        ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        filename = f"factory_backup_sqlite_{ts}.db"
+        backup_path = backup_dir / filename
+
+        dest = await aiosqlite.connect(str(backup_path))
+        try:
+            await db.backup(dest)
+            await dest.commit()
+        finally:
+            await dest.close()
+
+        size = backup_path.stat().st_size if backup_path.exists() else 0
+        return {
+            "ok": True,
+            "db_type": "SQLite",
+            "path": str(backup_path),
+            "filename": filename,
+            "size": size,
+            "created_at": ts,
+        }
+
 # -------------------------
 # PostgreSQL (persistent)
 # -------------------------
@@ -939,6 +999,69 @@ else:
                 "UPDATE users SET aptitude_top = $1 WHERE telegram_id = $2",
                 aptitude_top, int(tg_id),
             )
+
+    async def create_database_backup() -> dict:
+        """Создаёт SQL-дамп основных таблиц PostgreSQL без внешней утилиты pg_dump."""
+        backup_dir = _backup_dir()
+        ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        filename = f"factory_backup_postgresql_{ts}.sql"
+        backup_path = backup_dir / filename
+
+        tables = ["users", "levels", "app_meta", "user_deletions", "user_resets"]
+        pool = await get_db()
+
+        lines = [
+            "-- FactoryBot database backup",
+            f"-- Created at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            "-- DB type: PostgreSQL",
+            "",
+            "BEGIN;",
+            "",
+        ]
+
+        async with pool.acquire() as conn:
+            for table in tables:
+                exists = await conn.fetchval(
+                    "SELECT to_regclass($1)::text",
+                    f"public.{table}",
+                )
+                if not exists:
+                    continue
+
+                cols = await conn.fetch(
+                    """
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_schema = 'public' AND table_name = $1
+                    ORDER BY ordinal_position
+                    """,
+                    table,
+                )
+                col_names = [r["column_name"] for r in cols]
+                if not col_names:
+                    continue
+
+                rows = await conn.fetch(f'SELECT * FROM "{table}"')
+                lines.append(f"-- Table: {table}")
+                lines.append(f'DELETE FROM "{table}";')
+                quoted_cols = ", ".join(f'"{c}"' for c in col_names)
+                for row in rows:
+                    values = ", ".join(_sql_literal(row[c]) for c in col_names)
+                    lines.append(f'INSERT INTO "{table}" ({quoted_cols}) VALUES ({values});')
+                lines.append("")
+
+        lines.extend(["COMMIT;", ""])
+        backup_path.write_text("\n".join(lines), encoding="utf-8")
+
+        size = backup_path.stat().st_size if backup_path.exists() else 0
+        return {
+            "ok": True,
+            "db_type": "PostgreSQL",
+            "path": str(backup_path),
+            "filename": filename,
+            "size": size,
+            "created_at": ts,
+        }
 
     async def get_top_users_stats(limit: int = 10):
         pool = await get_db()
