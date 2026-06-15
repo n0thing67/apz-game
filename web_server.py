@@ -31,6 +31,7 @@ from database.db import (
     get_user_reset_token,
     update_score,
     update_aptitude_top,
+    create_database_backup,
 )
 
 
@@ -376,10 +377,10 @@ async def _max_upload_file(app: web.Application, content: bytes, filename: str, 
     return uploaded
 
 
-async def _send_document_to_max(app: web.Application, *, content: bytes, filename: str, caption: str, max_user_id: int | None = None, chat_id: int | str | None = None) -> None:
+async def _send_document_to_max(app: web.Application, *, content: bytes, filename: str, caption: str, max_user_id: int | None = None, chat_id: int | str | None = None, content_type: str = "application/octet-stream") -> None:
     from max_bot import send_message
 
-    uploaded = await _max_upload_file(app, content, filename, content_type="image/png")
+    uploaded = await _max_upload_file(app, content, filename, content_type=content_type)
     token = app.get("max_token") or ""
     session: aiohttp.ClientSession = app["max_session"]
 
@@ -406,12 +407,12 @@ async def _send_document_to_max(app: web.Application, *, content: bytes, filenam
         raise last_error
 
 
-async def _send_document_to_max_user(app: web.Application, *, max_user_id: int, content: bytes, filename: str, caption: str) -> None:
-    await _send_document_to_max(app, max_user_id=max_user_id, content=content, filename=filename, caption=caption)
+async def _send_document_to_max_user(app: web.Application, *, max_user_id: int, content: bytes, filename: str, caption: str, content_type: str = "image/png") -> None:
+    await _send_document_to_max(app, max_user_id=max_user_id, content=content, filename=filename, caption=caption, content_type=content_type)
 
 
-async def _send_document_to_max_chat(app: web.Application, *, chat_id: int | str, content: bytes, filename: str, caption: str) -> None:
-    await _send_document_to_max(app, chat_id=chat_id, content=content, filename=filename, caption=caption)
+async def _send_document_to_max_chat(app: web.Application, *, chat_id: int | str, content: bytes, filename: str, caption: str, content_type: str = "image/png") -> None:
+    await _send_document_to_max(app, chat_id=chat_id, content=content, filename=filename, caption=caption, content_type=content_type)
 
 
 def _verify_admin_token(raw_token: str) -> int | None:
@@ -960,6 +961,87 @@ async def admin_set_level(request: web.Request) -> web.Response:
     return web.json_response({"ok": True})
 
 
+async def admin_create_backup(request: web.Request) -> web.Response:
+    """Создать резервную копию БД, сохранить её на сервере, отправить админу и записать лог."""
+    admin_id = await _require_admin(request)
+
+    try:
+        backup = await create_database_backup()
+        backup_path = backup.get("path") or ""
+        filename = backup.get("filename") or os.path.basename(backup_path)
+        db_type = backup.get("db_type") or "database"
+        size = int(backup.get("size") or 0)
+        content = open(backup_path, "rb").read()
+    except Exception as e:
+        actor = await _format_actor(admin_id)
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        await _send_admin_log(
+            request.app,
+            f"❌ Ошибка создания резервной копии БД\nАдмин: {actor}\nВремя: {ts}\nОшибка: {e}",
+        )
+        raise web.HTTPBadRequest(text=f"Backup failed: {e}")
+
+    actor = await _format_actor(admin_id)
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    caption = (
+        "💾 Резервная копия базы данных\n"
+        f"Тип БД: {db_type}\n"
+        f"Файл: {filename}\n"
+        f"Размер: {size} байт\n"
+        f"Время: {ts}"
+    )
+
+    delivered = False
+    delivery_error = ""
+    try:
+        if int(admin_id) < 0:
+            # Администратор MAX хранится в БД как отрицательный ID.
+            await _send_document_to_max_user(
+                request.app,
+                max_user_id=_max_user_id_from_db_id(int(admin_id)),
+                content=content,
+                filename=filename,
+                caption=caption,
+                content_type="application/octet-stream",
+            )
+            delivered = True
+        else:
+            bot: Bot = request.app["bot"]
+            file = BufferedInputFile(content, filename=filename)
+            await bot.send_document(chat_id=int(admin_id), document=file, caption=caption)
+            delivered = True
+    except Exception as e:
+        delivery_error = str(e)
+
+    log_text = (
+        "💾 Создание резервной копии БД\n"
+        f"Админ: {actor}\n"
+        f"Время: {ts}\n"
+        f"Тип БД: {db_type}\n"
+        f"Файл: {filename}\n"
+        f"Сохранено на сервере: {backup_path}\n"
+        f"Размер: {size} байт\n"
+        f"Отправка администратору: {'успешно' if delivered else 'ошибка'}"
+    )
+    if delivery_error:
+        log_text += f"\nОшибка отправки: {delivery_error}"
+    await _send_admin_log(request.app, log_text)
+
+    if not delivered:
+        raise web.HTTPBadRequest(text=f"Backup created, but send failed: {delivery_error}")
+
+    return web.json_response(
+        {
+            "ok": True,
+            "db_type": db_type,
+            "filename": filename,
+            "size": size,
+            "saved_path": backup_path,
+            "sent": delivered,
+        }
+    )
+
+
 async def admin_send_award(request: web.Request) -> web.Response:
     admin_id = await _require_admin(request)
     payload = await request.json()
@@ -1115,6 +1197,7 @@ def create_app() -> web.Application:
     app.router.add_get("/api/admin/set_level", admin_set_level)
     app.router.add_post("/api/admin/set_level", admin_set_level)
     app.router.add_post("/api/admin/send_award", admin_send_award)
+    app.router.add_post("/api/admin/create_backup", admin_create_backup)
 
     # MAX webhook
     app.router.add_post("/max/webhook", handle_max_webhook)
